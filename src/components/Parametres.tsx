@@ -27,8 +27,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-import { db, getCollectionData, setCollectionDocument } from '../firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { setCollectionDocument, getCollectionDocument } from '../supabase';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function Parametres() {
@@ -98,11 +97,9 @@ export default function Parametres() {
           docId = `parent_${user.id}`;
         }
 
-        const docRef = doc(db, 'parametres', docId);
-        const docSnap = await getDoc(docRef);
+        const cloudData = await getCollectionDocument<any>('parametres', docId);
 
-        if (docSnap.exists()) {
-          const cloudData = docSnap.data();
+        if (cloudData) {
           if (user.role === 'admin') {
             setPlatformData(prev => ({ ...prev, ...cloudData }));
           } else if (user.role === 'directeur') {

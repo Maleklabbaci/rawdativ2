@@ -6,7 +6,7 @@ import {
   setCollectionDocument,
   updateCollectionDocument, 
   deleteCollectionDocument 
-} from '../firebase';
+} from '../supabase';
 import { 
   enfantsData as initialEnfants,
   presencesData as initialPresences,
