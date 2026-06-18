@@ -2,14 +2,14 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
-import { Baby, LogIn, Sparkles, Building, Lock, Mail, AlertCircle, Users } from 'lucide-react';
+import { Baby, LogIn, Sparkles, Building, Lock, Mail, AlertCircle } from 'lucide-react';
 
 export default function SignIn() {
   const { isFrench } = useLanguage();
   const { login } = useAuth();
   const { comptes } = useDb();
-  const [email, setEmail] = useState('admin@rawdati.com');
-  const [password, setPassword] = useState('rawdati2001');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -157,45 +157,6 @@ export default function SignIn() {
               )}
             </button>
           </form>
-
-          <div className="relative flex py-1 items-center">
-            <div className="flex-grow border-t border-slate-100"></div>
-            <span className="flex-shrink mx-4 text-slate-400 text-xs font-bold uppercase tracking-wider">Comptes de Démo</span>
-            <div className="flex-grow border-t border-slate-100"></div>
-          </div>
-
-          <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl text-xs space-y-3 font-medium text-slate-700">
-            <div className="flex items-center gap-1.5 text-indigo-700 font-bold mb-1">
-              <Users className="w-4 h-4" />
-              <span>Identifiants disponibles pour tester</span>
-            </div>
-            <div className="grid grid-cols-1 gap-2.5">
-              <div className="grid grid-cols-2 gap-2.5">
-                <div 
-                  className="p-2 border border-slate-200/60 rounded-lg hover:border-indigo-400 hover:bg-slate-100/50 cursor-pointer transition"
-                  onClick={() => {
-                    setEmail('admin@rawdati.com');
-                    setPassword('rawdati2001');
-                  }}
-                >
-                  <p className="font-bold text-slate-900 text-[11px]">👑 Admin Plateforme</p>
-                  <p className="text-slate-500 font-semibold mt-0.5">admin@rawdati.com</p>
-                  <p className="text-slate-400 text-[10px]">Passe: <strong className="text-slate-600">rawdati2001</strong></p>
-                </div>
-                <div 
-                  className="p-2 border border-slate-200/60 rounded-lg hover:border-indigo-400 hover:bg-slate-100/50 cursor-pointer transition"
-                  onClick={() => {
-                    setEmail('directeur@rawdati.com');
-                    setPassword('demo123');
-                  }}
-                >
-                  <p className="font-bold text-slate-900 text-[11px]">🏫 Directeur Crèche</p>
-                  <p className="text-slate-500 font-semibold mt-0.5">directeur@rawdati.com</p>
-                  <p className="text-slate-400 text-[10px]">Passe: <strong className="text-slate-600">demo123</strong></p>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
