@@ -484,7 +484,7 @@ export default function Enfants() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-3xl max-h-[85vh] mt-16 flex flex-col overflow-hidden font-sans cursor-default"
+className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[95vh] flex flex-col overflow-hidden font-sans cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
