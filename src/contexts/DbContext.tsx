@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Enfant, Presence, Paiement, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage } from '../types';
+import { Enfant, Presence, Paiement, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis } from '../types';
 import { 
   getCollectionData, 
   addCollectionDocument, 
@@ -19,12 +19,15 @@ interface DbContextType {
   repas: Repas[];
   comptes: UserAccount[];
   messages: DiscussionMessage[];
+  avis: Avis[];
   loading: boolean;
   refreshAll: () => Promise<void>;
   
   addMessage: (message: Omit<DiscussionMessage, 'id'>) => Promise<string>;
   updateMessage: (id: string, message: Partial<DiscussionMessage>) => Promise<void>;
   deleteMessage: (id: string) => Promise<void>;
+
+  addAvis: (avis: Omit<Avis, 'id'>) => Promise<string>;
 
   addCompte: (compte: Omit<UserAccount, 'id'>) => Promise<string>;
   updateCompte: (id: string, compte: Partial<UserAccount>) => Promise<void>;
@@ -73,6 +76,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const [repas, setRepas] = useState<Repas[]>([]);
   const [comptes, setComptes] = useState<UserAccount[]>([]);
   const [messages, setMessages] = useState<DiscussionMessage[]>([]);
+  const [avis, setAvis] = useState<Avis[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refreshAll = async () => {
@@ -86,6 +90,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const dbRepas = await getCollectionData<Repas>('repas');
       let dbComptes = await getCollectionData<UserAccount>('comptes');
       const dbMessages = await getCollectionData<DiscussionMessage>('discussion_messages');
+      const dbAvis = await getCollectionData<Avis>('avis');
 
       // Création automatique de l'admin si la base de données est totalement vide
       if (dbComptes.length === 0) {
@@ -111,6 +116,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setRepas(dbRepas);
       setComptes(dbComptes);
       setMessages(dbMessages);
+      setAvis(dbAvis);
     } catch (err) {
       console.error('Erreur de connexion à Supabase:', err);
     } finally {
@@ -346,6 +352,18 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try { await deleteCollectionDocument('discussion_messages', id); } catch (err) {}
   };
 
+  // --- AVIS ---
+  const addAvis = async (avisData: Omit<Avis, 'id'>) => {
+    const tempId = (avisData as any).id || 'avis_' + Date.now();
+    const cleanAvis = { ...avisData, id: tempId } as Avis;
+    setAvis(prev => [...prev.filter(item => item.id !== tempId), cleanAvis]);
+    try {
+      const freshId = await addCollectionDocument('avis', avisData);
+      setAvis(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      return freshId;
+    } catch (err) { return tempId; }
+  };
+
   return (
     <DbContext.Provider value={{
       // On injecte ici les listes FILTRÉES et isolées pour chaque directeur
@@ -358,11 +376,13 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       repas: scopedRepas,
       comptes,
       messages,
+      avis,
       loading,
       refreshAll,
       addMessage,
       updateMessage,
       deleteMessage,
+      addAvis,
       addCompte,
       updateCompte,
       deleteCompte,
