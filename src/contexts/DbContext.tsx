@@ -7,6 +7,7 @@ import {
   deleteCollectionDocument,
   setCollectionDocument
 } from '../supabase';
+import { useAuth } from './AuthContext';
 
 interface DbContextType {
   enfants: Enfant[];
@@ -61,6 +62,8 @@ interface DbContextType {
 const DbContext = createContext<DbContextType | null>(null);
 
 export const DbProvider = ({ children }: { children: React.ReactNode }) => {
+  const { user } = useAuth(); // Récupère l'utilisateur connecté pour filtrer ses données
+  
   const [enfants, setEnfants] = useState<Enfant[]>([]);
   const [classes, setClasses] = useState<Classe[]>([]);
   const [presences, setPresences] = useState<Presence[]>([]);
@@ -84,12 +87,12 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       let dbComptes = await getCollectionData<UserAccount>('comptes');
       const dbMessages = await getCollectionData<DiscussionMessage>('discussion_messages');
 
+      // Création automatique de l'admin si la base de données est totalement vide
       if (dbComptes.length === 0) {
-        console.log('Création du compte administrateur par défaut...');
         const adminAccount: UserAccount = {
           id: 'adm1',
-          nom: 'Admin',
-          prenom: 'Rawdati',
+          nom: 'Labbaci',
+          prenom: 'Abdelmalek',
           email: 'admin@rawdati.com',
           motDePasse: 'rawdati2001',
           role: 'admin',
@@ -97,21 +100,6 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         };
         await setCollectionDocument('comptes', adminAccount.id, adminAccount);
         dbComptes = await getCollectionData<UserAccount>('comptes');
-      } else {
-        const hasRequestedAdmin = dbComptes.some(c => c.email.toLowerCase() === 'admin@rawdati.com');
-        if (!hasRequestedAdmin) {
-          const freshAdmin: UserAccount = {
-            id: 'adm1',
-            nom: 'Admin',
-            prenom: 'Rawdati',
-            email: 'admin@rawdati.com',
-            motDePasse: 'rawdati2001',
-            role: 'admin',
-            abonnementActif: true
-          };
-          await setCollectionDocument('comptes', freshAdmin.id, freshAdmin);
-          dbComptes = await getCollectionData<UserAccount>('comptes');
-        }
       }
 
       setEnfants(dbEnfants);
@@ -134,6 +122,20 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     refreshAll();
   }, []);
 
+  // --- FILTRE DE SÉCURITÉ GLOBAL ---
+  // On s'assure que le directeur ne voit que les données rattachées à son propre ID (crecheId === user.id)
+  const scopedEnfants = user?.role === 'directeur' ? enfants.filter(e => e.crecheId === user.id) : enfants;
+  const scopedClasses = user?.role === 'directeur' ? classes.filter(c => c.crecheId === user.id) : classes;
+  const scopedPersonnel = user?.role === 'directeur' ? personnel.filter(p => p.crecheId === user.id) : personnel;
+  const scopedActivites = user?.role === 'directeur' ? activites.filter(a => a.crecheId === user.id) : activites;
+  const scopedRepas = user?.role === 'directeur' ? repas.filter(r => r.crecheId === user.id) : repas;
+
+  // Pour les présences et paiements, on filtre via les ID des enfants valides
+  const validEnfantIds = new Set(scopedEnfants.map(e => e.id));
+  const scopedPresences = user?.role === 'directeur' ? presences.filter(p => validEnfantIds.has(p.enfantId)) : presences;
+  const scopedPaiements = user?.role === 'directeur' ? paiements.filter(p => validEnfantIds.has(p.enfantId)) : paiements;
+
+
   // --- ENFANTS ---
   const addEnfant = async (enfant: Omit<Enfant, 'id'>) => {
     const tempId = (enfant as any).id || 'child_' + Date.now();
@@ -144,7 +146,6 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setEnfants(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
     } catch (err) {
-      console.error('Supabase addEnfant failed, kept local tempId:', err);
       return tempId;
     }
   };
@@ -153,9 +154,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     setEnfants(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
     try {
       await updateCollectionDocument<Enfant>('enfants', id, data);
-    } catch (err) {
-      console.error('Supabase updateEnfant failed in background:', err);
-    }
+    } catch (err) {}
   };
 
   const deleteEnfant = async (id: string) => {
@@ -165,16 +164,10 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await deleteCollectionDocument('enfants', id);
       const relatedPresences = presences.filter(p => p.enfantId === id);
-      for (const p of relatedPresences) {
-        await deleteCollectionDocument('presences', p.id);
-      }
+      for (const p of relatedPresences) await deleteCollectionDocument('presences', p.id);
       const relatedPaiements = paiements.filter(p => p.enfantId === id);
-      for (const p of relatedPaiements) {
-        await deleteCollectionDocument('paiements', p.id);
-      }
-    } catch (err) {
-      console.error('Supabase deleteEnfant failed in background:', err);
-    }
+      for (const p of relatedPaiements) await deleteCollectionDocument('paiements', p.id);
+    } catch (err) {}
   };
 
   // --- CLASSES ---
@@ -186,28 +179,17 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const freshId = await addCollectionDocument('classes', classe);
       setClasses(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
-    } catch (err) {
-      console.error('Supabase addClasse failed, kept local tempId:', err);
-      return tempId;
-    }
+    } catch (err) { return tempId; }
   };
 
   const updateClasse = async (id: string, data: Partial<Classe>) => {
     setClasses(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try {
-      await updateCollectionDocument<Classe>('classes', id, data);
-    } catch (err) {
-      console.error('Supabase updateClasse failed in background:', err);
-    }
+    try { await updateCollectionDocument<Classe>('classes', id, data); } catch (err) {}
   };
 
   const deleteClasse = async (id: string) => {
     setClasses(prev => prev.filter(item => item.id !== id));
-    try {
-      await deleteCollectionDocument('classes', id);
-    } catch (err) {
-      console.error('Supabase deleteClasse failed in background:', err);
-    }
+    try { await deleteCollectionDocument('classes', id); } catch (err) {}
   };
 
   // --- PRESENCES ---
@@ -219,28 +201,17 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const freshId = await addCollectionDocument('presences', presence);
       setPresences(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
-    } catch (err) {
-      console.error('Supabase addPresence failed, kept local tempId:', err);
-      return tempId;
-    }
+    } catch (err) { return tempId; }
   };
 
   const updatePresence = async (id: string, data: Partial<Presence>) => {
     setPresences(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try {
-      await updateCollectionDocument<Presence>('presences', id, data);
-    } catch (err) {
-      console.error('Supabase updatePresence failed in background:', err);
-    }
+    try { await updateCollectionDocument<Presence>('presences', id, data); } catch (err) {}
   };
 
   const deletePresence = async (id: string) => {
     setPresences(prev => prev.filter(item => item.id !== id));
-    try {
-      await deleteCollectionDocument('presences', id);
-    } catch (err) {
-      console.error('Supabase deletePresence failed in background:', err);
-    }
+    try { await deleteCollectionDocument('presences', id); } catch (err) {}
   };
 
   // --- PAIEMENTS ---
@@ -252,28 +223,17 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const freshId = await addCollectionDocument('paiements', paiement);
       setPaiements(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
-    } catch (err) {
-      console.error('Supabase addPaiement failed, kept local tempId:', err);
-      return tempId;
-    }
+    } catch (err) { return tempId; }
   };
 
   const updatePaiement = async (id: string, data: Partial<Paiement>) => {
     setPaiements(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try {
-      await updateCollectionDocument<Paiement>('paiements', id, data);
-    } catch (err) {
-      console.error('Supabase updatePaiement failed in background:', err);
-    }
+    try { await updateCollectionDocument<Paiement>('paiements', id, data); } catch (err) {}
   };
 
   const deletePaiement = async (id: string) => {
     setPaiements(prev => prev.filter(item => item.id !== id));
-    try {
-      await deleteCollectionDocument('paiements', id);
-    } catch (err) {
-      console.error('Supabase deletePaiement failed in background:', err);
-    }
+    try { await deleteCollectionDocument('paiements', id); } catch (err) {}
   };
 
   // --- PERSONNEL ---
@@ -285,28 +245,17 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const freshId = await addCollectionDocument('personnel', staff);
       setPersonnel(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
-    } catch (err) {
-      console.error('Supabase addPersonnel failed, kept local tempId:', err);
-      return tempId;
-    }
+    } catch (err) { return tempId; }
   };
 
   const updatePersonnel = async (id: string, data: Partial<Personnel>) => {
     setPersonnel(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try {
-      await updateCollectionDocument<Personnel>('personnel', id, data);
-    } catch (err) {
-      console.error('Supabase updatePersonnel failed in background:', err);
-    }
+    try { await updateCollectionDocument<Personnel>('personnel', id, data); } catch (err) {}
   };
 
   const deletePersonnel = async (id: string) => {
     setPersonnel(prev => prev.filter(item => item.id !== id));
-    try {
-      await deleteCollectionDocument('personnel', id);
-    } catch (err) {
-      console.error('Supabase deletePersonnel failed in background:', err);
-    }
+    try { await deleteCollectionDocument('personnel', id); } catch (err) {}
   };
 
   // --- ACTIVITES ---
@@ -318,28 +267,17 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const freshId = await addCollectionDocument('activites', activite);
       setActivites(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
-    } catch (err) {
-      console.error('Supabase addActivite failed, kept local tempId:', err);
-      return tempId;
-    }
+    } catch (err) { return tempId; }
   };
 
   const updateActivite = async (id: string, data: Partial<Activite>) => {
     setActivites(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try {
-      await updateCollectionDocument<Activite>('activites', id, data);
-    } catch (err) {
-      console.error('Supabase updateActivite failed in background:', err);
-    }
+    try { await updateCollectionDocument<Activite>('activites', id, data); } catch (err) {}
   };
 
   const deleteActivite = async (id: string) => {
     setActivites(prev => prev.filter(item => item.id !== id));
-    try {
-      await deleteCollectionDocument('activites', id);
-    } catch (err) {
-      console.error('Supabase deleteActivite failed in background:', err);
-    }
+    try { await deleteCollectionDocument('activites', id); } catch (err) {}
   };
 
   // --- REPAS ---
@@ -351,28 +289,17 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const freshId = await addCollectionDocument('repas', meal);
       setRepas(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
-    } catch (err) {
-      console.error('Supabase addRepas failed, kept local tempId:', err);
-      return tempId;
-    }
+    } catch (err) { return tempId; }
   };
 
   const updateRepas = async (id: string, data: Partial<Repas>) => {
     setRepas(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try {
-      await updateCollectionDocument<Repas>('repas', id, data);
-    } catch (err) {
-      console.error('Supabase updateRepas failed in background:', err);
-    }
+    try { await updateCollectionDocument<Repas>('repas', id, data); } catch (err) {}
   };
 
   const deleteRepas = async (id: string) => {
     setRepas(prev => prev.filter(item => item.id !== id));
-    try {
-      await deleteCollectionDocument('repas', id);
-    } catch (err) {
-      console.error('Supabase deleteRepas failed in background:', err);
-    }
+    try { await deleteCollectionDocument('repas', id); } catch (err) {}
   };
 
   // --- COMPTES ---
@@ -384,28 +311,17 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const freshId = await addCollectionDocument('comptes', { ...compte });
       setComptes(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
-    } catch (err) {
-      console.error('Supabase addCompte failed, kept local tempId:', err);
-      return tempId;
-    }
+    } catch (err) { return tempId; }
   };
 
   const updateCompte = async (id: string, data: Partial<UserAccount>) => {
     setComptes(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try {
-      await updateCollectionDocument<UserAccount>('comptes', id, data);
-    } catch (err) {
-      console.error('Supabase updateCompte failed in background:', err);
-    }
+    try { await updateCollectionDocument<UserAccount>('comptes', id, data); } catch (err) {}
   };
 
   const deleteCompte = async (id: string) => {
     setComptes(prev => prev.filter(item => item.id !== id));
-    try {
-      await deleteCollectionDocument('comptes', id);
-    } catch (err) {
-      console.error('Supabase deleteCompte failed in background:', err);
-    }
+    try { await deleteCollectionDocument('comptes', id); } catch (err) {}
   };
 
   // --- MESSAGES ---
@@ -417,39 +333,29 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const freshId = await addCollectionDocument('discussion_messages', msg);
       setMessages(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
-    } catch (err) {
-      console.error('Supabase addMessage failed, kept local tempId:', err);
-      return tempId;
-    }
+    } catch (err) { return tempId; }
   };
 
   const updateMessage = async (id: string, data: Partial<DiscussionMessage>) => {
     setMessages(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try {
-      await updateCollectionDocument<DiscussionMessage>('discussion_messages', id, data);
-    } catch (err) {
-      console.error('Supabase updateMessage failed in background:', err);
-    }
+    try { await updateCollectionDocument<DiscussionMessage>('discussion_messages', id, data); } catch (err) {}
   };
 
   const deleteMessage = async (id: string) => {
     setMessages(prev => prev.filter(item => item.id !== id));
-    try {
-      await deleteCollectionDocument('discussion_messages', id);
-    } catch (err) {
-      console.error('Supabase deleteMessage failed in background:', err);
-    }
+    try { await deleteCollectionDocument('discussion_messages', id); } catch (err) {}
   };
 
   return (
     <DbContext.Provider value={{
-      enfants,
-      classes,
-      presences,
-      paiements,
-      personnel,
-      activites,
-      repas,
+      // On injecte ici les listes FILTRÉES et isolées pour chaque directeur
+      enfants: scopedEnfants,
+      classes: scopedClasses,
+      presences: scopedPresences,
+      paiements: scopedPaiements,
+      personnel: scopedPersonnel,
+      activites: scopedActivites,
+      repas: scopedRepas,
       comptes,
       messages,
       loading,
