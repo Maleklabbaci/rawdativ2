@@ -19,6 +19,7 @@ export interface Parent {
 
 export interface Enfant {
   id: string;
+  crecheId?: string; // id du compte directeur propriétaire (pour cloisonner les crèches)
   nom: string;
   prenom: string;
   dateNaissance: string;
@@ -55,6 +56,7 @@ export interface Paiement {
 
 export interface Personnel {
   id: string;
+  crecheId?: string;
   nom: string;
   prenom: string;
   poste: string;
@@ -63,6 +65,7 @@ export interface Personnel {
 
 export interface Classe {
   id: string;
+  crecheId?: string;
   nom: string;
   niveau: 'Bébés' | 'Moyens' | 'Grands';
   capacite: number;
@@ -70,6 +73,7 @@ export interface Classe {
 
 export interface Activite {
   id: string;
+  crecheId?: string;
   titre: string;
   date: string;
   groupe: 'Bébés' | 'Moyens' | 'Grands';
@@ -77,6 +81,7 @@ export interface Activite {
 
 export interface Repas {
   id: string;
+  crecheId?: string;
   type: 'Déjeuner' | 'Goûter';
   date: string;
   menu: string;

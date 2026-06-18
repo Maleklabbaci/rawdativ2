@@ -23,6 +23,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { useDb } from '../contexts/DbContext';
+import { useAuth } from '../contexts/AuthContext';
 import { Enfant } from '../types';
 import EnfantDetails from './EnfantDetails';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -32,7 +33,10 @@ export default function Enfants() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
 
-  const { enfants, addEnfant, deleteEnfant, updateEnfant } = useDb();
+  const { enfants: allEnfants, addEnfant, deleteEnfant, updateEnfant } = useDb();
+  const { user } = useAuth();
+  const isDirecteur = user?.role === 'directeur';
+  const enfants = isDirecteur ? allEnfants.filter(e => e.crecheId === user!.id) : allEnfants;
   const [searchTerm, setSearchTerm] = useState('');
   const [filterGroupe, setFilterGroupe] = useState('Tous');
   const [showModal, setShowModal] = useState(false);
@@ -131,6 +135,7 @@ export default function Enfants() {
     } else {
       const nouvelEnfant: Enfant = {
         id: `${Date.now()}`,
+        crecheId: isDirecteur ? user!.id : undefined,
         nom: formData.nom,
         prenom: formData.prenom,
         dateNaissance: formData.dateNaissance,

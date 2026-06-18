@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
+import { useAuth } from '../contexts/AuthContext';
 import { Repas } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -32,7 +33,10 @@ export default function RepasPage() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
 
-  const { repas: dbRepas, addRepas, deleteRepas } = useDb();
+  const { repas: allDbRepas, addRepas, deleteRepas } = useDb();
+  const { user } = useAuth();
+  const isDirecteur = user?.role === 'directeur';
+  const dbRepas = isDirecteur ? allDbRepas.filter((r: any) => r.crecheId === user!.id) : allDbRepas;
 
   const repas: RichRepas[] = dbRepas.map((r: any, idx: number) => {
     return {
@@ -62,7 +66,7 @@ export default function RepasPage() {
 
   const handleAjouter = () => {
     if (!formData.menu || !formData.date) return;
-    addRepas(formData);
+    addRepas({ ...formData, crecheId: isDirecteur ? user!.id : undefined } as any);
     setShowModal(false);
     // Reset form
     setFormData({

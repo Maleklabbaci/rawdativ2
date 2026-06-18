@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
+import { useAuth } from '../contexts/AuthContext';
 import { Activite } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -34,7 +35,10 @@ export default function Activites() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
 
-  const { activites: dbActivites, personnel: personnelData, addActivite, deleteActivite } = useDb();
+  const { activites: allDbActivites, personnel: personnelData, addActivite, deleteActivite } = useDb();
+  const { user } = useAuth();
+  const isDirecteur = user?.role === 'directeur';
+  const dbActivites = isDirecteur ? allDbActivites.filter((a: any) => a.crecheId === user!.id) : allDbActivites;
 
   const activites: RichActivite[] = dbActivites.map((a: any, idx: number) => {
     const skills = ['Motricité Fine', 'Éveil Musical', 'Autonomie & Tri', 'Savoir-vivre & Coopération'];
@@ -70,7 +74,7 @@ export default function Activites() {
 
   const handleAjouter = () => {
     if (!formData.titre || !formData.date) return;
-    addActivite(formData);
+    addActivite({ ...formData, crecheId: isDirecteur ? user!.id : undefined } as any);
     setShowModal(false);
     // Reset form
     setFormData({

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
+import { useAuth } from '../contexts/AuthContext';
 import { Personnel as PersonnelType } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -33,7 +34,10 @@ export default function Personnel() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
 
-  const { personnel: dbPersonnel, addPersonnel, deletePersonnel } = useDb();
+  const { personnel: allDbPersonnel, addPersonnel, deletePersonnel } = useDb();
+  const { user } = useAuth();
+  const isDirecteur = user?.role === 'directeur';
+  const dbPersonnel = isDirecteur ? allDbPersonnel.filter((p: any) => p.crecheId === user!.id) : allDbPersonnel;
 
   const personnel: RichPersonnel[] = dbPersonnel.map((p, idx) => {
     const classesAssigned = ['Classe des Papillons (Bébés)', 'Classe Verte (Moyens)', 'Classe Bleue (Grands)', 'Toutes les classes'];
@@ -71,8 +75,9 @@ export default function Personnel() {
 
     addPersonnel({
       ...formData,
-      email: calculatedEmail
-    });
+      email: calculatedEmail,
+      crecheId: isDirecteur ? user!.id : undefined
+    } as any);
     setShowModal(false);
     // Reset form
     setFormData({

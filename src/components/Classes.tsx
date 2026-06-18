@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
+import { useAuth } from '../contexts/AuthContext';
 import { Classe } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -29,7 +30,10 @@ export default function Classes() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
 
-  const { classes: dbClasses, enfants: enfantsData, personnel: personnelData, addClasse, deleteClasse } = useDb();
+  const { classes: allDbClasses, enfants: enfantsData, personnel: personnelData, addClasse, deleteClasse } = useDb();
+  const { user } = useAuth();
+  const isDirecteur = user?.role === 'directeur';
+  const dbClasses = isDirecteur ? allDbClasses.filter((c: any) => c.crecheId === user!.id) : allDbClasses;
 
   const classes: RichClasse[] = dbClasses.map((c: any, idx: number) => {
     const themes: RichClasse['couleurTheme'][] = ['emerald', 'sky', 'indigo', 'rose', 'amber'];
@@ -56,7 +60,7 @@ export default function Classes() {
 
   const handleAjouter = () => {
     if (!formData.nom || formData.capacite <= 0) return;
-    addClasse(formData);
+    addClasse({ ...formData, crecheId: isDirecteur ? user!.id : undefined } as any);
     setShowModal(false);
     // Reset form
     setFormData({

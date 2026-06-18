@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
+import { useAuth } from '../contexts/AuthContext';
 import { Presence } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -36,7 +37,12 @@ export default function PresencesPage() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
 
-  const { presences: dbPresences, enfants: enfantsData, addPresence, deletePresence } = useDb();
+  const { presences: allDbPresences, enfants: allEnfantsData, addPresence, deletePresence } = useDb();
+  const { user } = useAuth();
+  const isDirecteur = user?.role === 'directeur';
+  const enfantsData = isDirecteur ? allEnfantsData.filter(e => e.crecheId === user!.id) : allEnfantsData;
+  const enfantIdsVisibles = new Set(enfantsData.map(e => e.id));
+  const dbPresences = isDirecteur ? allDbPresences.filter(p => enfantIdsVisibles.has(p.enfantId)) : allDbPresences;
 
   const presences: RichPresence[] = dbPresences.map((p: any) => ({
     ...p,

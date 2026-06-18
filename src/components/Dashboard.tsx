@@ -22,12 +22,20 @@ import {
   School
 } from 'lucide-react';
 import { useDb } from '../contexts/DbContext';
+import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/format';
 import { useLanguage } from '../contexts/LanguageContext';
 import { motion } from 'motion/react';
 
 export default function Dashboard() {
-  const { enfants: enfantsData, presences: presencesData, paiements: paiementsData, personnel: personnelData } = useDb();
+  const { enfants: allEnfantsData, presences: allPresencesData, paiements: allPaiementsData, personnel: allPersonnelData } = useDb();
+  const { user } = useAuth();
+  const isDirecteur = user?.role === 'directeur';
+  const enfantsData = isDirecteur ? allEnfantsData.filter(e => e.crecheId === user!.id) : allEnfantsData;
+  const enfantIdsVisibles = new Set(enfantsData.map(e => e.id));
+  const presencesData = isDirecteur ? allPresencesData.filter(p => enfantIdsVisibles.has(p.enfantId)) : allPresencesData;
+  const paiementsData = isDirecteur ? allPaiementsData.filter(p => enfantIdsVisibles.has(p.enfantId)) : allPaiementsData;
+  const personnelData = isDirecteur ? allPersonnelData.filter((p: any) => p.crecheId === user!.id) : allPersonnelData;
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
   const [periodeSelectionnee, setPeriodeSelectionnee] = useState<'semaine' | 'mois'>('semaine');

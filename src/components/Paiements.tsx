@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
+import { useAuth } from '../contexts/AuthContext';
 import { Paiement } from '../types';
 import { formatCurrency } from '../utils/format';
 import { motion, AnimatePresence } from 'motion/react';
@@ -33,7 +34,12 @@ export default function Paiements() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
 
-  const { paiements: dbPaiements, enfants: enfantsData, addPaiement, deletePaiement } = useDb();
+  const { paiements: allDbPaiements, enfants: allEnfantsData, addPaiement, deletePaiement } = useDb();
+  const { user } = useAuth();
+  const isDirecteur = user?.role === 'directeur';
+  const enfantsData = isDirecteur ? allEnfantsData.filter(e => e.crecheId === user!.id) : allEnfantsData;
+  const enfantIdsVisibles = new Set(enfantsData.map(e => e.id));
+  const dbPaiements = isDirecteur ? allDbPaiements.filter(p => enfantIdsVisibles.has(p.enfantId)) : allDbPaiements;
 
   const paiements: RichPaiement[] = dbPaiements.map((p: any) => ({
     ...p,
