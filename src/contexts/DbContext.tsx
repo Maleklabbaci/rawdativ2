@@ -306,172 +306,309 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   // --- ENFANTS ---
   const addEnfant = async (enfant: Omit<Enfant, 'id'>) => {
-    const freshId = await addCollectionDocument('enfants', enfant);
-    setEnfants(prev => [...prev, { ...enfant, id: freshId }]);
-    return freshId;
+    const tempId = (enfant as any).id || 'child_' + Date.now();
+    const cleanEnfant = { ...enfant, id: tempId } as Enfant;
+    setEnfants(prev => [...prev.filter(item => item.id !== tempId), cleanEnfant]);
+    try {
+      const freshId = await addCollectionDocument('enfants', enfant);
+      setEnfants(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      return freshId;
+    } catch (err) {
+      console.error('Firestore addEnfant failed, kept local tempId:', err);
+      return tempId;
+    }
   };
 
   const updateEnfant = async (id: string, data: Partial<Enfant>) => {
-    await updateCollectionDocument<Enfant>('enfants', id, data);
     setEnfants(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    try {
+      await updateCollectionDocument<Enfant>('enfants', id, data);
+    } catch (err) {
+      console.error('Firestore updateEnfant failed in background:', err);
+    }
   };
 
   const deleteEnfant = async (id: string) => {
-    // 1. Delete enfant document
-    await deleteCollectionDocument('enfants', id);
-    
-    // 2. Cascade delete linked presences from DB & state
-    const relatedPresences = presences.filter(p => p.enfantId === id);
-    for (const p of relatedPresences) {
-      await deleteCollectionDocument('presences', p.id);
-    }
-    setPresences(prev => prev.filter(item => item.enfantId !== id));
-
-    // 3. Cascade delete linked paiements from DB & state
-    const relatedPaiements = paiements.filter(p => p.enfantId === id);
-    for (const p of relatedPaiements) {
-      await deleteCollectionDocument('paiements', p.id);
-    }
-    setPaiements(prev => prev.filter(item => item.enfantId !== id));
-
-    // 4. Update the local state for enfant
     setEnfants(prev => prev.filter(item => item.id !== id));
+    setPresences(prev => prev.filter(item => item.enfantId !== id));
+    setPaiements(prev => prev.filter(item => item.enfantId !== id));
+    try {
+      await deleteCollectionDocument('enfants', id);
+      const relatedPresences = presences.filter(p => p.enfantId === id);
+      for (const p of relatedPresences) {
+        await deleteCollectionDocument('presences', p.id);
+      }
+      const relatedPaiements = paiements.filter(p => p.enfantId === id);
+      for (const p of relatedPaiements) {
+        await deleteCollectionDocument('paiements', p.id);
+      }
+    } catch (err) {
+      console.error('Firestore deleteEnfant failed in background:', err);
+    }
   };
 
   // --- CLASSES ---
   const addClasse = async (classe: Omit<Classe, 'id'>) => {
-    const freshId = await addCollectionDocument('classes', classe);
-    setClasses(prev => [...prev, { ...classe, id: freshId }]);
-    return freshId;
+    const tempId = (classe as any).id || 'class_' + Date.now();
+    const cleanClasse = { ...classe, id: tempId } as Classe;
+    setClasses(prev => [...prev.filter(item => item.id !== tempId), cleanClasse]);
+    try {
+      const freshId = await addCollectionDocument('classes', classe);
+      setClasses(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      return freshId;
+    } catch (err) {
+      console.error('Firestore addClasse failed, kept local tempId:', err);
+      return tempId;
+    }
   };
 
   const updateClasse = async (id: string, data: Partial<Classe>) => {
-    await updateCollectionDocument<Classe>('classes', id, data);
     setClasses(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    try {
+      await updateCollectionDocument<Classe>('classes', id, data);
+    } catch (err) {
+      console.error('Firestore updateClasse failed in background:', err);
+    }
   };
 
   const deleteClasse = async (id: string) => {
-    await deleteCollectionDocument('classes', id);
     setClasses(prev => prev.filter(item => item.id !== id));
+    try {
+      await deleteCollectionDocument('classes', id);
+    } catch (err) {
+      console.error('Firestore deleteClasse failed in background:', err);
+    }
   };
 
   // --- PRESENCES ---
   const addPresence = async (presence: Omit<Presence, 'id'>) => {
-    const freshId = await addCollectionDocument('presences', presence);
-    setPresences(prev => [...prev, { ...presence, id: freshId }]);
-    return freshId;
+    const tempId = (presence as any).id || 'pres_' + Date.now();
+    const cleanPresence = { ...presence, id: tempId } as Presence;
+    setPresences(prev => [...prev.filter(item => item.id !== tempId), cleanPresence]);
+    try {
+      const freshId = await addCollectionDocument('presences', presence);
+      setPresences(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      return freshId;
+    } catch (err) {
+      console.error('Firestore addPresence failed, kept local tempId:', err);
+      return tempId;
+    }
   };
 
   const updatePresence = async (id: string, data: Partial<Presence>) => {
-    await updateCollectionDocument<Presence>('presences', id, data);
     setPresences(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    try {
+      await updateCollectionDocument<Presence>('presences', id, data);
+    } catch (err) {
+      console.error('Firestore updatePresence failed in background:', err);
+    }
   };
 
   const deletePresence = async (id: string) => {
-    await deleteCollectionDocument('presences', id);
     setPresences(prev => prev.filter(item => item.id !== id));
+    try {
+      await deleteCollectionDocument('presences', id);
+    } catch (err) {
+      console.error('Firestore deletePresence failed in background:', err);
+    }
   };
 
   // --- PAIEMENTS ---
   const addPaiement = async (paiement: Omit<Paiement, 'id'>) => {
-    const freshId = await addCollectionDocument('paiements', paiement);
-    setPaiements(prev => [...prev, { ...paiement, id: freshId }]);
-    return freshId;
+    const tempId = (paiement as any).id || 'pay_' + Date.now();
+    const cleanPaiement = { ...paiement, id: tempId } as Paiement;
+    setPaiements(prev => [...prev.filter(item => item.id !== tempId), cleanPaiement]);
+    try {
+      const freshId = await addCollectionDocument('paiements', paiement);
+      setPaiements(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      return freshId;
+    } catch (err) {
+      console.error('Firestore addPaiement failed, kept local tempId:', err);
+      return tempId;
+    }
   };
 
   const updatePaiement = async (id: string, data: Partial<Paiement>) => {
-    await updateCollectionDocument<Paiement>('paiements', id, data);
     setPaiements(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    try {
+      await updateCollectionDocument<Paiement>('paiements', id, data);
+    } catch (err) {
+      console.error('Firestore updatePaiement failed in background:', err);
+    }
   };
 
   const deletePaiement = async (id: string) => {
-    await deleteCollectionDocument('paiements', id);
     setPaiements(prev => prev.filter(item => item.id !== id));
+    try {
+      await deleteCollectionDocument('paiements', id);
+    } catch (err) {
+      console.error('Firestore deletePaiement failed in background:', err);
+    }
   };
 
   // --- PERSONNEL ---
   const addPersonnel = async (staff: Omit<Personnel, 'id'>) => {
-    const freshId = await addCollectionDocument('personnel', staff);
-    setPersonnel(prev => [...prev, { ...staff, id: freshId }]);
-    return freshId;
+    const tempId = (staff as any).id || 'staff_' + Date.now();
+    const cleanStaff = { ...staff, id: tempId } as Personnel;
+    setPersonnel(prev => [...prev.filter(item => item.id !== tempId), cleanStaff]);
+    try {
+      const freshId = await addCollectionDocument('personnel', staff);
+      setPersonnel(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      return freshId;
+    } catch (err) {
+      console.error('Firestore addPersonnel failed, kept local tempId:', err);
+      return tempId;
+    }
   };
 
   const updatePersonnel = async (id: string, data: Partial<Personnel>) => {
-    await updateCollectionDocument<Personnel>('personnel', id, data);
     setPersonnel(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    try {
+      await updateCollectionDocument<Personnel>('personnel', id, data);
+    } catch (err) {
+      console.error('Firestore updatePersonnel failed in background:', err);
+    }
   };
 
   const deletePersonnel = async (id: string) => {
-    await deleteCollectionDocument('personnel', id);
     setPersonnel(prev => prev.filter(item => item.id !== id));
+    try {
+      await deleteCollectionDocument('personnel', id);
+    } catch (err) {
+      console.error('Firestore deletePersonnel failed in background:', err);
+    }
   };
 
   // --- ACTIVITES ---
   const addActivite = async (activite: Omit<Activite, 'id'>) => {
-    const freshId = await addCollectionDocument('activites', activite);
-    setActivites(prev => [...prev, { ...activite, id: freshId }]);
-    return freshId;
+    const tempId = (activite as any).id || 'act_' + Date.now();
+    const cleanActivite = { ...activite, id: tempId } as Activite;
+    setActivites(prev => [...prev.filter(item => item.id !== tempId), cleanActivite]);
+    try {
+      const freshId = await addCollectionDocument('activites', activite);
+      setActivites(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      return freshId;
+    } catch (err) {
+      console.error('Firestore addActivite failed, kept local tempId:', err);
+      return tempId;
+    }
   };
 
   const updateActivite = async (id: string, data: Partial<Activite>) => {
-    await updateCollectionDocument<Activite>('activites', id, data);
     setActivites(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    try {
+      await updateCollectionDocument<Activite>('activites', id, data);
+    } catch (err) {
+      console.error('Firestore updateActivite failed in background:', err);
+    }
   };
 
   const deleteActivite = async (id: string) => {
-    await deleteCollectionDocument('activites', id);
     setActivites(prev => prev.filter(item => item.id !== id));
+    try {
+      await deleteCollectionDocument('activites', id);
+    } catch (err) {
+      console.error('Firestore deleteActivite failed in background:', err);
+    }
   };
 
   // --- REPAS ---
   const addRepas = async (meal: Omit<Repas, 'id'>) => {
-    const freshId = await addCollectionDocument('repas', meal);
-    setRepas(prev => [...prev, { ...meal, id: freshId }]);
-    return freshId;
+    const tempId = (meal as any).id || 'meal_' + Date.now();
+    const cleanMeal = { ...meal, id: tempId } as Repas;
+    setRepas(prev => [...prev.filter(item => item.id !== tempId), cleanMeal]);
+    try {
+      const freshId = await addCollectionDocument('repas', meal);
+      setRepas(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      return freshId;
+    } catch (err) {
+      console.error('Firestore addRepas failed, kept local tempId:', err);
+      return tempId;
+    }
   };
 
   const updateRepas = async (id: string, data: Partial<Repas>) => {
-    await updateCollectionDocument<Repas>('repas', id, data);
     setRepas(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    try {
+      await updateCollectionDocument<Repas>('repas', id, data);
+    } catch (err) {
+      console.error('Firestore updateRepas failed in background:', err);
+    }
   };
 
   const deleteRepas = async (id: string) => {
-    await deleteCollectionDocument('repas', id);
     setRepas(prev => prev.filter(item => item.id !== id));
+    try {
+      await deleteCollectionDocument('repas', id);
+    } catch (err) {
+      console.error('Firestore deleteRepas failed in background:', err);
+    }
   };
 
   // --- COMPTES ---
   const addCompte = async (compte: Omit<UserAccount, 'id'>) => {
-    const freshId = await addCollectionDocument('comptes', { ...compte });
-    setComptes(prev => [...prev, { ...compte, id: freshId }]);
-    return freshId;
+    const tempId = (compte as any).id || 'acc_' + Date.now();
+    const cleanCompte = { ...compte, id: tempId } as UserAccount;
+    setComptes(prev => [...prev.filter(item => item.id !== tempId), cleanCompte]);
+    try {
+      const freshId = await addCollectionDocument('comptes', { ...compte });
+      setComptes(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      return freshId;
+    } catch (err) {
+      console.error('Firestore addCompte failed, kept local tempId:', err);
+      return tempId;
+    }
   };
 
   const updateCompte = async (id: string, data: Partial<UserAccount>) => {
-    await updateCollectionDocument<UserAccount>('comptes', id, data);
     setComptes(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    try {
+      await updateCollectionDocument<UserAccount>('comptes', id, data);
+    } catch (err) {
+      console.error('Firestore updateCompte failed in background:', err);
+    }
   };
 
   const deleteCompte = async (id: string) => {
-    await deleteCollectionDocument('comptes', id);
     setComptes(prev => prev.filter(item => item.id !== id));
+    try {
+      await deleteCollectionDocument('comptes', id);
+    } catch (err) {
+      console.error('Firestore deleteCompte failed in background:', err);
+    }
   };
 
   // --- MESSAGES ---
   const addMessage = async (msg: Omit<DiscussionMessage, 'id'>) => {
-    const freshId = await addCollectionDocument('discussion_messages', msg);
-    setMessages(prev => [...prev, { ...msg, id: freshId }]);
-    return freshId;
+    const tempId = (msg as any).id || 'msg_' + Date.now();
+    const cleanMsg = { ...msg, id: tempId } as DiscussionMessage;
+    setMessages(prev => [...prev.filter(item => item.id !== tempId), cleanMsg]);
+    try {
+      const freshId = await addCollectionDocument('discussion_messages', msg);
+      setMessages(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      return freshId;
+    } catch (err) {
+      console.error('Firestore addMessage failed, kept local tempId:', err);
+      return tempId;
+    }
   };
 
   const updateMessage = async (id: string, data: Partial<DiscussionMessage>) => {
-    await updateCollectionDocument<DiscussionMessage>('discussion_messages', id, data);
     setMessages(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    try {
+      await updateCollectionDocument<DiscussionMessage>('discussion_messages', id, data);
+    } catch (err) {
+      console.error('Firestore updateMessage failed in background:', err);
+    }
   };
 
   const deleteMessage = async (id: string) => {
-    await deleteCollectionDocument('discussion_messages', id);
     setMessages(prev => prev.filter(item => item.id !== id));
+    try {
+      await deleteCollectionDocument('discussion_messages', id);
+    } catch (err) {
+      console.error('Firestore deleteMessage failed in background:', err);
+    }
   };
 
   return (
