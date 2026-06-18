@@ -1,4 +1,3 @@
-
 export interface ContactUrgence {
   id: string;
   nom: string;
@@ -19,7 +18,7 @@ export interface Parent {
 
 export interface Enfant {
   id: string;
-  crecheId?: string; // id du compte directeur propriétaire (pour cloisonner les crèches)
+  crecheId?: string;
   nom: string;
   prenom: string;
   dateNaissance: string;
@@ -95,20 +94,28 @@ export interface UserAccount {
   motDePasse: string;
   role: 'admin' | 'directeur' | 'parent';
   abonnementActif: boolean;
-  dateFinAbonnement?: string; // subscription end date (YYYY-MM-DD or standard ISO date)
-  nomCreche?: string;          // Name of the creche if they are a directeur
-  enfantId?: string;           // Optional reference to an Enfant
+  dateFinAbonnement?: string;
+  nomCreche?: string;
+  enfantId?: string;
 }
 
 export interface DiscussionMessage {
   id: string;
   senderId: string;
   senderName: string;
-  recipientId: string; // 'admin' or specific parent id
-  parentId: string;    // Thread id (the parent's account id, since chats are 1-on-1 between parent and admin)
+  recipientId: string;
+  parentId: string;
   text: string;
-  timestamp: string;   // ISO format
+  timestamp: string;
   isRead: boolean;
 }
 
-
+export interface Avis {
+  id: string;
+  userId: string;
+  userName: string;
+  nomCreche: string;
+  rating: number;
+  comment: string;
+  date: string;
+}
