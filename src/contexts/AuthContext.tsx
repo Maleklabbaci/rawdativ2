@@ -1,25 +1,17 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 import { UserAccount } from '../types';
+import { getCollectionData } from '../supabase';
 
 interface AuthContextType {
   isAuthenticated: boolean;
   user: UserAccount | null;
   creche: { nom: string; adresse: string };
   login: (user: UserAccount) => void;
+  loginWithCredentials: (email: string, motDePasse: string) => Promise<UserAccount | null>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
-
-const defaultAdmin: UserAccount = {
-  id: 'adm1',
-  nom: 'Labbaci',
-  prenom: 'Abdelmalek',
-  email: 'admin@rawdati.com',
-  motDePasse: 'rawdati2001',
-  role: 'admin',
-  abonnementActif: true
-};
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<UserAccount | null>(() => {
@@ -31,7 +23,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return null;
       }
     }
-    return null; // Require login on first load
+    return null;
   });
 
   const isAuthenticated = !!user;
@@ -39,6 +31,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const login = (newUser: UserAccount) => {
     setUser(newUser);
     localStorage.setItem('rawdati_current_user', JSON.stringify(newUser));
+  };
+
+  const loginWithCredentials = async (email: string, motDePasse: string): Promise<UserAccount | null> => {
+    try {
+      const allComptes = await getCollectionData<UserAccount>('comptes');
+      const matchedUser = allComptes.find(
+        (c) => c.email.toLowerCase().trim() === email.toLowerCase().trim() && c.motDePasse === motDePasse
+      );
+
+      if (matchedUser) {
+        login(matchedUser);
+        return matchedUser;
+      }
+      return null;
+    } catch (error) {
+      console.error("Erreur de connexion :", error);
+      throw new Error("Erreur de communication avec le serveur.");
+    }
   };
 
   const logout = () => {
@@ -50,8 +60,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     <AuthContext.Provider value={{
       isAuthenticated,
       user,
-      creche: { nom: 'روضتي', adresse: 'نهج الصنوبر، الجزائر العاصمة | Rue des Glycines, Alger' },
+      creche: { 
+        nom: user?.role === 'directeur' && user.nomCreche ? user.nomCreche : 'RAWDATI', 
+        adresse: 'Plateforme de Gestion | منصة التسيير' 
+      },
       login,
+      loginWithCredentials,
       logout
     }}>
       {children}
@@ -66,4 +80,3 @@ export const useAuth = () => {
   }
   return context;
 };
-
