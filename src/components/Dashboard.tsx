@@ -2,30 +2,22 @@ import { useState } from 'react';
 import { 
   Users, 
   Baby, 
-  TrendingUp, 
   AlertCircle, 
   DollarSign, 
   Calendar as CalendarIcon,
   Clock,
-  CheckCircle2,
-  XCircle,
   ArrowUp,
   ArrowDown,
   FileText,
-  Activity,
-  Heart,
-  ChevronRight,
   ShieldCheck,
-  Zap,
   Coffee,
-  Sparkles,
+  Zap,
   School
 } from 'lucide-react';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/format';
 import { useLanguage } from '../contexts/LanguageContext';
-import { motion } from 'motion/react';
 
 export default function Dashboard() {
   const { enfants: allEnfantsData, presences: allPresencesData, paiements: allPaiementsData, personnel: allPersonnelData } = useDb();
@@ -36,7 +28,7 @@ export default function Dashboard() {
   const presencesData = isDirecteur ? allPresencesData.filter(p => enfantIdsVisibles.has(p.enfantId)) : allPresencesData;
   const paiementsData = isDirecteur ? allPaiementsData.filter(p => enfantIdsVisibles.has(p.enfantId)) : allPaiementsData;
   const personnelData = isDirecteur ? allPersonnelData.filter((p: any) => p.crecheId === user!.id) : allPersonnelData;
-  const { t, language } = useLanguage();
+  const { language } = useLanguage();
   const isArabic = language === 'ar';
   const [periodeSelectionnee, setPeriodeSelectionnee] = useState<'semaine' | 'mois'>('semaine');
   
@@ -47,20 +39,25 @@ export default function Dashboard() {
   const paiementsEnAttente = paiementsData.filter(p => p.statut === 'En attente' || p.statut === 'Retard');
   const totalRevenusPayes = paiementsPayes.reduce((sum, p) => sum + p.montant, 0);
   const totalRevenusAttendus = paiementsEnAttente.reduce((sum, p) => sum + p.montant, 0);
-  const tauxOccupation = Math.round((enfantsActifs.length / 30) * 100);
+  const tauxOccupation = Math.round((enfantsActifs.length / 30) * 100) || 0;
   const tauxPresence = enfantsActifs.length > 0 ? Math.round((presencesAujourdhui.length / enfantsActifs.length) * 100) : 0;
 
-  // Statistiques selon la période
   const periodeLabel = periodeSelectionnee === 'semaine' 
     ? (isArabic ? 'للأسبوع الحالي' : 'de la semaine') 
     : (isArabic ? 'لهذا الشهر' : 'du mois');
     
-  const tendanceEnfants = '+2';
-  const tendancePresence = '+5%';
-  const tendanceRevenus = '+12%';
-  const tendancePaiements = '-3';
+  // Statistiques réelles basées sur la base de données
+  const nouveauxEnfants = enfantsActifs.filter(e => {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    return new Date(e.dateInscription) >= thirtyDaysAgo;
+  }).length;
 
-  // Statistiques par groupe d'âge
+  const tendanceEnfants = nouveauxEnfants > 0 ? `+${nouveauxEnfants}` : '0';
+  const tendancePresence = tauxPresence > 0 ? `${tauxPresence}%` : '0%';
+  const tendanceRevenus = paiementsPayes.length > 0 ? `+${paiementsPayes.length}` : '0';
+  const tendancePaiements = paiementsEnAttente.length > 0 ? `${paiementsEnAttente.length}` : '0';
+
   const statsParGroupe = {
     'Bébés': {
       total: enfantsData.filter(e => e.groupeAge === 'Bébés').length,
@@ -88,7 +85,6 @@ export default function Dashboard() {
     }
   };
 
-  // Documents manquants
   const documentsManquants = enfantsData.filter(e => 
     !e.documentsRequis.certificatMedical || 
     !e.documentsRequis.carnetVaccination ||
@@ -105,7 +101,7 @@ export default function Dashboard() {
       color: 'from-indigo-500 to-indigo-600',
       bgLight: 'bg-indigo-50 text-indigo-600',
       trend: tendanceEnfants,
-      trendUp: true
+      trendUp: nouveauxEnfants > 0
     },
     {
       title: isArabic ? 'معدل الحضور اليومي' : 'Taux de Présence',
@@ -115,7 +111,7 @@ export default function Dashboard() {
       color: 'from-emerald-500 to-emerald-600',
       bgLight: 'bg-emerald-50 text-emerald-600',
       trend: tendancePresence,
-      trendUp: true
+      trendUp: tauxPresence > 0
     },
     {
       title: isArabic ? `المداخيل ${periodeLabel}` : `Revenus ${periodeLabel}`,
@@ -125,7 +121,7 @@ export default function Dashboard() {
       color: 'from-purple-500 to-purple-600',
       bgLight: 'bg-purple-50 text-purple-600',
       trend: tendanceRevenus,
-      trendUp: true
+      trendUp: paiementsPayes.length > 0
     },
     {
       title: isArabic ? 'إشعارات الدفع المعلقة' : 'Paiements Suspendus',
@@ -140,8 +136,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="space-y-5 sm:space-y-8">
-      {/* Header with Greeting & Date & Custom Period Trigger */}
+    <div className="space-y-5 sm:space-y-8 font-sans">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4">
         <div>
           <span className="text-[10px] sm:text-xs font-bold text-indigo-600 uppercase tracking-widest block mb-0.5 flex items-center gap-1">
@@ -185,7 +180,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Stats bento cards block */}
       <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 animate-fade-in">
         {statsCards.map((stat, index) => {
           const Icon = stat.icon;
@@ -194,7 +188,6 @@ export default function Dashboard() {
               key={index} 
               className="bg-white rounded-2xl border border-slate-100 p-4 sm:p-6 shadow-xs relative overflow-hidden group hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
             >
-              {/* Glowing gradient slide under */}
               <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-indigo-500 to-violet-500" />
               
               <div className="flex items-start justify-between mb-2 sm:mb-4">
@@ -219,10 +212,7 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Primary columns - Gauges & Occupancy */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Occupancy and levels progress bars */}
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 p-6 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-6">
@@ -295,10 +285,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Occupation circle widget block */}
         <div className="space-y-6">
-          
-          {/* Taux d'Occupation */}
           <div className="bg-gradient-to-tr from-indigo-700 via-indigo-800 to-violet-800 rounded-2xl shadow-xl p-6 text-white relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-xl pointer-events-none" />
             <div className="flex items-center gap-3 mb-4">
@@ -315,11 +302,10 @@ export default function Dashboard() {
             </div>
             <div className="mt-4 pt-4 border-t border-white/15 text-xs text-indigo-200 font-bold flex justify-between items-center">
               <span>{isArabic ? 'المقاعد المتاحة فورياً:' : 'Places disponibles :'}</span>
-              <span className="bg-white/10 px-2 py-0.5 rounded-lg text-white font-black">{30 - enfantsActifs.length} places</span>
+              <span className="bg-white/10 px-2 py-0.5 rounded-lg text-white font-black">{Math.max(0, 30 - enfantsActifs.length)} places</span>
             </div>
           </div>
 
-          {/* Quick Stats list links */}
           <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-xs">
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4">{isArabic ? 'محاور الرقابة السريعة' : 'Indicateurs d\'Urgence'}</h3>
             <div className="space-y-3">
@@ -333,15 +319,10 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
-
         </div>
-
       </div>
 
-      {/* Alerts of overdue invoices & missing doc registries */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Overdue alerts list */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="p-6 border-b border-slate-50 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -396,7 +377,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Staff registry block */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="p-6 border-b border-slate-50 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -409,12 +389,12 @@ export default function Dashboard() {
               </div>
             </div>
             <span className="px-3 py-1 bg-emerald-50 text-emerald-600 text-xs font-black rounded-lg">
-              {personnelData.filter(p => p.statut === 'Actif').length} en poste
+              {personnelData.filter((p: any) => p.statut === 'Actif').length} en poste
             </span>
           </div>
 
           <div className="p-5 space-y-3.5 max-h-96 overflow-y-auto">
-            {personnelData.filter(p => p.statut === 'Actif').slice(0, 4).map((person) => (
+            {personnelData.filter((p: any) => p.statut === 'Actif').slice(0, 4).map((person: any) => (
               <div key={person.id} className="flex items-center justify-between p-3 bg-slate-50/50 border border-slate-100 rounded-xl hover:bg-slate-50 transition">
                 <div className="flex items-center gap-3.5">
                   <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center font-bold text-sm shadow-xs">
@@ -433,10 +413,8 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
-
       </div>
 
-      {/* Financial recovery chart metrics */}
       <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-xs">
         <h2 className="text-base font-extrabold text-slate-900 tracking-tight mb-6">{isArabic ? 'مؤشرات التحصيل والنسب الشهرية' : 'Indicateurs Financiers & Taux de Recouvrement'}</h2>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -455,12 +433,11 @@ export default function Dashboard() {
           <div className="p-5 bg-purple-50/50 border border-purple-100/30 rounded-xl">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isArabic ? 'معدل النجاح' : 'Taux de succès'}</p>
             <p className="text-2xl font-black text-indigo-600 mt-1">
-              {Math.round((totalRevenusPayes / (totalRevenusPayes + totalRevenusAttendus)) * 100)} %
+              {totalRevenusPayes + totalRevenusAttendus > 0 ? Math.round((totalRevenusPayes / (totalRevenusPayes + totalRevenusAttendus)) * 100) : 0} %
             </p>
           </div>
         </div>
       </div>
-
     </div>
   );
 }
