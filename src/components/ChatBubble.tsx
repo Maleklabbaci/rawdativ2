@@ -139,7 +139,7 @@ export default function ChatBubble() {
     <>
       <AnimatePresence>
         {showAvisPopup && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z- flex items-center justify-center p-4 font-sans" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4 font-sans" dir={language === 'ar' ? 'rtl' : 'ltr'}>
             <motion.div 
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -287,7 +287,9 @@ export default function ChatBubble() {
                         }}
                         className={`w-full p-3 bg-white border rounded-2xl flex items-center gap-3 transition text-right sm:text-left cursor-pointer shadow-xs ${unreadCount > 0 ? 'border-indigo-400 bg-indigo-50/30' : 'border-slate-200 hover:border-indigo-300'}`}
                       >
-                        <div className="w-10 h-10 bg-indigo-50 text-indigo-700 rounded-xl font-bold flex items-center justify-center flex-shrink-0 text-sm border border-indigo-100">{director.prenom}{director.nom}</div>
+                        <div className="w-10 h-10 bg-indigo-50 text-indigo-700 rounded-xl font-bold flex items-center justify-center flex-shrink-0 text-sm border border-indigo-100 overflow-hidden">
+                          {`${director.prenom?.[0] || ''}${director.nom?.[0] || ''}`.toUpperCase()}
+                        </div>
                         <div className="flex-1 min-w-0 text-left rtl:text-right">
                           <div className="flex items-center justify-between">
                             <p className="text-xs font-bold text-slate-900 truncate">{director.prenom} {director.nom}</p>
