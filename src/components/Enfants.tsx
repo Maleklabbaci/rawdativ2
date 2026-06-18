@@ -43,7 +43,6 @@ export default function Enfants() {
   const [selectedEnfant, setSelectedEnfant] = useState<Enfant | null>(null);
   const [editingEnfantId, setEditingEnfantId] = useState<string | null>(null);
 
-  // Exquisite expanded form state satisfying "PLEINE DE FORMATION"
   const [formData, setFormData] = useState({
     nom: '',
     prenom: '',
@@ -74,10 +73,8 @@ export default function Enfants() {
     const parentMatch = enfant.parents.some(p => `${p.prenom} ${p.nom}`.toLowerCase().includes(term));
     const matchesSearch = nameMatch || parentMatch;
     
-    // Multi level language check for filters
     let matchesGroupe = true;
     if (filterGroupe !== 'Tous' && filterGroupe !== 'الكل') {
-      // normalize categories
       const normalizedFilter = filterGroupe.includes('Bébés') || filterGroupe.includes('رضع') ? 'Bébés' :
                                filterGroupe.includes('Moyens') || filterGroupe.includes('متوسطين') ? 'Moyens' : 'Grands';
       matchesGroupe = enfant.groupeAge === normalizedFilter;
@@ -176,7 +173,6 @@ export default function Enfants() {
     }
 
     setShowModal(false);
-    // Reset Form fully
     setFormData({
       nom: '',
       prenom: '',
@@ -202,9 +198,24 @@ export default function Enfants() {
     });
   };
 
+  const calculerAge = (dateString: string) => {
+    if (!dateString) return '';
+    const birth = new Date(dateString);
+    const now = new Date();
+    let ans = now.getFullYear() - birth.getFullYear();
+    let mois = now.getMonth() - birth.getMonth();
+    
+    if (mois < 0 || (mois === 0 && now.getDate() < birth.getDate())) {
+      ans--;
+      mois += 12;
+    }
+    
+    if (ans <= 0) return isArabic ? `${mois} شهر` : `${mois} mois`;
+    return isArabic ? `${ans} سنة و ${mois} شهر` : `${ans} an(s) et ${mois} mois`;
+  };
+
   return (
     <div className="space-y-4 sm:space-y-8 font-sans">
-      {/* Search Filter Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
@@ -250,7 +261,6 @@ export default function Enfants() {
         </button>
       </div>
 
-      {/* Exquisite Filters Ribbon */}
       <div className="bg-white p-3 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex flex-col md:flex-row gap-3 items-center">
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -284,14 +294,10 @@ export default function Enfants() {
         </div>
       </div>
 
-      {/* Children grid of cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-slide-up">
         {filteredEnfants.length > 0 ? (
           filteredEnfants.map((enfant) => {
             const birthDate = new Date(enfant.dateNaissance).toLocaleDateString(isArabic ? 'ar' : 'fr-FR');
-            
-            // Medical folder counts
-            const docsCount = Object.values(enfant.documentsRequis).filter(Boolean).length;
             
             return (
               <div 
@@ -299,7 +305,6 @@ export default function Enfants() {
                 className="bg-white rounded-2xl border border-slate-100 p-6 shadow-xs hover:shadow-lg hover:-translate-y-1 transition-all duration-200 flex flex-col justify-between"
               >
                 <div>
-                  {/* Top card stats */}
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <div className={`w-12 h-12 rounded-2xl font-black text-white flex items-center justify-center shadow-md ${
@@ -326,14 +331,12 @@ export default function Enfants() {
                     </span>
                   </div>
 
-                  {/* Core Date & Allergies block */}
                   <div className="space-y-2 mt-4 text-xs font-semibold text-slate-500">
                     <div className="flex items-center gap-2 p-1 border-b border-dashed border-slate-50">
                       <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{t('children.born')}: <strong className="text-slate-800">{birthDate}</strong></span>
+                      <span>{t('children.born')}: <strong className="text-slate-800">{birthDate} ({calculerAge(enfant.dateNaissance)})</strong></span>
                     </div>
 
-                    {/* Allergies tag block */}
                     {enfant.allergie ? (
                       <div className="flex items-center gap-2 text-rose-600 bg-rose-50 px-2.5 py-1.5 border border-rose-100 rounded-xl">
                         <ShieldAlert className="w-4 h-4 text-rose-500" />
@@ -348,7 +351,6 @@ export default function Enfants() {
                     )}
                   </div>
 
-                  {/* Documents & dossier checker indicators */}
                   <div className="mt-5 bg-slate-50/50 rounded-2xl p-3 border border-slate-100/50">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">
                       {isArabic ? 'الـملف الإداري والتراخيص' : 'Diligence Dossier Administratif'}
@@ -392,7 +394,6 @@ export default function Enfants() {
                     </div>
                   </div>
 
-                  {/* Family Connections */}
                   <div className="mt-5 border-t border-slate-100 pt-3">
                     <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">{t('children.parents')}:</p>
                     {enfant.parents.map((parent) => (
@@ -411,7 +412,6 @@ export default function Enfants() {
 
                 </div>
 
-                {/* Open details actions */}
                 <div className="mt-6 pt-4 border-t border-slate-50 flex gap-2">
                   <button 
                     onClick={() => setSelectedEnfant(enfant)}
@@ -474,7 +474,6 @@ export default function Enfants() {
         )}
       </div>
 
-      {/* Highly detail rich registration child modal ("PLEINE DE FORMATION" as user requested) */}
       <AnimatePresence>
         {showModal && (
           <div 
@@ -511,7 +510,6 @@ export default function Enfants() {
 
               <div className="p-6 space-y-5 overflow-y-auto flex-1">
                 
-                {/* 1. SECTION: Child primary information */}
                 <div>
                   <h4 className="text-xs font-black text-indigo-600 uppercase tracking-widest mb-3.5 pb-1 border-b border-slate-100 flex items-center gap-1.5">
                     <Baby className="w-4 h-4" />
@@ -578,7 +576,6 @@ export default function Enfants() {
                       </select>
                     </div>
 
-                    {/* Blood group */}
                     <div>
                       <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">Groupe Sanguin *</label>
                       <select 
@@ -596,7 +593,6 @@ export default function Enfants() {
                     </div>
                   </div>
 
-                  {/* Medical specifics */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                     <div>
                       <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">Allergie ou intolérance (⚠️)</label>
@@ -622,7 +618,6 @@ export default function Enfants() {
                   </div>
                 </div>
 
-                {/* 2. SECTION: Family / Tuteur legal */}
                 <div>
                   <h4 className="text-xs font-black text-indigo-600 uppercase tracking-widest mb-3.5 pb-1 border-b border-slate-100 flex items-center gap-1.5 pt-2">
                     <User className="w-4 h-4" />
@@ -713,7 +708,6 @@ export default function Enfants() {
                   </div>
                 </div>
 
-                {/* 3. SECTION: Administrative check-in */}
                 <div>
                   <h4 className="text-xs font-black text-indigo-600 uppercase tracking-widest mb-3.5 pb-1 border-b border-slate-100 flex items-center gap-1.5 pt-2">
                     <FileText className="w-4 h-4" />
@@ -765,7 +759,6 @@ export default function Enfants() {
 
               </div>
 
-              {/* Save actions */}
               <div className="p-6 pt-4 border-t border-slate-100 flex gap-3 flex-shrink-0 bg-slate-50/50">
                 <button 
                   type="button"
@@ -787,7 +780,6 @@ export default function Enfants() {
         )}
       </AnimatePresence>
 
-      {/* Modal Détails */}
       {selectedEnfant && (
         <EnfantDetails
           enfant={selectedEnfant}
