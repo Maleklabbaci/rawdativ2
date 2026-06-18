@@ -159,7 +159,7 @@ export default function ChatBubble() {
               </div>
 
               <div className="flex justify-center gap-2 mb-6 cursor-pointer">
-                {.map(star => (
+                {[1, 2, 3, 4, 5].map(star => (
                   <Star 
                     key={star} 
                     onClick={() => setRating(star)} 
