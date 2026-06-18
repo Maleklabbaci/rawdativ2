@@ -250,8 +250,8 @@ if (isSubscriptionExpired) {
         </header>
 
         {/* Page Content */}
-        <main className="p-3 sm:p-6 lg:p-10 max-w-[1600px] mx-auto animate-fade-in">
-          {renderPage()}
+<main className="p-3 sm:p-6 lg:p-10 max-w-[1600px] mx-auto">
+  {renderPage()}
         </main>
       </div>
 
