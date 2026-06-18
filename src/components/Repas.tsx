@@ -4,16 +4,14 @@ import {
   Trash2, 
   X, 
   Utensils, 
-  Calendar, 
+  CalendarDays, 
   ShieldAlert, 
   Leaf, 
   ChefHat, 
   Flame, 
   Droplet, 
-  Coffee, 
-  HelpCircle,
-  Clock,
-  Apple
+  Apple,
+  HelpCircle
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
@@ -22,6 +20,7 @@ import { Repas } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface RichRepas extends Repas {
+  jour?: string;
   allergenes?: string;
   apportCalorique?: string;
   chefCuisine?: string;
@@ -33,19 +32,26 @@ export default function RepasPage() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
 
-  const { repas: allDbRepas, addRepas, deleteRepas } = useDb();
+  const { repas: allDbRepas, personnel: allPersonnelData, addRepas, deleteRepas } = useDb();
   const { user } = useAuth();
   const isDirecteur = user?.role === 'directeur';
+  
   const dbRepas = isDirecteur ? allDbRepas.filter((r: any) => r.crecheId === user!.id) : allDbRepas;
+  const personnelData = isDirecteur ? allPersonnelData.filter((p: any) => p.crecheId === user!.id) : allPersonnelData;
+
+  // Récupérer le personnel de cuisine
+  const cuisiniers = personnelData.filter((p: any) => p.poste.toLowerCase().includes('cuisini'));
+  const defaultChef = cuisiniers.length > 0 ? `${cuisiniers[0].prenom} ${cuisiniers[0].nom}` : 'Traiteur Externe';
 
   const repas: RichRepas[] = dbRepas.map((r: any, idx: number) => {
     return {
       ...r,
-      allergenes: r.allergenes || (idx % 2 === 0 ? 'Lactose, Gluten' : 'Aucun allergène majeur'),
-      apportCalorique: r.apportCalorique || (idx % 2 === 0 ? '380 kcal' : '150 kcal'),
-      chefCuisine: r.chefCuisine || 'Mme. Yamina (Tata Yamina)',
-      bioIngrediens: r.bioIngrediens !== undefined ? r.bioIngrediens : idx % 2 === 0,
-      hydratationRappel: r.hydratationRappel || (idx % 2 === 0 ? 'Eau minérale pure' : 'Infusion de verveine tiède'),
+      jour: r.jour || r.date || 'Dimanche', // Rétrocompatibilité si d'anciens repas ont une "date"
+      allergenes: r.allergenes || 'Aucun allergène majeur',
+      apportCalorique: r.apportCalorique || '350 kcal',
+      chefCuisine: r.chefCuisine || defaultChef,
+      bioIngrediens: r.bioIngrediens !== undefined ? r.bioIngrediens : false,
+      hydratationRappel: r.hydratationRappel || 'Eau minérale',
     };
   });
 
@@ -55,27 +61,26 @@ export default function RepasPage() {
 
   const [formData, setFormData] = useState({
     type: 'Déjeuner' as 'Déjeuner' | 'Goûter',
-    date: new Date().toISOString().split('T')[0],
+    jour: 'Dimanche',
     menu: '',
     allergenes: 'Aucun allergène',
     apportCalorique: '350 kcal',
-    chefCuisine: 'Mme. Yamina (Tata Yamina)',
+    chefCuisine: defaultChef,
     bioIngrediens: true,
     hydratationRappel: 'Eau filtrée'
   });
 
   const handleAjouter = () => {
-    if (!formData.menu || !formData.date) return;
+    if (!formData.menu || !formData.jour) return;
     addRepas({ ...formData, crecheId: isDirecteur ? user!.id : undefined } as any);
     setShowModal(false);
-    // Reset form
     setFormData({
       type: 'Déjeuner',
-      date: new Date().toISOString().split('T')[0],
+      jour: 'Dimanche',
       menu: '',
       allergenes: 'Aucun allergène',
       apportCalorique: '350 kcal',
-      chefCuisine: 'Mme. Yamina (Tata Yamina)',
+      chefCuisine: defaultChef,
       bioIngrediens: true,
       hydratationRappel: 'Eau filtrée'
     });
@@ -95,9 +100,9 @@ export default function RepasPage() {
           </div>
           <div>
             <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest">
-              {isArabic ? 'الوجبات المقررة' : 'Planification Traiteur'}
+              {isArabic ? 'الوجبات المبرمجة' : 'Menu de la semaine'}
             </p>
-            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{repas.length} {isArabic ? 'قوائم طعام' : 'menus programmés'}</p>
+            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{repas.length} {isArabic ? 'قوائم طعام' : 'repas configurés'}</p>
           </div>
         </div>
 
@@ -123,8 +128,8 @@ export default function RepasPage() {
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5 leading-tight">
             {isArabic 
-              ? 'متابعة جدول الوجبات اليومية للأطفال، وجبة الأكل الخفيف والتحذير من الحساسية والمكونات العضوية' 
-              : 'Assurez la traçabilité nutritionnelle, planifiez les goûters vitaminés et prévenez les intolérances lactées.'}
+              ? 'برمجة الوجبات الأسبوعية الدورية، متابعة الحساسية والمكونات العضوية لكل يوم' 
+              : 'Configurez le programme hebdomadaire récurrent des repas et goûters pour chaque jour de la semaine.'}
           </p>
         </div>
         <button 
@@ -150,7 +155,7 @@ export default function RepasPage() {
                   : 'bg-slate-50 text-slate-500 hover:text-slate-800'
               }`}
             >
-              {tType === 'Tous' ? (isArabic ? 'الكل' : 'Tous') : tType}
+              {tType === 'Tous' ? (isArabic ? 'الكل' : 'Tous') : tType === 'Déjeuner' ? (isArabic ? 'الغداء' : 'Déjeuner') : (isArabic ? 'اللمجة' : 'Goûter')}
             </button>
           ))}
         </div>
@@ -176,9 +181,14 @@ export default function RepasPage() {
                     }`}>
                       {r.type === 'Déjeuner' ? (isArabic ? 'وجبة الغداء' : 'Déjeuner') : (isArabic ? 'لمجة / فطور العصر' : 'Goûter')}
                     </span>
-                    <span className="text-[11px] text-slate-400 font-bold flex items-center gap-1">
-                      <Calendar className="w-3.5 h-3.5 text-indigo-400" />
-                      {r.date}
+                    <span className="text-[11px] text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100 font-black uppercase tracking-wider flex items-center gap-1.5">
+                      <CalendarDays className="w-3.5 h-3.5" />
+                      {r.jour === 'Dimanche' && (isArabic ? 'كل أحد' : 'Chaque Dimanche')}
+                      {r.jour === 'Lundi' && (isArabic ? 'كل إثنين' : 'Chaque Lundi')}
+                      {r.jour === 'Mardi' && (isArabic ? 'كل ثلاثاء' : 'Chaque Mardi')}
+                      {r.jour === 'Mercredi' && (isArabic ? 'كل أربعاء' : 'Chaque Mercredi')}
+                      {r.jour === 'Jeudi' && (isArabic ? 'كل خميس' : 'Chaque Jeudi')}
+                      {!['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi'].includes(r.jour || '') && r.jour}
                     </span>
                   </div>
 
@@ -215,7 +225,7 @@ export default function RepasPage() {
                 <div className="mt-5 pt-4 border-t border-slate-50 flex items-center justify-between text-[11px] font-bold text-slate-400">
                   <div className="flex items-center gap-1.5">
                     <ChefHat className="w-4 h-4 text-indigo-500" />
-                    <span>Cuisine par: <strong className="text-slate-700">{r.chefCuisine}</strong></span>
+                    <span>Cuisine par: <strong className="text-slate-700 truncate max-w-[120px] inline-block">{r.chefCuisine}</strong></span>
                   </div>
                   <div className="flex items-center gap-2">
                     {r.bioIngrediens && (
@@ -248,12 +258,12 @@ export default function RepasPage() {
           <div className="col-span-full p-12 bg-white rounded-2xl border border-slate-100 text-center text-slate-400">
             <HelpCircle className="w-10 h-10 mx-auto text-slate-300 stroke-[1.5] mb-2" />
             <p className="font-extrabold">{isArabic ? 'لا توجد وجبات مسجلة' : 'Aucun menu édité'}</p>
-            <p className="text-xs text-slate-400 mt-0.5">{isArabic ? 'أضف وجبة طعام صحية جديدة للبدء.' : 'Écrivez votre premier menu équilibré quotidien.'}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{isArabic ? 'أضف وجبة طعام صحية جديدة للبدء.' : 'Écrivez votre premier menu hebdomadaire équilibré.'}</p>
           </div>
         )}
       </div>
 
-      {/* Nutritive Food Choice Modal ("PLEINE DE FORMATION") */}
+      {/* Modal Ajout */}
       <AnimatePresence>
         {showModal && (
           <div 
@@ -269,8 +279,8 @@ export default function RepasPage() {
             >
               <div className="p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
                 <div>
-                  <h3 className="text-xl font-black">{isArabic ? 'تخطيط وجبة غذائية متكاملة' : 'Plannificateur de Nutrition'}</h3>
-                  <p className="text-xs text-indigo-100 mt-0.5">{isArabic ? 'تحديد قائمة الوجبات، السعرات الحرارية، طهاة المطبخ وحساسية الحليب' : 'Fiche traiteur, déclaration allergènes, calorie & labels bio'}</p>
+                  <h3 className="text-xl font-black">{isArabic ? 'تخطيط وجبة غذائية أسبوعية' : 'Plannificateur Hebdomadaire'}</h3>
+                  <p className="text-xs text-indigo-100 mt-0.5">{isArabic ? 'تحديد اليوم، الوجبة، ومسؤول التحضير' : 'Attribuez ce menu à un jour spécifique de la semaine'}</p>
                 </div>
                 <button 
                   onClick={() => setShowModal(false)}
@@ -287,7 +297,7 @@ export default function RepasPage() {
                     {isArabic ? 'صنف الوجبة *' : 'Type de Repas / Service *'}
                   </label>
                   <select 
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800" 
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 transition text-sm font-semibold text-slate-800" 
                     value={formData.type} 
                     onChange={e => setFormData({...formData, type: e.target.value as any})}
                   >
@@ -296,37 +306,56 @@ export default function RepasPage() {
                   </select>
                 </div>
 
-                {/* Core Menu Dish Description */}
+                {/* Jour de la semaine au lieu de date */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <CalendarDays className="w-4 h-4 text-indigo-500" />
+                    {isArabic ? 'اليوم المخصص (أسبوعياً) *' : 'Jour de la semaine de distribution *'}
+                  </label>
+                  <select 
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800"
+                    value={formData.jour}
+                    onChange={e => setFormData({...formData, jour: e.target.value})}
+                  >
+                    <option value="Dimanche">Tous les Dimanches (كل أحد)</option>
+                    <option value="Lundi">Tous les Lundis (كل إثنين)</option>
+                    <option value="Mardi">Tous les Mardis (كل ثلاثاء)</option>
+                    <option value="Mercredi">Tous les Mercredis (كل أربعاء)</option>
+                    <option value="Jeudi">Tous les Jeudis (كل خميس)</option>
+                  </select>
+                </div>
+
+                {/* Menu Description */}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    {isArabic ? 'قائمة الطعام بالتفاصيل *' : 'Détail de l\'Assiette / Menu de l\'enfance *'}
+                    {isArabic ? 'قائمة الطعام بالتفاصيل *' : 'Détail de l\'Assiette / Menu *'}
                   </label>
                   <textarea 
                     rows={3}
-                    placeholder="Ex: Purée veloutée de potiron bio aux pépites de jambon, petit suisse aux fruits..."
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800 resize-none" 
+                    placeholder="Ex: Purée veloutée de potiron bio aux pépites de poulet, petit suisse..."
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 transition text-sm font-semibold text-slate-800 resize-none" 
                     value={formData.menu} 
                     onChange={e => setFormData({...formData, menu: e.target.value})} 
                   />
                 </div>
 
-                {/* Calendar Date & Calories */}
+                {/* Allergen Warning & Calories */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {isArabic ? 'التاريخ الفعلي للمنيو *' : 'Date de Distribution *'}
+                      {isArabic ? 'التحذير من الحساسية' : 'Allergènes (Gluten, Arachides)'}
                     </label>
                     <input 
-                      type="date"
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800"
-                      value={formData.date}
-                      onChange={e => setFormData({...formData, date: e.target.value})}
+                      type="text" 
+                      placeholder="Ex: Traces de lactose"
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800" 
+                      value={formData.allergenes} 
+                      onChange={e => setFormData({...formData, allergenes: e.target.value})} 
                     />
                   </div>
-
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {isArabic ? 'القيمة الطاقوية التقريبية' : 'Apport Énergétique (kcal)'}
+                      {isArabic ? 'القيمة الطاقوية (سعرات)' : 'Apport Énergétique (kcal)'}
                     </label>
                     <input 
                       type="text" 
@@ -338,29 +367,15 @@ export default function RepasPage() {
                   </div>
                 </div>
 
-                {/* Allergen Warning Warning block */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    {isArabic ? 'التحذير من الحساسية / المواد المسببة (إن وجدت)' : 'Déclaration préventive allergène (Gluten, Arachides, Beurre)'}
-                  </label>
-                  <input 
-                    type="text" 
-                    placeholder="Ex: Traces de noisettes, lactose"
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800" 
-                    value={formData.allergenes} 
-                    onChange={e => setFormData({...formData, allergenes: e.target.value})} 
-                  />
-                </div>
-
-                {/* Hydratation info and Cook Chef (Row 4) */}
+                {/* Hydratation info and Cook Chef */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {isArabic ? 'المشروبات المرفقة المصاحبة' : 'Rappel hydrique (Boisson)'}
+                      {isArabic ? 'المشروبات المرفقة' : 'Rappel hydrique (Boisson)'}
                     </label>
                     <input 
                       type="text" 
-                      placeholder="Ex: Jus de poire frais / Eau filtrée"
+                      placeholder="Ex: Eau filtrée"
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800" 
                       value={formData.hydratationRappel} 
                       onChange={e => setFormData({...formData, hydratationRappel: e.target.value})} 
@@ -368,17 +383,22 @@ export default function RepasPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {isArabic ? 'الشيف المسؤول عن التحضير *' : 'Chef de Cuisine Référent *'}
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                      <ChefHat className="w-3.5 h-3.5" />
+                      {isArabic ? 'الشيف / المسؤول *' : 'Chef de Cuisine *'}
                     </label>
                     <select
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
                       value={formData.chefCuisine}
                       onChange={e => setFormData({...formData, chefCuisine: e.target.value})}
                     >
-                      <option value="Mme. Yamina (Tata Yamina)">Mme. Yamina (Tata Yamina)</option>
-                      <option value="Catering Service Rawdati">Catering Service Rawdati</option>
-                      <option value="Cuisine centrale Al-giers">Cuisine centrale Al-giers</option>
+                      {cuisiniers.length > 0 ? (
+                        cuisiniers.map((c: any) => (
+                          <option key={c.id} value={`${c.prenom} ${c.nom}`}>{c.prenom} {c.nom}</option>
+                        ))
+                      ) : null}
+                      <option value="Traiteur Externe">Traiteur Externe / Catering</option>
+                      <option value="Autre">Autre</option>
                     </select>
                   </div>
                 </div>
@@ -392,8 +412,9 @@ export default function RepasPage() {
                     checked={formData.bioIngrediens} 
                     onChange={e => setFormData({...formData, bioIngrediens: e.target.checked})} 
                   />
-                  <label htmlFor="bioIngrediens" className="text-xs font-black text-emerald-800 cursor-pointer select-none">
-                    {isArabic ? 'يحتوي على مواد ومكونات عضوية 100% طبيعية' : 'Garantir que ce repas contient des ingrédients d\'agriculture biologique'}
+                  <label htmlFor="bioIngrediens" className="text-xs font-black text-emerald-800 cursor-pointer select-none flex items-center gap-1">
+                    <Leaf className="w-3.5 h-3.5" />
+                    {isArabic ? 'يحتوي على مواد ومكونات عضوية 100% طبيعية' : 'Repas composé d\'ingrédients d\'agriculture biologique'}
                   </label>
                 </div>
 
@@ -454,7 +475,14 @@ export default function RepasPage() {
                 <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
                   <div className="flex justify-between items-center text-[10px] font-black uppercase text-slate-400 tracking-wider mb-2">
                     <span>{isArabic ? 'الطبق الرئيسي المجدول' : 'Menu Principal du Jour'}</span>
-                    <span>{selectedRepas.date}</span>
+                    <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                      {selectedRepas.jour === 'Dimanche' && (isArabic ? 'كل أحد' : 'Chaque Dimanche')}
+                      {selectedRepas.jour === 'Lundi' && (isArabic ? 'كل إثنين' : 'Chaque Lundi')}
+                      {selectedRepas.jour === 'Mardi' && (isArabic ? 'كل ثلاثاء' : 'Chaque Mardi')}
+                      {selectedRepas.jour === 'Mercredi' && (isArabic ? 'كل أربعاء' : 'Chaque Mercredi')}
+                      {selectedRepas.jour === 'Jeudi' && (isArabic ? 'كل خميس' : 'Chaque Jeudi')}
+                      {!['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi'].includes(selectedRepas.jour || '') && selectedRepas.jour}
+                    </span>
                   </div>
                   <div className="flex items-start gap-2.5 text-sm font-black text-slate-800 leading-relaxed">
                     <Apple className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
