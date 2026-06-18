@@ -28,10 +28,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       try {
         return JSON.parse(saved);
       } catch (e) {
-        return defaultAdmin;
+        return null;
       }
     }
-    return defaultAdmin; // Default to admin for seamless first load
+    return null; // Require login on first load
   });
 
   const isAuthenticated = !!user;
