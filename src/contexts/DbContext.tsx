@@ -3,19 +3,10 @@ import { Enfant, Presence, Paiement, Personnel, Classe, Activite, Repas, UserAcc
 import { 
   getCollectionData, 
   addCollectionDocument, 
-  setCollectionDocument,
   updateCollectionDocument, 
-  deleteCollectionDocument 
+  deleteCollectionDocument,
+  setCollectionDocument
 } from '../supabase';
-import { 
-  enfantsData as initialEnfants,
-  presencesData as initialPresences,
-  paiementsData as initialPaiements,
-  personnelData as initialPersonnel,
-  classesData as initialClasses,
-  activitesData as initialActivites,
-  repasData as initialRepas
-} from '../data/mockData';
 
 interface DbContextType {
   enfants: Enfant[];
@@ -30,47 +21,38 @@ interface DbContextType {
   loading: boolean;
   refreshAll: () => Promise<void>;
   
-  // Messages Actions
   addMessage: (message: Omit<DiscussionMessage, 'id'>) => Promise<string>;
   updateMessage: (id: string, message: Partial<DiscussionMessage>) => Promise<void>;
   deleteMessage: (id: string) => Promise<void>;
 
-  // Comptes Actions
   addCompte: (compte: Omit<UserAccount, 'id'>) => Promise<string>;
   updateCompte: (id: string, compte: Partial<UserAccount>) => Promise<void>;
   deleteCompte: (id: string) => Promise<void>;
 
-  // Enfants Actions
   addEnfant: (enfant: Omit<Enfant, 'id'>) => Promise<string>;
   updateEnfant: (id: string, enfant: Partial<Enfant>) => Promise<void>;
   deleteEnfant: (id: string) => Promise<void>;
 
-  // Classes Actions
   addClasse: (classe: Omit<Classe, 'id'>) => Promise<string>;
   updateClasse: (id: string, classe: Partial<Classe>) => Promise<void>;
   deleteClasse: (id: string) => Promise<void>;
 
-  // Presences Actions
   addPresence: (presence: Omit<Presence, 'id'>) => Promise<string>;
   updatePresence: (id: string, presence: Partial<Presence>) => Promise<void>;
   deletePresence: (id: string) => Promise<void>;
 
-  // Paiements Actions
   addPaiement: (paiement: Omit<Paiement, 'id'>) => Promise<string>;
   updatePaiement: (id: string, paiement: Partial<Paiement>) => Promise<void>;
   deletePaiement: (id: string) => Promise<void>;
 
-  // Personnel Actions
   addPersonnel: (staff: Omit<Personnel, 'id'>) => Promise<string>;
   updatePersonnel: (id: string, staff: Partial<Personnel>) => Promise<void>;
   deletePersonnel: (id: string) => Promise<void>;
 
-  // Activites Actions
   addActivite: (activite: Omit<Activite, 'id'>) => Promise<string>;
   updateActivite: (id: string, activite: Partial<Activite>) => Promise<void>;
   deleteActivite: (id: string) => Promise<void>;
 
-  // Repas Actions
   addRepas: (meal: Omit<Repas, 'id'>) => Promise<string>;
   updateRepas: (id: string, meal: Partial<Repas>) => Promise<void>;
   deleteRepas: (id: string) => Promise<void>;
@@ -79,145 +61,49 @@ interface DbContextType {
 const DbContext = createContext<DbContextType | null>(null);
 
 export const DbProvider = ({ children }: { children: React.ReactNode }) => {
-  const [enfants, setEnfants] = useState<Enfant[]>(initialEnfants);
-  const [classes, setClasses] = useState<Classe[]>(initialClasses);
-  const [presences, setPresences] = useState<Presence[]>(initialPresences);
-  const [paiements, setPaiements] = useState<Paiement[]>(initialPaiements);
-  const [personnel, setPersonnel] = useState<Personnel[]>(initialPersonnel);
-  const [activites, setActivites] = useState<Activite[]>(initialActivites);
-  const [repas, setRepas] = useState<Repas[]>(initialRepas);
+  const [enfants, setEnfants] = useState<Enfant[]>([]);
+  const [classes, setClasses] = useState<Classe[]>([]);
+  const [presences, setPresences] = useState<Presence[]>([]);
+  const [paiements, setPaiements] = useState<Paiement[]>([]);
+  const [personnel, setPersonnel] = useState<Personnel[]>([]);
+  const [activites, setActivites] = useState<Activite[]>([]);
+  const [repas, setRepas] = useState<Repas[]>([]);
   const [comptes, setComptes] = useState<UserAccount[]>([]);
   const [messages, setMessages] = useState<DiscussionMessage[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const refreshAll = async () => {
     try {
-      // Load data from Firestore in the background silenty without changing loading = true
-      let dbEnfants = await getCollectionData<Enfant>('enfants');
-      let dbClasses = await getCollectionData<Classe>('classes');
-      let dbPresences = await getCollectionData<Presence>('presences');
-      let dbPaiements = await getCollectionData<Paiement>('paiements');
-      let dbPersonnel = await getCollectionData<Personnel>('personnel');
-      let dbActivites = await getCollectionData<Activite>('activites');
-      let dbRepas = await getCollectionData<Repas>('repas');
+      const dbEnfants = await getCollectionData<Enfant>('enfants');
+      const dbClasses = await getCollectionData<Classe>('classes');
+      const dbPresences = await getCollectionData<Presence>('presences');
+      const dbPaiements = await getCollectionData<Paiement>('paiements');
+      const dbPersonnel = await getCollectionData<Personnel>('personnel');
+      const dbActivites = await getCollectionData<Activite>('activites');
+      const dbRepas = await getCollectionData<Repas>('repas');
       let dbComptes = await getCollectionData<UserAccount>('comptes');
-      let dbMessages = await getCollectionData<DiscussionMessage>('discussion_messages');
+      const dbMessages = await getCollectionData<DiscussionMessage>('discussion_messages');
 
-      // Auto-Seed Firestore if empty to keep demo beautifully alive
-      if (dbEnfants.length === 0) {
-        console.log('Seeding enfants to Firestore...');
-        for (const item of initialEnfants) {
-          await setCollectionDocument('enfants', item.id, item);
-        }
-        dbEnfants = await getCollectionData<Enfant>('enfants');
-      }
-
-      if (dbClasses.length === 0) {
-        console.log('Seeding classes to Firestore...');
-        for (const item of initialClasses) {
-          await setCollectionDocument('classes', item.id, item);
-        }
-        dbClasses = await getCollectionData<Classe>('classes');
-      }
-
-      if (dbPresences.length === 0) {
-        console.log('Seeding presences to Firestore...');
-        for (const item of initialPresences) {
-          await setCollectionDocument('presences', item.id, item);
-        }
-        dbPresences = await getCollectionData<Presence>('presences');
-      }
-
-      if (dbPaiements.length === 0) {
-        console.log('Seeding paiements to Firestore...');
-        for (const item of initialPaiements) {
-          await setCollectionDocument('paiements', item.id, item);
-        }
-        dbPaiements = await getCollectionData<Paiement>('paiements');
-      }
-
-      if (dbPersonnel.length === 0) {
-        console.log('Seeding personnel to Firestore...');
-        for (const item of initialPersonnel) {
-          await setCollectionDocument('personnel', item.id, item);
-        }
-        dbPersonnel = await getCollectionData<Personnel>('personnel');
-      }
-
-      if (dbActivites.length === 0) {
-        console.log('Seeding activites to Firestore...');
-        for (const item of initialActivites) {
-          await setCollectionDocument('activites', item.id, item);
-        }
-        dbActivites = await getCollectionData<Activite>('activites');
-      }
-
-      if (dbRepas.length === 0) {
-        console.log('Seeding repas to Firestore...');
-        for (const item of initialRepas) {
-          await setCollectionDocument('repas', item.id, item);
-        }
-        dbRepas = await getCollectionData<Repas>('repas');
-      }
-
-      // Seeding initial admin, director, and parent accounts
       if (dbComptes.length === 0) {
-        console.log('Seeding default accounts to Firestore...');
-        const initialAccounts: UserAccount[] = [
-          {
-            id: 'adm1',
-            nom: 'Labbaci',
-            prenom: 'Abdelmalek',
-            email: 'admin@rawdati.com',
-            motDePasse: 'rawdati2001',
-            role: 'admin',
-            abonnementActif: true
-          },
-          {
-            id: 'dir_seed_1',
-            nom: 'Benali',
-            prenom: 'Amira',
-            email: 'directeur@rawdati.com',
-            motDePasse: 'demo123',
-            role: 'directeur',
-            nomCreche: 'Crèche les Marguerites',
-            abonnementActif: true,
-            dateFinAbonnement: '2026-08-30'
-          },
-          {
-            id: 'dir_seed_2',
-            nom: 'Meziane',
-            prenom: 'Farid',
-            email: 'expired@rawdati.com',
-            motDePasse: 'demo123',
-            role: 'directeur',
-            nomCreche: 'Crèche El Yasmin',
-            abonnementActif: true,
-            dateFinAbonnement: '2026-06-10' // expired relative to 2026-06-18
-          },
-          {
-            id: 'demo-parent',
-            nom: 'Khellaf',
-            prenom: 'Amira',
-            email: 'parent@rawdati.com',
-            motDePasse: 'parent123',
-            role: 'parent',
-            abonnementActif: true,
-            enfantId: '1' // linked to Yanis
-          }
-        ];
-        for (const acc of initialAccounts) {
-          await setCollectionDocument('comptes', acc.id, acc);
-        }
+        console.log('Création du compte administrateur par défaut...');
+        const adminAccount: UserAccount = {
+          id: 'adm1',
+          nom: 'Admin',
+          prenom: 'Rawdati',
+          email: 'admin@rawdati.com',
+          motDePasse: 'rawdati2001',
+          role: 'admin',
+          abonnementActif: true
+        };
+        await setCollectionDocument('comptes', adminAccount.id, adminAccount);
         dbComptes = await getCollectionData<UserAccount>('comptes');
       } else {
-        // Enforce presence of current requested admin credentials in existing collection
         const hasRequestedAdmin = dbComptes.some(c => c.email.toLowerCase() === 'admin@rawdati.com');
         if (!hasRequestedAdmin) {
           const freshAdmin: UserAccount = {
             id: 'adm1',
-            nom: 'Labbaci',
-            prenom: 'Abdelmalek',
+            nom: 'Admin',
+            prenom: 'Rawdati',
             email: 'admin@rawdati.com',
             motDePasse: 'rawdati2001',
             role: 'admin',
@@ -225,63 +111,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
           };
           await setCollectionDocument('comptes', freshAdmin.id, freshAdmin);
           dbComptes = await getCollectionData<UserAccount>('comptes');
-        } else {
-          // Update credentials for existing admin with that email to be absolutely sure password matches
-          const existingAdmin = dbComptes.find(c => c.email.toLowerCase() === 'admin@rawdati.com');
-          if (existingAdmin && existingAdmin.motDePasse !== 'rawdati2001') {
-            await updateCollectionDocument<UserAccount>('comptes', existingAdmin.id, { motDePasse: 'rawdati2001' });
-            dbComptes = await getCollectionData<UserAccount>('comptes');
-          }
         }
-
-        // Also ensure directors exist for premium demo flows if they got deleted somehow
-        const hasActiveDirector = dbComptes.some(c => c.email.toLowerCase() === 'directeur@rawdati.com');
-        if (!hasActiveDirector) {
-          const freshDir: UserAccount = {
-            id: 'dir_seed_1',
-            nom: 'Benali',
-            prenom: 'Amira',
-            email: 'directeur@rawdati.com',
-            motDePasse: 'demo123',
-            role: 'directeur',
-            nomCreche: 'Crèche les Marguerites',
-            abonnementActif: true,
-            dateFinAbonnement: '2026-08-30'
-          };
-          await setCollectionDocument('comptes', freshDir.id, freshDir);
-          dbComptes = await getCollectionData<UserAccount>('comptes');
-        }
-      }
-
-      // Seeding initial discussion messages if empty
-      if (dbMessages.length === 0) {
-        console.log('Seeding initial discussion messages...');
-        const initialMessages: DiscussionMessage[] = [
-          {
-            id: 'msg_seed_1',
-            senderId: 'demo-parent',
-            senderName: 'Amira Khellaf',
-            recipientId: 'admin',
-            parentId: 'demo-parent',
-            text: "Bonjour ! Comment fonctionne le renouvellement de l'abonnement mensuel ?",
-            timestamp: new Date(Date.now() - 3600000 * 2).toISOString(), // 2 hours ago
-            isRead: true
-          },
-          {
-            id: 'msg_seed_2',
-            senderId: 'adm1',
-            senderName: 'Abdelmalek Labbaci',
-            recipientId: 'demo-parent',
-            parentId: 'demo-parent',
-            text: "Bonjour Amira ! Le renouvellement s'effectue au bureau de la crèche au début de chaque mois. Vous pouvez également nous poser des questions ici.",
-            timestamp: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
-            isRead: true
-          }
-        ];
-        for (const msg of initialMessages) {
-          await setCollectionDocument('discussion_messages', msg.id, msg);
-        }
-        dbMessages = await getCollectionData<DiscussionMessage>('discussion_messages');
       }
 
       setEnfants(dbEnfants);
@@ -294,7 +124,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setComptes(dbComptes);
       setMessages(dbMessages);
     } catch (err) {
-      console.error('Error fetching/seeding data with Firestore:', err);
+      console.error('Erreur de connexion à Supabase:', err);
     } finally {
       setLoading(false);
     }
@@ -314,7 +144,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setEnfants(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
     } catch (err) {
-      console.error('Firestore addEnfant failed, kept local tempId:', err);
+      console.error('Supabase addEnfant failed, kept local tempId:', err);
       return tempId;
     }
   };
@@ -324,7 +154,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await updateCollectionDocument<Enfant>('enfants', id, data);
     } catch (err) {
-      console.error('Firestore updateEnfant failed in background:', err);
+      console.error('Supabase updateEnfant failed in background:', err);
     }
   };
 
@@ -343,7 +173,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         await deleteCollectionDocument('paiements', p.id);
       }
     } catch (err) {
-      console.error('Firestore deleteEnfant failed in background:', err);
+      console.error('Supabase deleteEnfant failed in background:', err);
     }
   };
 
@@ -357,7 +187,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setClasses(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
     } catch (err) {
-      console.error('Firestore addClasse failed, kept local tempId:', err);
+      console.error('Supabase addClasse failed, kept local tempId:', err);
       return tempId;
     }
   };
@@ -367,7 +197,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await updateCollectionDocument<Classe>('classes', id, data);
     } catch (err) {
-      console.error('Firestore updateClasse failed in background:', err);
+      console.error('Supabase updateClasse failed in background:', err);
     }
   };
 
@@ -376,7 +206,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await deleteCollectionDocument('classes', id);
     } catch (err) {
-      console.error('Firestore deleteClasse failed in background:', err);
+      console.error('Supabase deleteClasse failed in background:', err);
     }
   };
 
@@ -390,7 +220,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setPresences(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
     } catch (err) {
-      console.error('Firestore addPresence failed, kept local tempId:', err);
+      console.error('Supabase addPresence failed, kept local tempId:', err);
       return tempId;
     }
   };
@@ -400,7 +230,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await updateCollectionDocument<Presence>('presences', id, data);
     } catch (err) {
-      console.error('Firestore updatePresence failed in background:', err);
+      console.error('Supabase updatePresence failed in background:', err);
     }
   };
 
@@ -409,7 +239,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await deleteCollectionDocument('presences', id);
     } catch (err) {
-      console.error('Firestore deletePresence failed in background:', err);
+      console.error('Supabase deletePresence failed in background:', err);
     }
   };
 
@@ -423,7 +253,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setPaiements(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
     } catch (err) {
-      console.error('Firestore addPaiement failed, kept local tempId:', err);
+      console.error('Supabase addPaiement failed, kept local tempId:', err);
       return tempId;
     }
   };
@@ -433,7 +263,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await updateCollectionDocument<Paiement>('paiements', id, data);
     } catch (err) {
-      console.error('Firestore updatePaiement failed in background:', err);
+      console.error('Supabase updatePaiement failed in background:', err);
     }
   };
 
@@ -442,7 +272,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await deleteCollectionDocument('paiements', id);
     } catch (err) {
-      console.error('Firestore deletePaiement failed in background:', err);
+      console.error('Supabase deletePaiement failed in background:', err);
     }
   };
 
@@ -456,7 +286,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setPersonnel(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
     } catch (err) {
-      console.error('Firestore addPersonnel failed, kept local tempId:', err);
+      console.error('Supabase addPersonnel failed, kept local tempId:', err);
       return tempId;
     }
   };
@@ -466,7 +296,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await updateCollectionDocument<Personnel>('personnel', id, data);
     } catch (err) {
-      console.error('Firestore updatePersonnel failed in background:', err);
+      console.error('Supabase updatePersonnel failed in background:', err);
     }
   };
 
@@ -475,7 +305,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await deleteCollectionDocument('personnel', id);
     } catch (err) {
-      console.error('Firestore deletePersonnel failed in background:', err);
+      console.error('Supabase deletePersonnel failed in background:', err);
     }
   };
 
@@ -489,7 +319,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setActivites(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
     } catch (err) {
-      console.error('Firestore addActivite failed, kept local tempId:', err);
+      console.error('Supabase addActivite failed, kept local tempId:', err);
       return tempId;
     }
   };
@@ -499,7 +329,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await updateCollectionDocument<Activite>('activites', id, data);
     } catch (err) {
-      console.error('Firestore updateActivite failed in background:', err);
+      console.error('Supabase updateActivite failed in background:', err);
     }
   };
 
@@ -508,7 +338,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await deleteCollectionDocument('activites', id);
     } catch (err) {
-      console.error('Firestore deleteActivite failed in background:', err);
+      console.error('Supabase deleteActivite failed in background:', err);
     }
   };
 
@@ -522,7 +352,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setRepas(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
     } catch (err) {
-      console.error('Firestore addRepas failed, kept local tempId:', err);
+      console.error('Supabase addRepas failed, kept local tempId:', err);
       return tempId;
     }
   };
@@ -532,7 +362,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await updateCollectionDocument<Repas>('repas', id, data);
     } catch (err) {
-      console.error('Firestore updateRepas failed in background:', err);
+      console.error('Supabase updateRepas failed in background:', err);
     }
   };
 
@@ -541,7 +371,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await deleteCollectionDocument('repas', id);
     } catch (err) {
-      console.error('Firestore deleteRepas failed in background:', err);
+      console.error('Supabase deleteRepas failed in background:', err);
     }
   };
 
@@ -555,7 +385,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setComptes(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
     } catch (err) {
-      console.error('Firestore addCompte failed, kept local tempId:', err);
+      console.error('Supabase addCompte failed, kept local tempId:', err);
       return tempId;
     }
   };
@@ -565,7 +395,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await updateCollectionDocument<UserAccount>('comptes', id, data);
     } catch (err) {
-      console.error('Firestore updateCompte failed in background:', err);
+      console.error('Supabase updateCompte failed in background:', err);
     }
   };
 
@@ -574,7 +404,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await deleteCollectionDocument('comptes', id);
     } catch (err) {
-      console.error('Firestore deleteCompte failed in background:', err);
+      console.error('Supabase deleteCompte failed in background:', err);
     }
   };
 
@@ -588,7 +418,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setMessages(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
     } catch (err) {
-      console.error('Firestore addMessage failed, kept local tempId:', err);
+      console.error('Supabase addMessage failed, kept local tempId:', err);
       return tempId;
     }
   };
@@ -598,7 +428,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await updateCollectionDocument<DiscussionMessage>('discussion_messages', id, data);
     } catch (err) {
-      console.error('Firestore updateMessage failed in background:', err);
+      console.error('Supabase updateMessage failed in background:', err);
     }
   };
 
@@ -607,7 +437,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await deleteCollectionDocument('discussion_messages', id);
     } catch (err) {
-      console.error('Firestore deleteMessage failed in background:', err);
+      console.error('Supabase deleteMessage failed in background:', err);
     }
   };
 
