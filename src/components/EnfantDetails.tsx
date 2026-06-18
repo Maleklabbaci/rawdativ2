@@ -9,12 +9,9 @@ import {
   FileCheck, 
   Activity, 
   ShieldAlert, 
-  Heart,
   School,
   Clock,
   Briefcase,
-  CheckCircle,
-  XCircle,
   CreditCard,
   ClipboardList
 } from 'lucide-react';
@@ -25,18 +22,16 @@ import { motion, AnimatePresence } from 'motion/react';
 import { formatCurrency } from '../utils/format';
 
 export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onClose: () => void }) {
-  const { t, language } = useLanguage();
+  const { language } = useLanguage();
   const isArabic = language === 'ar';
   
   const { presences: dbPresences, paiements: dbPaiements } = useDb();
   
-  // Filter data specifically linked to this child
   const childPresences = dbPresences.filter(p => p.enfantId === enfant.id);
   const childPaiements = dbPaiements.filter(p => p.enfantId === enfant.id);
   
   const [activeTab, setActiveTab] = useState<'info' | 'presences' | 'paiements'>('info');
 
-  // Format date readable
   const birthDate = new Date(enfant.dateNaissance).toLocaleDateString(isArabic ? 'ar' : 'fr-FR', {
     day: 'numeric',
     month: 'long',
@@ -48,6 +43,22 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
     month: 'long',
     year: 'numeric'
   });
+
+  const calculerAge = (dateString: string) => {
+    if (!dateString) return '';
+    const birth = new Date(dateString);
+    const now = new Date();
+    let ans = now.getFullYear() - birth.getFullYear();
+    let mois = now.getMonth() - birth.getMonth();
+    
+    if (mois < 0 || (mois === 0 && now.getDate() < birth.getDate())) {
+      ans--;
+      mois += 12;
+    }
+    
+    if (ans <= 0) return isArabic ? `${mois} شهر` : `${mois} mois`;
+    return isArabic ? `${ans} سنة و ${mois} شهر` : `${ans} an(s) et ${mois} mois`;
+  };
 
   return (
     <div 
@@ -61,7 +72,6 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
         className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-2xl max-h-[85vh] mt-16 flex flex-col overflow-hidden cursor-default"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Colorful header band based on gender with badge */}
         <div className={`p-6 text-white flex justify-between items-center flex-shrink-0 ${
           enfant.genre === 'Fille' 
             ? 'bg-gradient-to-r from-pink-500 via-pink-600 to-rose-600' 
@@ -86,7 +96,6 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
           </button>
         </div>
 
-        {/* Tab Selection Row */}
         <div className="flex border-b border-slate-100 bg-slate-50 flex-shrink-0">
           <button
             onClick={() => setActiveTab('info')}
@@ -135,7 +144,6 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
           </button>
         </div>
 
-        {/* Core content scrollable */}
         <div className="p-6 space-y-6 overflow-y-auto flex-1">
           <AnimatePresence mode="wait">
             {activeTab === 'info' && (
@@ -146,7 +154,6 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                 exit={{ opacity: 0, y: -10 }}
                 className="space-y-6"
               >
-                {/* Quick Vital Tags */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isArabic ? 'الفئة العمرية' : 'Section'}</span>
@@ -173,7 +180,6 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Health & Medical Information Block */}
                   <div className="p-5 bg-rose-50/20 border border-rose-100/50 rounded-2xl space-y-4">
                     <h3 className="text-xs font-black text-rose-700 uppercase tracking-widest flex items-center gap-2">
                       <Activity className="w-4 h-4 text-rose-500" />
@@ -183,7 +189,7 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                     <div className="space-y-3.5 text-xs font-semibold text-slate-600">
                       <div className="flex justify-between items-center py-1 border-b border-rose-100/20">
                         <span>{isArabic ? 'تاريخ الولادة:' : 'Naissance:'}</span>
-                        <span className="text-slate-800 font-bold">{birthDate}</span>
+                        <span className="text-slate-800 font-bold">{birthDate} ({calculerAge(enfant.dateNaissance)})</span>
                       </div>
 
                       <div className="flex justify-between items-center py-1 border-b border-rose-100/20">
@@ -212,7 +218,6 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                     </div>
                   </div>
 
-                  {/* Dossier progress checker */}
                   <div className="p-5 bg-indigo-50/20 border border-indigo-100/50 rounded-2xl space-y-4">
                     <h3 className="text-xs font-black text-indigo-700 uppercase tracking-widest flex items-center gap-2">
                       <FileCheck className="w-4 h-4 text-indigo-500" />
@@ -241,7 +246,6 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                   </div>
                 </div>
 
-                {/* Parents / Emergency contact details */}
                 <div className="border-t border-slate-150 pt-5">
                   <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-1.5">
                     <User className="text-indigo-500 w-4.5 h-4.5" />
@@ -302,7 +306,6 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                 exit={{ opacity: 0, y: -10 }}
                 className="space-y-6"
               >
-                {/* Stats cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="p-4 bg-emerald-50/40 border border-emerald-100 rounded-2xl text-center">
                     <p className="text-[10px] font-black text-emerald-700 uppercase">{isArabic ? 'نسبة الحضور المتراكمة' : 'Taux d’Assiduité'}</p>
@@ -325,7 +328,6 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                   </div>
                 </div>
 
-                {/* Presence timeline */}
                 <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 sm:p-6">
                   <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">
                     {isArabic ? 'سجل الحضور والغياب المفصل' : 'Index Chronologique des Présences'}
@@ -375,7 +377,6 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                 exit={{ opacity: 0, y: -10 }}
                 className="space-y-6"
               >
-                {/* Billing Summary Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="p-5 bg-emerald-50/40 border border-emerald-100 rounded-2xl flex items-center gap-4">
                     <div className="p-3 bg-white shadow-xs rounded-xl text-emerald-600">
@@ -402,7 +403,6 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                   </div>
                 </div>
 
-                {/* Billing log list */}
                 <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 sm:p-6">
                   <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">
                     {isArabic ? 'سجل الفواتير والمدفوعات الشهري' : 'Historique Mensuel des Règlement Scolaires'}
@@ -448,7 +448,6 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
           </AnimatePresence>
         </div>
 
-        {/* Modal close button footer */}
         <div className="p-5 border-t border-slate-100 bg-slate-50 flex justify-end flex-shrink-0">
           <button 
             type="button"
@@ -458,8 +457,6 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
             {isArabic ? 'إغلاق ملف التلميذ' : "Fermer le dossier de l'élève"}
           </button>
         </div>
-
-
       </motion.div>
     </div>
   );
