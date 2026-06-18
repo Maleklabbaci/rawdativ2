@@ -117,7 +117,7 @@ export default function SignIn() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all font-medium text-slate-800"
-                  placeholder="admin@rawdati.com"
+                  placeholder="exemple@rawdati.com"
                   required
                 />
               </div>
