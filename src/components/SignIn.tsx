@@ -79,7 +79,7 @@ export default function SignIn() {
           <p className="text-sm text-white/70">© 2026 RAWDATI. Tous droits réservés.</p>
           <div className="flex gap-4 text-xs font-mono">
             <span>v1.2.0</span>
-            <span>Secure SSL</span>
+            <span>Propulsé par iVISION</span>
           </div>
         </div>
       </div>
