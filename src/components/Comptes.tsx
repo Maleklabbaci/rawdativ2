@@ -51,6 +51,7 @@ export default function Comptes() {
   const [dateFinAbonnement, setDateFinAbonnement] = useState(getDefaultDate());
   const [abonnementActif, setAbonnementActif] = useState(true);
   const [enfantId, setEnfantId] = useState('');
+  const [isTrial, setIsTrial] = useState(false);
   
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
@@ -118,6 +119,13 @@ export default function Comptes() {
       
       const roleToSave = isAdmin ? 'directeur' : 'parent';
 
+      let finalDateFinAbonnement = dateFinAbonnement;
+      if (isAdmin && isTrial) {
+        const trialDate = new Date();
+        trialDate.setDate(trialDate.getDate() + 7);
+        finalDateFinAbonnement = trialDate.toISOString().split('T')[0];
+      }
+
       await addCompte({
         nom,
         prenom,
@@ -125,7 +133,7 @@ export default function Comptes() {
         motDePasse,
         role: roleToSave,
         abonnementActif,
-        ...(roleToSave === 'directeur' ? { nomCreche, dateFinAbonnement } : {}),
+        ...(roleToSave === 'directeur' ? { nomCreche, dateFinAbonnement: finalDateFinAbonnement } : {}),
         ...(roleToSave === 'parent' && enfantId ? { enfantId } : {})
       });
 
@@ -140,6 +148,7 @@ export default function Comptes() {
       setDateFinAbonnement(getDefaultDate());
       setAbonnementActif(true);
       setEnfantId('');
+      setIsTrial(false);
       
       // Close form delay
       setTimeout(() => {
@@ -376,10 +385,31 @@ export default function Comptes() {
                           type="date"
                           value={dateFinAbonnement}
                           onChange={(e) => setDateFinAbonnement(e.target.value)}
-                          className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition font-medium text-slate-800"
-                          required
+                          disabled={isTrial}
+                          className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition font-medium text-slate-800 disabled:opacity-50 disabled:bg-slate-50"
+                          required={!isTrial}
                         />
                       </div>
+                    </div>
+
+                    {/* Trial Checkbox */}
+                    <div className="col-span-1 md:col-span-2 lg:col-span-3 mt-2">
+                      <label className="flex items-center gap-3 cursor-pointer p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl">
+                        <input
+                          type="checkbox"
+                          checked={isTrial}
+                          onChange={(e) => setIsTrial(e.target.checked)}
+                          className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                        />
+                        <div>
+                          <span className="text-sm font-bold text-slate-800 block">
+                            {isFrench ? "Compte d'essai (7 jours)" : "حساب تجريبي (7 أيام)"}
+                          </span>
+                          <span className="text-xs text-slate-500 block mt-0.5">
+                            {isFrench ? "Écrase la date de fin sélectionnée et bloque l'accès après 7 jours exacts." : "يحدد الصلاحية بـ 7 أيام تلقائياً ويتجاوز تاريخ النهاية."}
+                          </span>
+                        </div>
+                      </label>
                     </div>
                   </>
                 )}
