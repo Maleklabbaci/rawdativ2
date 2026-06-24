@@ -18,8 +18,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const saved = localStorage.getItem('rawdati_current_user');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        // ✅ FIX: Remove password from stored user
+        if (parsed.motDePasse) delete parsed.motDePasse;
+        return parsed;
       } catch (e) {
+        console.error('Failed to parse user:', e);
         return null;
       }
     }
@@ -29,8 +33,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const isAuthenticated = !!user;
 
   const login = (newUser: UserAccount) => {
-    setUser(newUser);
-    localStorage.setItem('rawdati_current_user', JSON.stringify(newUser));
+    // ✅ FIX: Create a copy without password
+    const userToStore = { ...newUser };
+    delete userToStore.motDePasse;
+    
+    setUser(userToStore);
+    localStorage.setItem('rawdati_current_user', JSON.stringify(userToStore));
   };
 
   const loginWithCredentials = async (email: string, motDePasse: string): Promise<UserAccount | null> => {
@@ -41,8 +49,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       );
 
       if (matchedUser) {
-        login(matchedUser);
-        return matchedUser;
+        // ✅ FIX: Don't store password when logging in
+        const userToStore = { ...matchedUser };
+        delete userToStore.motDePasse;
+        login(userToStore);
+        return userToStore;
       }
       return null;
     } catch (error) {
