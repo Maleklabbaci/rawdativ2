@@ -92,19 +92,15 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const dbMessages = await getCollectionData<DiscussionMessage>('discussion_messages');
       const dbAvis = await getCollectionData<Avis>('avis');
 
-      // Création automatique de l'admin si la base de données est totalement vide
+      // ✅ FIX: Don't create hardcoded admin - security risk!
       if (dbComptes.length === 0) {
-        const adminAccount: UserAccount = {
-          id: 'adm1',
-          nom: 'Labbaci',
-          prenom: 'Abdelmalek',
-          email: 'admin@rawdati.com',
-          motDePasse: 'rawdati2001',
-          role: 'admin',
-          abonnementActif: true
-        };
-        await setCollectionDocument('comptes', adminAccount.id, adminAccount);
-        dbComptes = await getCollectionData<UserAccount>('comptes');
+        console.warn(
+          '⚠️ NO ADMIN ACCOUNT FOUND\n' +
+          'Please create an admin account manually in Supabase Dashboard:\n' +
+          '1. Go to SQL Editor\n' +
+          '2. Insert into "comptes" table with a strong password\n' +
+          '3. Restart the application'
+        );
       }
 
       setEnfants(dbEnfants);
