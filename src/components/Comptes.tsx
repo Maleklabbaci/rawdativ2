@@ -578,7 +578,7 @@ export default function Comptes() {
                           </p>
                           <p className="text-[10px] text-slate-400 font-semibold">
                             {isFrench ? 'Mot de passe : ' : 'الرمز السري : '}
-                            <strong className="text-slate-600 font-mono bg-slate-100/50 rounded px-1">{c.motDePasse}</strong>
+                            <strong className="text-slate-600 font-mono bg-slate-100/50 rounded px-1">••••••••••</strong>
                           </p>
                         </div>
                       </td>
