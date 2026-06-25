@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -12,11 +12,16 @@ import {
   Bookmark, 
   Layout, 
   UserSquare, 
-  Home
+  Home,
+  ChevronDown,
+  Check
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
+import { usePagination } from '../hooks/usePagination';
+import { PaginationControls } from './PaginationControls';
 import { Classe } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -24,31 +29,42 @@ interface RichClasse extends Classe {
   educateurChef?: string;
   salleNom?: string;
   couleurTheme?: 'emerald' | 'sky' | 'indigo' | 'rose' | 'amber';
+  childrenIds?: string[];
 }
 
 export default function Classes() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
+  const { showToast } = useToast();
 
-  const { classes: allDbClasses, enfants: enfantsData, personnel: personnelData, addClasse, deleteClasse } = useDb();
+  const { classes: allDbClasses, enfants: enfantsData, personnel: personnelData, addClasse, deleteClasse, updateClasse } = useDb();
   const { user } = useAuth();
   const isDirecteur = user?.role === 'directeur';
   const dbClasses = isDirecteur ? allDbClasses.filter((c: any) => c.crecheId === user!.id) : allDbClasses;
 
-  const classes: RichClasse[] = dbClasses.map((c: any, idx: number) => {
-    const themes: RichClasse['couleurTheme'][] = ['emerald', 'sky', 'indigo', 'rose', 'amber'];
-    return {
-      ...c,
-      educateurChef: c.educateurChef || (personnelData[idx % personnelData.length] 
-        ? `${personnelData[idx % personnelData.length].prenom} ${personnelData[idx % personnelData.length].nom}` 
-        : 'Non assigné'),
-      salleNom: c.salleNom || `Salle B-${102 + idx}`,
-      couleurTheme: c.couleurTheme || themes[idx % themes.length],
-    };
-  });
+  const classes: RichClasse[] = useMemo(() => {
+    return dbClasses.map((c: any, idx: number) => {
+      const themes: RichClasse['couleurTheme'][] = ['emerald', 'sky', 'indigo', 'rose', 'amber'];
+      return {
+        ...c,
+        educateurChef: c.educateurChef || (personnelData[idx % personnelData.length] 
+          ? `${personnelData[idx % personnelData.length].prenom} ${personnelData[idx % personnelData.length].nom}` 
+          : 'Non assigné'),
+        salleNom: c.salleNom || `Salle B-${102 + idx}`,
+        couleurTheme: c.couleurTheme || themes[idx % themes.length],
+        childrenIds: c.childrenIds || []
+      };
+    });
+  }, [dbClasses, personnelData]);
 
+  // State
   const [showModal, setShowModal] = useState(false);
   const [selectedClasse, setSelectedClasse] = useState<RichClasse | null>(null);
+  const [expandedClasseId, setExpandedClasseId] = useState<string | null>(null);
+  const [showAddChildrenModal, setShowAddChildrenModal] = useState(false);
+  const [selectedChildrenToAdd, setSelectedChildrenToAdd] = useState<Set<string>>(new Set());
+  const [searchChildTerm, setSearchChildTerm] = useState('');
+
   const [formData, setFormData] = useState({
     nom: '',
     niveau: 'Bébés' as Classe['niveau'],
@@ -58,414 +74,609 @@ export default function Classes() {
     couleurTheme: 'indigo' as 'emerald' | 'sky' | 'indigo' | 'rose' | 'amber'
   });
 
-  const handleAjouter = () => {
-    if (!formData.nom || formData.capacite <= 0) return;
-    addClasse({ ...formData, crecheId: isDirecteur ? user!.id : undefined } as any);
-    setShowModal(false);
-    // Reset form
-    setFormData({
-      nom: '',
-      niveau: 'Bébés',
-      capacite: 12,
-      educateurChef: personnelData[0] ? `${personnelData[0].prenom} ${personnelData[0].nom}` : '',
-      salleNom: 'Salle C-201',
-      couleurTheme: 'indigo'
-    });
-  };
+  // ===== MEMOIZED: Get children for selected class =====
+  const childrenInSelectedClass = useMemo(() => {
+    if (!selectedClasse) return [];
+    return enfantsData.filter(e => selectedClasse.childrenIds?.includes(e.id));
+  }, [selectedClasse, enfantsData]);
+
+  // ===== MEMOIZED: Get available children to add =====
+  const availableChildrenToAdd = useMemo(() => {
+    if (!selectedClasse) return [];
+    return enfantsData.filter(e => 
+      !selectedClasse.childrenIds?.includes(e.id) &&
+      `${e.prenom} ${e.nom}`.toLowerCase().includes(searchChildTerm.toLowerCase())
+    );
+  }, [selectedClasse, enfantsData, searchChildTerm]);
+
+  // ===== PAGINATION for children in class =====
+  const {
+    paginatedItems: paginatedChildrenInClass,
+    currentPage: classChildrenPage,
+    totalPages: classChildrenTotalPages,
+    goToPage: goToClassChildrenPage
+  } = usePagination(childrenInSelectedClass, 20);
+
+  // ===== PAGINATION for available children to add =====
+  const {
+    paginatedItems: paginatedAvailableChildren,
+    currentPage: availableChildrenPage,
+    totalPages: availableChildrenTotalPages,
+    goToPage: goToAvailableChildrenPage
+  } = usePagination(availableChildrenToAdd, 20);
+
+  // ===== HANDLERS =====
+
+  const handleAjouter = useCallback(() => {
+    if (!formData.nom || formData.capacite <= 0) {
+      showToast(isArabic ? 'يرجى ملء جميع الحقول' : 'Veuillez remplir tous les champs', 'error');
+      return;
+    }
+    try {
+      addClasse({ ...formData, crecheId: isDirecteur ? user!.id : undefined } as any);
+      showToast(isArabic ? 'تمت إضافة الفصل بنجاح ✅' : 'Classe ajoutée avec succès ✅', 'success');
+      setShowModal(false);
+      setFormData({
+        nom: '',
+        niveau: 'Bébés',
+        capacite: 12,
+        educateurChef: personnelData[0] ? `${personnelData[0].prenom} ${personnelData[0].nom}` : '',
+        salleNom: 'Salle C-201',
+        couleurTheme: 'indigo'
+      });
+    } catch (error) {
+      showToast(isArabic ? 'فشل إضافة الفصل ❌' : 'Erreur lors de l\'ajout ❌', 'error');
+    }
+  }, [formData, addClasse, isDirecteur, user, showToast, isArabic, personnelData]);
+
+  const handleDeleteClasse = useCallback((id: string) => {
+    if (confirm(isArabic ? 'هل أنت متأكد من حذف هذا الفصل؟' : 'Êtes-vous sûr de vouloir supprimer cette classe ?')) {
+      try {
+        deleteClasse(id);
+        showToast(isArabic ? 'تم حذف الفصل بنجاح ✅' : 'Classe supprimée ✅', 'success');
+        setSelectedClasse(null);
+        setExpandedClasseId(null);
+      } catch (error) {
+        showToast(isArabic ? 'فشل الحذف ❌' : 'Erreur de suppression ❌', 'error');
+      }
+    }
+  }, [deleteClasse, showToast, isArabic]);
+
+  // ===== BULK ADD CHILDREN TO CLASS =====
+  const handleBulkAddChildren = useCallback(async () => {
+    if (selectedChildrenToAdd.size === 0 || !selectedClasse) {
+      showToast(isArabic ? 'اختر أطفالاً أولاً' : 'Sélectionnez d\'abord des enfants', 'error');
+      return;
+    }
+
+    try {
+      const newChildrenIds = [
+        ...(selectedClasse.childrenIds || []),
+        ...Array.from(selectedChildrenToAdd)
+      ];
+      
+      await updateClasse(selectedClasse.id, { childrenIds: newChildrenIds });
+      
+      showToast(
+        isArabic 
+          ? `تمت إضافة ${selectedChildrenToAdd.size} أطفال ✅`
+          : `${selectedChildrenToAdd.size} enfants ajoutés ✅`,
+        'success'
+      );
+      
+      setSelectedChildrenToAdd(new Set());
+      setShowAddChildrenModal(false);
+      setSearchChildTerm('');
+      goToAvailableChildrenPage(1);
+      
+      // Refresh selected class
+      const updatedClass = classes.find(c => c.id === selectedClasse.id);
+      if (updatedClass) {
+        setSelectedClasse(updatedClass);
+      }
+    } catch (error) {
+      console.error('Error adding children:', error);
+      showToast(isArabic ? 'فشل إضافة الأطفال ❌' : 'Erreur lors de l\'ajout ❌', 'error');
+    }
+  }, [selectedClasse, selectedChildrenToAdd, classes, updateClasse, showToast, isArabic, goToAvailableChildrenPage]);
+
+  // ===== BULK REMOVE CHILDREN FROM CLASS =====
+  const handleBulkRemoveChildren = useCallback(async (childrenIdsToRemove: string[]) => {
+    if (!selectedClasse || childrenIdsToRemove.length === 0) return;
+
+    try {
+      const newChildrenIds = (selectedClasse.childrenIds || []).filter(
+        id => !childrenIdsToRemove.includes(id)
+      );
+      
+      await updateClasse(selectedClasse.id, { childrenIds: newChildrenIds });
+      
+      showToast(
+        isArabic 
+          ? `تم حذف ${childrenIdsToRemove.length} أطفال ✅`
+          : `${childrenIdsToRemove.length} enfants supprimés ✅`,
+        'success'
+      );
+      
+      // Refresh selected class
+      const updatedClass = classes.find(c => c.id === selectedClasse.id);
+      if (updatedClass) {
+        setSelectedClasse(updatedClass);
+      }
+    } catch (error) {
+      console.error('Error removing children:', error);
+      showToast(isArabic ? 'فشل الحذف ❌' : 'Erreur de suppression ❌', 'error');
+    }
+  }, [selectedClasse, classes, updateClasse, showToast, isArabic]);
 
   const getThemeClasses = (theme: string) => {
     switch (theme) {
       case 'emerald':
         return {
           border: 'border-emerald-100 hover:border-emerald-300',
-          bg: 'bg-emerald-500',
-          lightBg: 'bg-emerald-50/70',
-          text: 'text-emerald-700',
-          badge: 'bg-emerald-100/75 text-emerald-800'
+          bg: 'bg-emerald-50',
+          badge: 'bg-emerald-100 text-emerald-800',
+          icon: 'text-emerald-600'
         };
       case 'sky':
         return {
           border: 'border-sky-100 hover:border-sky-300',
-          bg: 'bg-sky-500',
-          lightBg: 'bg-sky-50/70',
-          text: 'text-sky-700',
-          badge: 'bg-sky-100/75 text-sky-800'
+          bg: 'bg-sky-50',
+          badge: 'bg-sky-100 text-sky-800',
+          icon: 'text-sky-600'
+        };
+      case 'indigo':
+        return {
+          border: 'border-indigo-100 hover:border-indigo-300',
+          bg: 'bg-indigo-50',
+          badge: 'bg-indigo-100 text-indigo-800',
+          icon: 'text-indigo-600'
         };
       case 'rose':
         return {
           border: 'border-rose-100 hover:border-rose-300',
-          bg: 'bg-rose-500',
-          lightBg: 'bg-rose-50/70',
-          text: 'text-rose-700',
-          badge: 'bg-rose-100/75 text-rose-800'
+          bg: 'bg-rose-50',
+          badge: 'bg-rose-100 text-rose-800',
+          icon: 'text-rose-600'
         };
       case 'amber':
         return {
           border: 'border-amber-100 hover:border-amber-300',
-          bg: 'bg-amber-500',
-          lightBg: 'bg-amber-50/70',
-          text: 'text-amber-700',
-          badge: 'bg-amber-100/75 text-amber-800'
+          bg: 'bg-amber-50',
+          badge: 'bg-amber-100 text-amber-800',
+          icon: 'text-amber-600'
         };
       default:
         return {
-          border: 'border-indigo-100 hover:border-indigo-300',
-          bg: 'bg-indigo-500',
-          lightBg: 'bg-indigo-50/70',
-          text: 'text-indigo-700',
-          badge: 'bg-indigo-100/75 text-indigo-800'
+          border: 'border-slate-200 hover:border-slate-300',
+          bg: 'bg-slate-50',
+          badge: 'bg-slate-100 text-slate-800',
+          icon: 'text-slate-600'
         };
     }
   };
 
   return (
-    <div className="space-y-4 sm:space-y-8">
-      {/* Title & Actions Row */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <School className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600" />
-            {t('classes')}
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5 leading-tight">
-            {isArabic 
-              ? 'تسيير وتنيظم الأقسام والمجموعات العمرية، سعة استيعاب القاعات والمعلمين المشرفين' 
-              : 'Supervisez les salles de classe, les tranches d\'âges d\'apprentissage, le maître référent et les ratios.'}
-          </p>
-        </div>
-        <button 
-          className="flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-4 py-2.5 sm:px-6 sm:py-3.5 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/10 hover:shadow-indigo-600/20 transition-all cursor-pointer w-full sm:w-auto" 
+    <div className={`p-6 space-y-6 ${isArabic ? 'rtl' : 'ltr'}`}>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold flex items-center gap-2">
+          <School className="w-8 h-8" />
+          {isArabic ? 'الفصول الدراسية' : 'Classes'}
+        </h1>
+        <button
           onClick={() => setShowModal(true)}
+          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
         >
-          <Plus size={16} className="stroke-[3]" />
-          <span>{t('classes.add')}</span>
+          <Plus className="w-5 h-5" />
+          {isArabic ? 'إضافة فصل' : 'Ajouter Classe'}
         </button>
       </div>
 
-      {/* Cards Bento Grid list */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 animate-slide-up">
-        {classes.map((c) => {
-          // Dynamic calculation of registered kids
-          const kidsCount = enfantsData.filter(
-            (e) => e.groupeAge === c.niveau && e.statut === 'Actif'
-          ).length;
-          
-          const colors = getThemeClasses(c.couleurTheme || 'indigo');
-          const percentOccupation = Math.min(Math.round((kidsCount / c.capacite) * 100), 100);
+      {/* Classes Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {classes.map(classe => {
+          const theme = getThemeClasses(classe.couleurTheme || 'indigo');
+          const isExpanded = expandedClasseId === classe.id;
+          const childCount = classe.childrenIds?.length || 0;
 
           return (
-            <div 
-              key={c.id} 
-              className={`bg-white rounded-2xl border ${colors.border} p-4 sm:p-6 shadow-xs hover:shadow-lg hover:-translate-y-1 transition-all duration-200 flex flex-col justify-between cursor-pointer`}
-              onClick={() => setSelectedClasse(c)}
+            <motion.div
+              key={classe.id}
+              className={`border-2 rounded-lg p-4 cursor-pointer transition ${theme.border} ${isExpanded ? theme.bg : 'bg-white'}`}
+              onClick={() => {
+                setSelectedClasse(classe);
+                setExpandedClasseId(isExpanded ? null : classe.id);
+              }}
             >
-              <div>
-                {/* Header card items */}
-                <div className="flex justify-between items-start mb-5">
-                  <div className={`p-3 rounded-2xl ${colors.lightBg} ${colors.text}`}>
-                    <School className="w-6 h-6" />
-                  </div>
-                  <div className="flex flex-col items-end">
-                    <span className={`px-2.5 py-1 text-xs font-bold rounded-lg ${colors.badge}`}>
-                      {c.niveau}
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-bold mt-1.5 flex items-center gap-1">
-                      <Home className="w-3 h-3" />
-                      {c.salleNom}
-                    </span>
-                  </div>
+              {/* Class header */}
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold">{classe.nom}</h3>
+                  <p className="text-sm text-slate-600">
+                    {classe.niveau} • {classe.salleNom}
+                  </p>
                 </div>
+                <ChevronDown
+                  className={`w-5 h-5 transition transform ${isExpanded ? 'rotate-180' : ''}`}
+                />
+              </div>
 
-                {/* Class identity details */}
-                <h3 className="text-xl font-bold text-slate-900 tracking-tight">{c.nom}</h3>
-                
-                {/* Educator ref */}
-                <div className="mt-3 flex items-center gap-2 p-2 bg-slate-50/50 border border-slate-100 rounded-xl">
-                  <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xs">
-                    EP
-                  </div>
-                  <div className="text-xs">
-                    <p className="text-slate-400 font-bold leading-none">{isArabic ? 'المشرف التربوي' : 'Maître Référent'}</p>
-                    <p className="text-slate-800 font-extrabold mt-1">{c.educateurChef}</p>
-                  </div>
+              {/* Class info */}
+              <div className="space-y-2 mb-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <Users className="w-4 h-4 text-slate-500" />
+                  <span>{childCount}/{classe.capacite} enfants</span>
                 </div>
-
-                {/* Dynamic occupancy gauge bar */}
-                <div className="mt-6 space-y-2">
-                  <div className="flex justify-between text-xs font-bold text-slate-500">
-                    <span>{isArabic ? 'معدل شغل المكان' : 'Occupation de la salle'}</span>
-                    <span className="text-slate-800">{kidsCount} / {c.capacite} {isArabic ? 'طفل' : 'places'}</span>
-                  </div>
-                  <div className="relative h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div 
-                      className={`absolute top-0 left-0 h-full ${colors.bg} rounded-full transition-all duration-300`} 
-                      style={{ width: `${percentOccupation}%` }}
-                    />
-                  </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <UserSquare className="w-4 h-4 text-slate-500" />
+                  <span>{classe.educateurChef}</span>
                 </div>
               </div>
 
-              {/* Action operations footer split */}
-              <div className="mt-6 pt-4 border-t border-slate-50 flex justify-end">
-                <button 
-                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer z-10"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const confirmationMsg = isArabic 
-                      ? 'هل أنت متأكد من حذف هذا القسم؟ سيؤدي ذلك إلى إلغاء ربطه من الأطفال المسجلين.' 
-                      : 'Êtes-vous sûr de vouloir supprimer cette classe ? Cela déliera les enfants inscrits.';
-                    if (window.confirm(confirmationMsg)) {
-                      deleteClasse(c.id);
-                    }
+              {/* Capacity bar */}
+              <div className="w-full bg-slate-200 rounded-full h-2 mb-4">
+                <div
+                  className={`h-2 rounded-full transition`}
+                  style={{
+                    width: `${(childCount / classe.capacite) * 100}%`,
+                    backgroundColor: childCount / classe.capacite > 0.9 ? '#ef4444' : childCount / classe.capacite > 0.7 ? '#f59e0b' : '#10b981'
                   }}
-                >
-                  <Trash2 size={16} />
-                </button>
+                />
               </div>
-            </div>
+
+              {/* Expanded content */}
+              <AnimatePresence>
+                {isExpanded && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="space-y-4 pt-4 border-t"
+                  >
+                    {/* Children list */}
+                    {childCount > 0 && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-bold text-sm">
+                            {isArabic ? 'الأطفال' : 'Enfants'} ({childCount})
+                          </h4>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowAddChildrenModal(true);
+                            }}
+                            className="text-xs px-2 py-1 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200"
+                          >
+                            +{isArabic ? ' إضافة' : ' Ajouter'}
+                          </button>
+                        </div>
+
+                        <div className="space-y-1 max-h-40 overflow-y-auto">
+                          {paginatedChildrenInClass.map(child => (
+                            <div
+                              key={child.id}
+                              className="flex items-center justify-between p-2 bg-slate-50 rounded text-sm hover:bg-slate-100"
+                            >
+                              <span>{child.prenom} {child.nom}</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleBulkRemoveChildren([child.id]);
+                                }}
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        {classChildrenTotalPages > 1 && (
+                          <div className="text-xs text-center text-slate-500 mt-2">
+                            Page {classChildrenPage}/{classChildrenTotalPages}
+                            <div className="flex gap-1 justify-center mt-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  goToClassChildrenPage(classChildrenPage - 1);
+                                }}
+                                disabled={classChildrenPage === 1}
+                                className="px-2 py-1 bg-slate-200 rounded disabled:opacity-50"
+                              >
+                                ←
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  goToClassChildrenPage(classChildrenPage + 1);
+                                }}
+                                disabled={classChildrenPage === classChildrenTotalPages}
+                                className="px-2 py-1 bg-slate-200 rounded disabled:opacity-50"
+                              >
+                                →
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {childCount === 0 && (
+                      <div className="text-center py-4">
+                        <p className="text-sm text-slate-500 mb-2">
+                          {isArabic ? 'لا توجد أطفال في هذا الفصل' : 'Aucun enfant dans cette classe'}
+                        </p>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowAddChildrenModal(true);
+                          }}
+                          className="text-sm px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                        >
+                          +{isArabic ? ' إضافة أطفال' : ' Ajouter des enfants'}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Delete button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteClasse(classe.id);
+                      }}
+                      className="w-full px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 flex items-center justify-center gap-2 text-sm font-bold"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      {isArabic ? 'حذف الفصل' : 'Supprimer la classe'}
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
           );
         })}
       </div>
 
-      {/* Exquisite Class Modal ("PLEINE DE FORMATION") */}
+      {/* ADD CLASS MODAL */}
       <AnimatePresence>
         {showModal && (
-          <div 
-            className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-center justify-center z-[999] p-4 cursor-pointer"
-            onClick={() => setShowModal(false)}
-          >
-            <motion.div 
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[85vh] mt-16 flex flex-col overflow-hidden font-sans cursor-default"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
-                <div>
-                  <h3 className="text-xl font-black">{isArabic ? 'إنشاء قسم تربوي وتفاصيل الغرف' : 'Nouveau Groupe Pédagogique'}</h3>
-                  <p className="text-xs text-indigo-100 mt-0.5">{isArabic ? 'أدخل اسم الغرفة، السعة والترميز الملون' : 'Déclaration de salle, encadrement référent & couleur'}</p>
-                </div>
-                <button 
-                  onClick={() => setShowModal(false)}
-                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
-                >
-                  <X size={20} />
+          <motion.div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <motion.div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold">{isArabic ? 'إضافة فصل جديد' : 'Ajouter une nouvelle classe'}</h2>
+                <button onClick={() => setShowModal(false)} className="p-1 hover:bg-slate-100 rounded">
+                  <X className="w-6 h-6" />
                 </button>
               </div>
 
-              <div className="p-6 space-y-4 overflow-y-auto flex-1">
-                {/* Name */}
+              <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    {isArabic ? 'اسم القسم المختار *' : 'Nom du Groupe Scolaire *'}
-                  </label>
-                  <input 
-                    type="text" 
-                    placeholder="Ex: Les Petites Abeilles"
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800" 
-                    value={formData.nom} 
-                    onChange={e => setFormData({...formData, nom: e.target.value})} 
+                  <label className="block text-sm font-bold mb-2">{isArabic ? 'اسم الفصل' : 'Nom'}</label>
+                  <input
+                    type="text"
+                    value={formData.nom}
+                    onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder={isArabic ? 'مثال: الرضع' : 'Ex: Bébés'}
                   />
                 </div>
 
-                {/* Level Select */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    {isArabic ? 'المستوى العمري المستهدف *' : 'Tranche d\'âge / Niveau *'}
-                  </label>
-                  <select 
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800" 
-                    value={formData.niveau} 
-                    onChange={e => setFormData({...formData, niveau: e.target.value as Classe['niveau']})}
+                  <label className="block text-sm font-bold mb-2">{isArabic ? 'المستوى' : 'Niveau'}</label>
+                  <select
+                    value={formData.niveau}
+                    onChange={(e) => setFormData({ ...formData, niveau: e.target.value as any })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
-                    <option value="Bébés">Bébés (0-2 ans)</option>
-                    <option value="Moyens">Moyens (2-4 ans)</option>
-                    <option value="Grands">Grands (4-6 ans)</option>
+                    <option>Bébés</option>
+                    <option>Moyens</option>
+                    <option>Grands</option>
                   </select>
                 </div>
 
-                {/* Capacity & Classroom Number (Row 2) */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {isArabic ? 'السعة القصوى *' : 'Seuil Capacité *'}
-                    </label>
-                    <input 
-                      type="number" 
-                      placeholder="15"
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-bold text-slate-800" 
-                      value={formData.capacite || ''} 
-                      onChange={e => setFormData({...formData, capacite: parseInt(e.target.value)})} 
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {isArabic ? 'اسم القاعة *' : 'Numéro de Table/Salle *'}
-                    </label>
-                    <input 
-                      type="text" 
-                      placeholder="Salle B-102"
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-bold text-slate-800" 
-                      value={formData.salleNom} 
-                      onChange={e => setFormData({...formData, salleNom: e.target.value})} 
-                    />
-                  </div>
+                <div>
+                  <label className="block text-sm font-bold mb-2">{isArabic ? 'السعة' : 'Capacité'}</label>
+                  <input
+                    type="number"
+                    value={formData.capacite}
+                    onChange={(e) => setFormData({ ...formData, capacite: parseInt(e.target.value) })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
                 </div>
 
-                {/* Chief Educator Selection */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    {isArabic ? 'المشرف التربوي المسؤول *' : 'Responsable / Enseignant Principal *'}
-                  </label>
+                  <label className="block text-sm font-bold mb-2">{isArabic ? 'المعلم الرئيسي' : 'Éducateur Chef'}</label>
                   <select
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800"
                     value={formData.educateurChef}
-                    onChange={e => setFormData({...formData, educateurChef: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, educateurChef: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     {personnelData.map(p => (
-                      <option key={p.id} value={`${p.prenom} ${p.nom}`}>
-                        {p.prenom} {p.nom} ({p.poste})
-                      </option>
+                      <option key={p.id}>{p.prenom} {p.nom}</option>
                     ))}
-                    <option value="Non affecté">Laisser non affecté</option>
                   </select>
                 </div>
 
-                {/* Theme palette picker */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    {isArabic ? 'اللون المميز للقسم (الجمالية)' : 'Aura / Palette couleur'}
-                  </label>
-                  <div className="flex gap-3">
-                    {[
-                      { hex: 'emerald', bg: 'bg-emerald-500' },
-                      { hex: 'sky', bg: 'bg-sky-500' },
-                      { hex: 'indigo', bg: 'bg-indigo-500' },
-                      { hex: 'rose', bg: 'bg-rose-500' },
-                      { hex: 'amber', bg: 'bg-amber-500' }
-                    ].map(col => (
+                  <label className="block text-sm font-bold mb-2">{isArabic ? 'اسم الغرفة' : 'Nom Salle'}</label>
+                  <input
+                    type="text"
+                    value={formData.salleNom}
+                    onChange={(e) => setFormData({ ...formData, salleNom: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold mb-2">{isArabic ? 'اللون' : 'Couleur'}</label>
+                  <div className="flex gap-2">
+                    {['emerald', 'sky', 'indigo', 'rose', 'amber'].map(color => (
                       <button
-                        key={col.hex}
-                        type="button"
-                        onClick={() => setFormData({...formData, couleurTheme: col.hex as any})}
-                        className={`w-8 h-8 rounded-full cursor-pointer transition flex items-center justify-center ${col.bg} ${
-                          formData.couleurTheme === col.hex ? 'ring-4 ring-offset-2 ring-indigo-500 scale-110' : 'opacity-85'
+                        key={color}
+                        onClick={() => setFormData({ ...formData, couleurTheme: color as any })}
+                        className={`w-8 h-8 rounded-full border-2 ${
+                          formData.couleurTheme === color ? 'border-slate-800' : 'border-transparent'
                         }`}
+                        style={{
+                          backgroundColor: {
+                            emerald: '#10b981',
+                            sky: '#0ea5e9',
+                            indigo: '#4f46e5',
+                            rose: '#f43f5e',
+                            amber: '#f59e0b'
+                          }[color]
+                        }}
                       />
                     ))}
                   </div>
                 </div>
-
               </div>
 
-              {/* Actions */}
-              <div className="p-6 pt-4 border-t border-slate-100 flex gap-3 flex-shrink-0 bg-slate-50/55">
-                <button 
-                  type="button"
-                  className="flex-1 p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer text-sm"
-                  onClick={() => setShowModal(false)}
-                >
-                  {t('common.cancel')}
-                </button>
-                <button 
-                  type="button"
-                  className="flex-1 p-3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-750 text-white font-bold rounded-xl transition cursor-pointer text-sm shadow-md"
+              <div className="flex gap-2 mt-6">
+                <button
                   onClick={handleAjouter}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold"
                 >
-                  {t('common.save')}
+                  {isArabic ? 'إضافة' : 'Ajouter'}
+                </button>
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="flex-1 px-4 py-2 border rounded-lg hover:bg-slate-50"
+                >
+                  {isArabic ? 'إلغاء' : 'Annuler'}
                 </button>
               </div>
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Detailed Class Info Modal */}
+      {/* ADD CHILDREN TO CLASS MODAL */}
       <AnimatePresence>
-        {selectedClasse && (() => {
-          const kidsList = enfantsData.filter(e => e.groupeAge === selectedClasse.niveau && e.statut === 'Actif');
-          const colors = getThemeClasses(selectedClasse.couleurTheme || 'indigo');
-          return (
-            <div 
-              className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-center justify-center z-[999] p-4 cursor-pointer"
-              onClick={() => setSelectedClasse(null)}
-            >
-              <motion.div 
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[85vh] mt-16 flex flex-col overflow-hidden font-sans cursor-default"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
-                  <div>
-                    <h3 className="text-xl font-black">{selectedClasse.nom}</h3>
-                    <p className="text-xs text-indigo-100 mt-0.5">{isArabic ? 'معلومات القسم والتلاميذ المسجلين' : 'Détails du groupe & Effectifs admis'}</p>
+        {showAddChildrenModal && selectedClasse && (
+          <motion.div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <motion.div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold">
+                  {isArabic ? 'إضافة أطفال إلى' : 'Ajouter enfants à'} {selectedClasse.nom}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowAddChildrenModal(false);
+                    setSelectedChildrenToAdd(new Set());
+                    setSearchChildTerm('');
+                  }}
+                  className="p-1 hover:bg-slate-100 rounded"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Search */}
+              <div className="mb-4">
+                <input
+                  type="text"
+                  placeholder={isArabic ? 'البحث عن أطفال...' : 'Rechercher enfants...'}
+                  value={searchChildTerm}
+                  onChange={(e) => {
+                    setSearchChildTerm(e.target.value);
+                    goToAvailableChildrenPage(1);
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Available children */}
+              <div className="space-y-2 max-h-96 overflow-y-auto mb-4">
+                {paginatedAvailableChildren.length === 0 ? (
+                  <div className="text-center py-6">
+                    <p className="text-slate-500">
+                      {isArabic ? 'لا توجد أطفال متاحين' : 'Aucun enfant disponible'}
+                    </p>
                   </div>
-                  <button 
-                    onClick={() => setSelectedClasse(null)}
-                    className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
+                ) : (
+                  paginatedAvailableChildren.map(child => (
+                    <label
+                      key={child.id}
+                      className="flex items-center gap-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedChildrenToAdd.has(child.id)}
+                        onChange={(e) => {
+                          const newSelected = new Set(selectedChildrenToAdd);
+                          if (e.target.checked) {
+                            newSelected.add(child.id);
+                          } else {
+                            newSelected.delete(child.id);
+                          }
+                          setSelectedChildrenToAdd(newSelected);
+                        }}
+                        className="w-5 h-5 rounded"
+                      />
+                      <span className="flex-1">
+                        {child.prenom} {child.nom}
+                      </span>
+                      {selectedChildrenToAdd.has(child.id) && (
+                        <Check className="w-5 h-5 text-indigo-600" />
+                      )}
+                    </label>
+                  ))
+                )}
+              </div>
+
+              {/* Pagination */}
+              {availableChildrenTotalPages > 1 && (
+                <div className="flex gap-2 justify-center mb-4">
+                  <button
+                    onClick={() => goToAvailableChildrenPage(availableChildrenPage - 1)}
+                    disabled={availableChildrenPage === 1}
+                    className="px-3 py-1 bg-slate-200 rounded disabled:opacity-50"
                   >
-                    <X size={20} />
+                    ←
+                  </button>
+                  <span className="text-sm">
+                    {availableChildrenPage}/{availableChildrenTotalPages}
+                  </span>
+                  <button
+                    onClick={() => goToAvailableChildrenPage(availableChildrenPage + 1)}
+                    disabled={availableChildrenPage === availableChildrenTotalPages}
+                    className="px-3 py-1 bg-slate-200 rounded disabled:opacity-50"
+                  >
+                    →
                   </button>
                 </div>
-                
-                <div className="p-6 space-y-4 overflow-y-auto flex-1">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{isArabic ? 'المستوى عمري' : 'Niveau / Section'}</span>
-                      <span className="text-sm font-black text-slate-800">{selectedClasse.niveau}</span>
-                    </div>
-                    <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{isArabic ? 'رقم القاعة' : 'Salle assignée'}</span>
-                      <span className="text-sm font-black text-slate-800">{selectedClasse.salleNom}</span>
-                    </div>
-                    <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl col-span-2">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{isArabic ? 'المعلم المشرف' : 'Enseignant principal'}</span>
-                      <span className="text-sm font-black text-indigo-600">{selectedClasse.educateurChef}</span>
-                    </div>
-                  </div>
+              )}
 
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100/50">
-                    <div className="flex justify-between items-center text-xs font-bold text-slate-500 mb-1.5">
-                      <span>Remplissage de la salle:</span>
-                      <span className="text-slate-850 font-extrabold">{kidsList.length} / {selectedClasse.capacite} places</span>
-                    </div>
-                    <div className="relative h-2 bg-slate-200 rounded-full overflow-hidden">
-                      <div 
-                        className={`absolute top-0 left-0 h-full ${colors.bg} rounded-full`}
-                        style={{ width: `${Math.min(100, Math.round((kidsList.length / selectedClasse.capacite) * 100))}%` }}
-                      />
-                    </div>
-                  </div>
+              {/* Selected count */}
+              <div className="text-sm text-slate-600 mb-4">
+                {selectedChildrenToAdd.size} {isArabic ? 'أطفال مختارين' : 'enfants sélectionnés'}
+              </div>
 
-                  <div>
-                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">{isArabic ? 'قائمة الأطفال المسجلين في هذا القسم' : 'Liste des enfants inscrits'} ({kidsList.length})</h4>
-                    {kidsList.length > 0 ? (
-                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                        {kidsList.map(kid => (
-                          <div key={kid.id} className="flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100/70 border border-slate-100 rounded-xl transition text-xs font-semibold">
-                            <div className="flex items-center gap-2">
-                              <div className={`w-7 h-7 rounded-lg text-white font-extrabold flex items-center justify-center text-[10px] ${kid.genre === 'Fille' ? 'bg-pink-500' : 'bg-sky-500'}`}>
-                                {kid.prenom[0]}{kid.nom[0]}
-                              </div>
-                              <span className="text-slate-850">{kid.prenom} {kid.nom}</span>
-                            </div>
-                            <span className="text-slate-400 text-[10px]">Inscrit: {kid.dateInscription}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-slate-400 italic p-4 bg-slate-50 border border-slate-100 rounded-xl text-center">{isArabic ? 'لا يوجد أطفال مسجلون حالياً' : 'Aucun enfant enregistré dans cette tranche d\'âge'}</p>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-          );
-        })()}
+              {/* Buttons */}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleBulkAddChildren}
+                  disabled={selectedChildrenToAdd.size === 0}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-bold"
+                >
+                  +{isArabic ? ' إضافة' : ' Ajouter'} ({selectedChildrenToAdd.size})
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAddChildrenModal(false);
+                    setSelectedChildrenToAdd(new Set());
+                    setSearchChildTerm('');
+                  }}
+                  className="flex-1 px-4 py-2 border rounded-lg hover:bg-slate-50"
+                >
+                  {isArabic ? 'إلغاء' : 'Annuler'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
       </AnimatePresence>
     </div>
   );
