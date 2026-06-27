@@ -5,23 +5,16 @@ import {
   X, 
   School, 
   Users, 
-  Sparkles, 
-  Tag, 
-  AlertCircle, 
-  Layers, 
-  Bookmark, 
-  Layout, 
-  UserSquare, 
-  Home,
   ChevronDown,
-  Check
+  Check,
+  Edit, // Ajout de l'icône Edit
+  UserSquare
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { usePagination } from '../hooks/usePagination';
-import { PaginationControls } from './PaginationControls';
 import { Classe } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -59,6 +52,7 @@ export default function Classes() {
 
   // State
   const [showModal, setShowModal] = useState(false);
+  const [editingClasseId, setEditingClasseId] = useState<string | null>(null); // State pour savoir si on édite
   const [selectedClasse, setSelectedClasse] = useState<RichClasse | null>(null);
   const [expandedClasseId, setExpandedClasseId] = useState<string | null>(null);
   const [showAddChildrenModal, setShowAddChildrenModal] = useState(false);
@@ -107,15 +101,40 @@ export default function Classes() {
 
   // ===== HANDLERS =====
 
-  const handleAjouter = useCallback(() => {
+  // Ouvrir le formulaire pré-rempli pour modification
+  const handleEditClick = (e: React.MouseEvent, classe: RichClasse) => {
+    e.stopPropagation(); // Évite de fermer l'onglet déroulant
+    setEditingClasseId(classe.id);
+    setFormData({
+      nom: classe.nom,
+      niveau: classe.niveau,
+      capacite: classe.capacite,
+      educateurChef: classe.educateurChef || '',
+      salleNom: classe.salleNom || '',
+      couleurTheme: classe.couleurTheme || 'indigo'
+    });
+    setShowModal(true);
+  };
+
+  const handleAjouterOuModifier = useCallback(() => {
     if (!formData.nom || formData.capacite <= 0) {
       showToast(isArabic ? 'يرجى ملء جميع الحقول' : 'Veuillez remplir tous les champs', 'error');
       return;
     }
     try {
-      addClasse({ ...formData, crecheId: isDirecteur ? user!.id : undefined } as any);
-      showToast(isArabic ? 'تمت إضافة الفصل بنجاح ✅' : 'Classe ajoutée avec succès ✅', 'success');
+      if (editingClasseId) {
+        // Mode Modification
+        updateClasse(editingClasseId, formData as any);
+        showToast(isArabic ? 'تم تعديل الفصل بنجاح ✅' : 'Classe modifiée avec succès ✅', 'success');
+      } else {
+        // Mode Ajout standard
+        addClasse({ ...formData, crecheId: isDirecteur ? user!.id : undefined } as any);
+        showToast(isArabic ? 'تمت إضافة الفصل بنجاح ✅' : 'Classe ajoutée avec succès ✅', 'success');
+      }
+      
       setShowModal(false);
+      setEditingClasseId(null);
+      // Reset formulaire
       setFormData({
         nom: '',
         niveau: 'Bébés',
@@ -125,9 +144,9 @@ export default function Classes() {
         couleurTheme: 'indigo'
       });
     } catch (error) {
-      showToast(isArabic ? 'فشل إضافة الفصل ❌' : 'Erreur lors de l\'ajout ❌', 'error');
+      showToast(isArabic ? 'فشل العملية ❌' : 'Erreur lors de l\'opération ❌', 'error');
     }
-  }, [formData, addClasse, isDirecteur, user, showToast, isArabic, personnelData]);
+  }, [formData, addClasse, updateClasse, editingClasseId, isDirecteur, user, showToast, isArabic, personnelData]);
 
   const handleDeleteClasse = useCallback((id: string) => {
     if (confirm(isArabic ? 'هل أنت متأكد من حذف هذا الفصل؟' : 'Êtes-vous sûr de vouloir supprimer cette classe ?')) {
@@ -214,35 +233,35 @@ export default function Classes() {
       case 'emerald':
         return {
           border: 'border-emerald-100 hover:border-emerald-300',
-          bg: 'bg-emerald-50',
+          bg: 'bg-emerald-50/70',
           badge: 'bg-emerald-100 text-emerald-800',
           icon: 'text-emerald-600'
         };
       case 'sky':
         return {
           border: 'border-sky-100 hover:border-sky-300',
-          bg: 'bg-sky-50',
+          bg: 'bg-sky-50/70',
           badge: 'bg-sky-100 text-sky-800',
           icon: 'text-sky-600'
         };
       case 'indigo':
         return {
           border: 'border-indigo-100 hover:border-indigo-300',
-          bg: 'bg-indigo-50',
+          bg: 'bg-indigo-50/70',
           badge: 'bg-indigo-100 text-indigo-800',
           icon: 'text-indigo-600'
         };
       case 'rose':
         return {
           border: 'border-rose-100 hover:border-rose-300',
-          bg: 'bg-rose-50',
+          bg: 'bg-rose-50/70',
           badge: 'bg-rose-100 text-rose-800',
           icon: 'text-rose-600'
         };
       case 'amber':
         return {
           border: 'border-amber-100 hover:border-amber-300',
-          bg: 'bg-amber-50',
+          bg: 'bg-amber-50/70',
           badge: 'bg-amber-100 text-amber-800',
           icon: 'text-amber-600'
         };
@@ -265,8 +284,11 @@ export default function Classes() {
           {isArabic ? 'الفصول الدراسية' : 'Classes'}
         </h1>
         <button
-          onClick={() => setShowModal(true)}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
+          onClick={() => {
+            setEditingClasseId(null); // S'assurer que le mode édition est réinitialisé
+            setShowModal(true);
+          }}
+          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2 cursor-pointer transition font-bold"
         >
           <Plus className="w-5 h-5" />
           {isArabic ? 'إضافة فصل' : 'Ajouter Classe'}
@@ -283,7 +305,7 @@ export default function Classes() {
           return (
             <motion.div
               key={classe.id}
-              className={`border-2 rounded-lg p-4 cursor-pointer transition ${theme.border} ${isExpanded ? theme.bg : 'bg-white'}`}
+              className={`border-2 rounded-lg p-4 cursor-pointer transition ${theme.border} ${isExpanded ? theme.bg : 'bg-white hover:shadow-md'}`}
               onClick={() => {
                 setSelectedClasse(classe);
                 setExpandedClasseId(isExpanded ? null : classe.id);
@@ -319,7 +341,7 @@ export default function Classes() {
                 <div
                   className={`h-2 rounded-full transition`}
                   style={{
-                    width: `${(childCount / classe.capacite) * 100}%`,
+                    width: `${Math.min((childCount / classe.capacite) * 100, 100)}%`,
                     backgroundColor: childCount / classe.capacite > 0.9 ? '#ef4444' : childCount / classe.capacite > 0.7 ? '#f59e0b' : '#10b981'
                   }}
                 />
@@ -332,7 +354,8 @@ export default function Classes() {
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
-                    className="space-y-4 pt-4 border-t"
+                    className="space-y-4 pt-4 border-t border-slate-200"
+                    onClick={(e) => e.stopPropagation()} // Évite de fermer l'accordéon au clic sur les éléments internes
                   >
                     {/* Children list */}
                     {childCount > 0 && (
@@ -342,11 +365,8 @@ export default function Classes() {
                             {isArabic ? 'الأطفال' : 'Enfants'} ({childCount})
                           </h4>
                           <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setShowAddChildrenModal(true);
-                            }}
-                            className="text-xs px-2 py-1 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200"
+                            onClick={() => setShowAddChildrenModal(true)}
+                            className="text-xs px-2 py-1 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 cursor-pointer font-bold"
                           >
                             +{isArabic ? ' إضافة' : ' Ajouter'}
                           </button>
@@ -356,15 +376,12 @@ export default function Classes() {
                           {paginatedChildrenInClass.map(child => (
                             <div
                               key={child.id}
-                              className="flex items-center justify-between p-2 bg-slate-50 rounded text-sm hover:bg-slate-100"
+                              className="flex items-center justify-between p-2 bg-white border border-slate-100 rounded text-sm hover:bg-slate-50"
                             >
                               <span>{child.prenom} {child.nom}</span>
                               <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleBulkRemoveChildren([child.id]);
-                                }}
-                                className="text-red-600 hover:text-red-700"
+                                onClick={() => handleBulkRemoveChildren([child.id])}
+                                className="text-red-500 hover:text-red-750 p-1 rounded hover:bg-red-50 cursor-pointer"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -377,22 +394,16 @@ export default function Classes() {
                             Page {classChildrenPage}/{classChildrenTotalPages}
                             <div className="flex gap-1 justify-center mt-1">
                               <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  goToClassChildrenPage(classChildrenPage - 1);
-                                }}
+                                onClick={() => goToClassChildrenPage(classChildrenPage - 1)}
                                 disabled={classChildrenPage === 1}
-                                className="px-2 py-1 bg-slate-200 rounded disabled:opacity-50"
+                                className="px-2 py-1 bg-slate-200 rounded disabled:opacity-50 cursor-pointer"
                               >
                                 ←
                               </button>
                               <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  goToClassChildrenPage(classChildrenPage + 1);
-                                }}
+                                onClick={() => goToClassChildrenPage(classChildrenPage + 1)}
                                 disabled={classChildrenPage === classChildrenTotalPages}
-                                className="px-2 py-1 bg-slate-200 rounded disabled:opacity-50"
+                                className="px-2 py-1 bg-slate-200 rounded disabled:opacity-50 cursor-pointer"
                               >
                                 →
                               </button>
@@ -408,28 +419,34 @@ export default function Classes() {
                           {isArabic ? 'لا توجد أطفال في هذا الفصل' : 'Aucun enfant dans cette classe'}
                         </p>
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowAddChildrenModal(true);
-                          }}
-                          className="text-sm px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                          onClick={() => setShowAddChildrenModal(true)}
+                          className="text-sm px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 cursor-pointer"
                         >
                           +{isArabic ? ' إضافة أطفال' : ' Ajouter des enfants'}
                         </button>
                       </div>
                     )}
 
-                    {/* Delete button */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteClasse(classe.id);
-                      }}
-                      className="w-full px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 flex items-center justify-center gap-2 text-sm font-bold"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      {isArabic ? 'حذف الفصل' : 'Supprimer la classe'}
-                    </button>
+                    {/* Double Boutons : Modifier & Supprimer */}
+                    <div className="flex gap-2 pt-2 border-t border-slate-200">
+                      {/* BOUTON MODIFIER */}
+                      <button
+                        onClick={(e) => handleEditClick(e, classe)}
+                        className="flex-1 px-3 py-2 bg-amber-100 text-amber-800 rounded hover:bg-amber-200 flex items-center justify-center gap-2 text-sm font-bold transition cursor-pointer"
+                      >
+                        <Edit className="w-4 h-4" />
+                        {isArabic ? 'تعديل الفصل' : 'Modifier'}
+                      </button>
+
+                      {/* BOUTON SUPPRIMER */}
+                      <button
+                        onClick={() => handleDeleteClasse(classe.id)}
+                        className="flex-1 px-3 py-2 bg-red-100 text-red-750 rounded hover:bg-red-200 flex items-center justify-center gap-2 text-sm font-bold transition cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        {isArabic ? 'حذف الفصل' : 'Supprimer'}
+                      </button>
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -438,26 +455,37 @@ export default function Classes() {
         })}
       </div>
 
-      {/* ADD CLASS MODAL */}
+      {/* ADD / EDIT CLASS MODAL */}
       <AnimatePresence>
         {showModal && (
           <motion.div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <motion.div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <motion.div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl border border-slate-100">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-bold">{isArabic ? 'إضافة فصل جديد' : 'Ajouter une nouvelle classe'}</h2>
-                <button onClick={() => setShowModal(false)} className="p-1 hover:bg-slate-100 rounded">
-                  <X className="w-6 h-6" />
+                <h2 className="text-2xl font-bold">
+                  {editingClasseId 
+                    ? (isArabic ? 'تعديل بيانات الفصل' : 'Modifier la classe') 
+                    : (isArabic ? 'إضافة فصل جديد' : 'Ajouter une nouvelle classe')
+                  }
+                </h2>
+                <button 
+                  onClick={() => {
+                    setShowModal(false);
+                    setEditingClasseId(null);
+                  }} 
+                  className="p-1 hover:bg-slate-100 rounded cursor-pointer"
+                >
+                  <X className="w-6 h-6 text-slate-500" />
                 </button>
               </div>
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-bold mb-2">{isArabic ? 'اسم الفصل' : 'Nom'}</label>
+                  <label className="block text-sm font-bold mb-2">{isArabic ? 'اسم الفصل *' : 'Nom *'}</label>
                   <input
                     type="text"
                     value={formData.nom}
                     onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 font-semibold"
                     placeholder={isArabic ? 'مثال: الرضع' : 'Ex: Bébés'}
                   />
                 </div>
@@ -467,7 +495,7 @@ export default function Classes() {
                   <select
                     value={formData.niveau}
                     onChange={(e) => setFormData({ ...formData, niveau: e.target.value as any })}
-                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
                   >
                     <option>Bébés</option>
                     <option>Moyens</option>
@@ -476,12 +504,12 @@ export default function Classes() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-bold mb-2">{isArabic ? 'السعة' : 'Capacité'}</label>
+                  <label className="block text-sm font-bold mb-2">{isArabic ? 'السعة القصوى *' : 'Capacité *'}</label>
                   <input
                     type="number"
                     value={formData.capacite}
-                    onChange={(e) => setFormData({ ...formData, capacite: parseInt(e.target.value) })}
-                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    onChange={(e) => setFormData({ ...formData, capacite: parseInt(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
                   />
                 </div>
 
@@ -490,10 +518,10 @@ export default function Classes() {
                   <select
                     value={formData.educateurChef}
                     onChange={(e) => setFormData({ ...formData, educateurChef: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
                   >
                     {personnelData.map(p => (
-                      <option key={p.id}>{p.prenom} {p.nom}</option>
+                      <option key={p.id} value={`${p.prenom} ${p.nom}`}>{p.prenom} {p.nom}</option>
                     ))}
                   </select>
                 </div>
@@ -504,19 +532,19 @@ export default function Classes() {
                     type="text"
                     value={formData.salleNom}
                     onChange={(e) => setFormData({ ...formData, salleNom: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-bold mb-2">{isArabic ? 'اللون' : 'Couleur'}</label>
+                  <label className="block text-sm font-bold mb-2">{isArabic ? 'اللون المميز' : 'Couleur'}</label>
                   <div className="flex gap-2">
                     {['emerald', 'sky', 'indigo', 'rose', 'amber'].map(color => (
                       <button
                         key={color}
                         onClick={() => setFormData({ ...formData, couleurTheme: color as any })}
-                        className={`w-8 h-8 rounded-full border-2 ${
-                          formData.couleurTheme === color ? 'border-slate-800' : 'border-transparent'
+                        className={`w-8 h-8 rounded-full border-2 transition cursor-pointer ${
+                          formData.couleurTheme === color ? 'border-slate-800 scale-110 shadow' : 'border-transparent'
                         }`}
                         style={{
                           backgroundColor: {
@@ -535,14 +563,17 @@ export default function Classes() {
 
               <div className="flex gap-2 mt-6">
                 <button
-                  onClick={handleAjouter}
-                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold"
+                  onClick={handleAjouterOuModifier}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold cursor-pointer transition text-center"
                 >
-                  {isArabic ? 'إضافة' : 'Ajouter'}
+                  {editingClasseId ? (isArabic ? 'حفظ التعديلات' : 'Sauvegarder') : (isArabic ? 'إضافة' : 'Ajouter')}
                 </button>
                 <button
-                  onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-2 border rounded-lg hover:bg-slate-50"
+                  onClick={() => {
+                    setShowModal(false);
+                    setEditingClasseId(null);
+                  }}
+                  className="flex-1 px-4 py-2 border border-slate-200 rounded-lg hover:bg-slate-50 font-semibold cursor-pointer transition text-center"
                 >
                   {isArabic ? 'إلغاء' : 'Annuler'}
                 </button>
@@ -556,7 +587,7 @@ export default function Classes() {
       <AnimatePresence>
         {showAddChildrenModal && selectedClasse && (
           <motion.div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <motion.div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <motion.div className="bg-white rounded-2xl p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto shadow-2xl">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-bold">
                   {isArabic ? 'إضافة أطفال إلى' : 'Ajouter enfants à'} {selectedClasse.nom}
@@ -567,9 +598,9 @@ export default function Classes() {
                     setSelectedChildrenToAdd(new Set());
                     setSearchChildTerm('');
                   }}
-                  className="p-1 hover:bg-slate-100 rounded"
+                  className="p-1 hover:bg-slate-100 rounded cursor-pointer"
                 >
-                  <X className="w-6 h-6" />
+                  <X className="w-6 h-6 text-slate-500" />
                 </button>
               </div>
 
@@ -583,7 +614,7 @@ export default function Classes() {
                     setSearchChildTerm(e.target.value);
                     goToAvailableChildrenPage(1);
                   }}
-                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
                 />
               </div>
 
@@ -599,7 +630,7 @@ export default function Classes() {
                   paginatedAvailableChildren.map(child => (
                     <label
                       key={child.id}
-                      className="flex items-center gap-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer"
+                      className="flex items-center gap-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer transition-all"
                     >
                       <input
                         type="checkbox"
@@ -613,9 +644,9 @@ export default function Classes() {
                           }
                           setSelectedChildrenToAdd(newSelected);
                         }}
-                        className="w-5 h-5 rounded"
+                        className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500"
                       />
-                      <span className="flex-1">
+                      <span className="flex-1 font-semibold text-slate-800">
                         {child.prenom} {child.nom}
                       </span>
                       {selectedChildrenToAdd.has(child.id) && (
@@ -632,17 +663,17 @@ export default function Classes() {
                   <button
                     onClick={() => goToAvailableChildrenPage(availableChildrenPage - 1)}
                     disabled={availableChildrenPage === 1}
-                    className="px-3 py-1 bg-slate-200 rounded disabled:opacity-50"
+                    className="px-3 py-1 bg-slate-250 hover:bg-slate-200 rounded disabled:opacity-50 cursor-pointer"
                   >
                     ←
                   </button>
-                  <span className="text-sm">
+                  <span className="text-sm font-semibold flex items-center">
                     {availableChildrenPage}/{availableChildrenTotalPages}
                   </span>
                   <button
                     onClick={() => goToAvailableChildrenPage(availableChildrenPage + 1)}
                     disabled={availableChildrenPage === availableChildrenTotalPages}
-                    className="px-3 py-1 bg-slate-200 rounded disabled:opacity-50"
+                    className="px-3 py-1 bg-slate-250 hover:bg-slate-200 rounded disabled:opacity-50 cursor-pointer"
                   >
                     →
                   </button>
@@ -650,7 +681,7 @@ export default function Classes() {
               )}
 
               {/* Selected count */}
-              <div className="text-sm text-slate-600 mb-4">
+              <div className="text-sm text-slate-500 mb-4 font-bold">
                 {selectedChildrenToAdd.size} {isArabic ? 'أطفال مختارين' : 'enfants sélectionnés'}
               </div>
 
@@ -659,7 +690,7 @@ export default function Classes() {
                 <button
                   onClick={handleBulkAddChildren}
                   disabled={selectedChildrenToAdd.size === 0}
-                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-bold"
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-bold cursor-pointer transition"
                 >
                   +{isArabic ? ' إضافة' : ' Ajouter'} ({selectedChildrenToAdd.size})
                 </button>
@@ -669,7 +700,7 @@ export default function Classes() {
                     setSelectedChildrenToAdd(new Set());
                     setSearchChildTerm('');
                   }}
-                  className="flex-1 px-4 py-2 border rounded-lg hover:bg-slate-50"
+                  className="flex-1 px-4 py-2 border rounded-lg hover:bg-slate-50 font-semibold cursor-pointer transition text-center"
                 >
                   {isArabic ? 'إلغاء' : 'Annuler'}
                 </button>
