@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { Download, X, Printer } from 'lucide-react';
-import html2pdf from 'html2pdf.js';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Paiement, Enfant } from '../types';
@@ -81,19 +82,22 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
     return t('late');
   };
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     if (!factureRef.current) return;
 
-    const element = factureRef.current;
-    const opt = {
-      margin: 10,
-      filename: `facture_${enfant.nom}_${paiement.moisConcerne}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2 },
-      jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' },
-    };
-
-    html2pdf().set(opt).from(element).save();
+    try {
+      const canvas = await html2canvas(factureRef.current, { scale: 2 });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgWidth = 210;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+      pdf.save(`facture_${enfant.nom}_${paiement.moisConcerne}.pdf`);
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      alert(isArabic ? 'خطأ في إنشاء PDF' : 'Erreur lors de la création du PDF');
+    }
   };
 
   const handlePrint = () => {
@@ -145,7 +149,7 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
           {/* Logo & Title */}
           <div className="text-center mb-8 pb-6 border-b-2 border-indigo-600">
             <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-3">
-              <span className="text-2xl font-black text-indigo-600">🏫</span>
+              <span className="text-2xl">🏫</span>
             </div>
             <h1 className="text-3xl font-black text-slate-900 mb-1">{t('invoice')}</h1>
             <p className="text-sm text-slate-500">{invoiceNumber}</p>
