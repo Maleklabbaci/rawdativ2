@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -7,16 +7,16 @@ import {
   Search, 
   Clock, 
   Thermometer, 
-  Frown, 
-  Smile, 
-  ShieldAlert,
-  ChevronRight,
-  Filter,
+  ChevronDown,
   CheckCircle2,
   XCircle,
   HelpCircle,
   Coffee,
-  Heart
+  Heart,
+  Users,
+  Calendar,
+  Layers,
+  ArrowLeftRight
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
@@ -37,9 +37,18 @@ export default function PresencesPage() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
 
-  const { presences: allDbPresences, enfants: allEnfantsData, addPresence, deletePresence } = useDb();
+  const { 
+    presences: allDbPresences, 
+    enfants: allEnfantsData, 
+    classes: classesData,
+    addPresence, 
+    deletePresence 
+  } = useDb();
+  
   const { user } = useAuth();
   const isDirecteur = user?.role === 'directeur';
+  
+  // Filtrer les enfants de la crèche courante
   const enfantsData = isDirecteur ? allEnfantsData.filter(e => e.crecheId === user!.id) : allEnfantsData;
   const enfantIdsVisibles = new Set(enfantsData.map(e => e.id));
   const dbPresences = isDirecteur ? allDbPresences.filter(p => enfantIdsVisibles.has(p.enfantId)) : allDbPresences;
@@ -54,523 +63,679 @@ export default function PresencesPage() {
     motifAbsence: p.motifAbsence || undefined
   }));
 
-  const [showModal, setShowModal] = useState(false);
+  // Gestion des États (Tabs)
+  const [activeTab, setActiveTab] = useState<'pointing' | 'history'>('pointing');
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatut, setFilterStatut] = useState('Tous');
+  const [expandedClasseId, setExpandedClasseId] = useState<string | null>(null);
 
-  const [formData, setFormData] = useState({
-    enfantId: enfantsData[0]?.id || '',
-    date: new Date().toISOString().split('T')[0],
-    statut: 'Présent' as 'Présent' | 'Absent justifié' | 'Absent non justifié',
+  // Modals
+  const [showAbsenceModal, setShowAbsenceModal] = useState(false);
+  const [selectedEnfantForAbsence, setSelectedEnfantForAbsence] = useState<string | null>(null);
+  const [showPresenceDetailsModal, setShowPresenceDetailsModal] = useState(false);
+  const [selectedEnfantForPresenceDetails, setSelectedEnfantForPresenceDetails] = useState<string | null>(null);
+
+  // Formulaires Modals
+  const [absenceForm, setAbsenceForm] = useState({
+    statut: 'Absent non justifié' as 'Absent justifié' | 'Absent non justifié',
+    motifAbsence: ''
+  });
+
+  const [presenceDetailsForm, setPresenceDetailsForm] = useState({
     heureArrivee: '08:30',
     heureDepart: '16:30',
     temperature: '36.5',
-    motifAbsence: '',
     repas: 'Tout',
     humeur: 'Souriant'
   });
 
-  const handleAjouter = () => {
-    if (!formData.enfantId || !formData.date) return;
-    addPresence(formData);
-    setShowModal(false);
-    // Reset form
-    setFormData({
-      enfantId: enfantsData[0]?.id || '',
-      date: new Date().toISOString().split('T')[0],
+  // Action rapide de pointage "Présent"
+  const handleMarkPresent = (enfantId: string) => {
+    // Supprimer le pointage existant pour ce jour s'il y en a un
+    const existing = presences.find(p => p.enfantId === enfantId && p.date === selectedDate);
+    if (existing) {
+      deletePresence(existing.id);
+    }
+    
+    // Ouvrir le modal des détails de présence (repas, humeur, température)
+    setSelectedEnfantForPresenceDetails(enfantId);
+    setShowPresenceDetailsModal(true);
+  };
+
+  // Soumission des détails de présence
+  const submitPresenceDetails = () => {
+    if (!selectedEnfantForPresenceDetails) return;
+    
+    addPresence({
+      enfantId: selectedEnfantForPresenceDetails,
+      date: selectedDate,
       statut: 'Présent',
+      ...presenceDetailsForm
+    });
+
+    setShowPresenceDetailsModal(false);
+    setSelectedEnfantForPresenceDetails(null);
+    // Reset form
+    setPresenceDetailsForm({
       heureArrivee: '08:30',
       heureDepart: '16:30',
       temperature: '36.5',
-      motifAbsence: '',
       repas: 'Tout',
       humeur: 'Souriant'
     });
   };
 
-  const countPresents = presences.filter(p => p.statut === 'Présent').length;
-  const countAbsents = presences.filter(p => p.statut !== 'Présent').length;
+  // Action rapide de pointage "Absent" (Ouvre le modal de saisie de motif)
+  const handleMarkAbsentClick = (enfantId: string) => {
+    setSelectedEnfantForAbsence(enfantId);
+    setShowAbsenceModal(true);
+  };
 
-  const filteredPresences = presences.filter(p => {
-    const enfant = enfantsData.find(e => e.id === p.enfantId);
-    const matchesSearch = enfant
-      ? `${enfant.prenom} ${enfant.nom}`.toLowerCase().includes(searchTerm.toLowerCase())
-      : false;
-    const matchesStatut = 
-      filterStatut === 'Tous' ||
-      (filterStatut === 'Présent' && p.statut === 'Présent') ||
-      (filterStatut === 'Absent' && p.statut.startsWith('Absent'));
+  // Soumission de l'absence
+  const submitAbsence = () => {
+    if (!selectedEnfantForAbsence) return;
 
-    return matchesSearch && matchesStatut;
-  });
+    // Supprimer le pointage existant pour ce jour
+    const existing = presences.find(p => p.enfantId === selectedEnfantForAbsence && p.date === selectedDate);
+    if (existing) {
+      deletePresence(existing.id);
+    }
+
+    addPresence({
+      enfantId: selectedEnfantForAbsence,
+      date: selectedDate,
+      statut: absenceForm.statut,
+      motifAbsence: absenceForm.motifAbsence || (isArabic ? 'بدون عذر محدد' : 'Aucun motif renseigné'),
+    });
+
+    setShowAbsenceModal(false);
+    setSelectedEnfantForAbsence(null);
+    setAbsenceForm({ statut: 'Absent non justifié', motifAbsence: '' });
+  };
+
+  // Retirer un pointage (remettre à non-pointé)
+  const handleResetPointing = (enfantId: string) => {
+    const existing = presences.find(p => p.enfantId === enfantId && p.date === selectedDate);
+    if (existing) {
+      deletePresence(existing.id);
+    }
+  };
+
+  // --- CALCULS DES STATISTIQUES POUR LA DATE SÉLECTIONNÉE ---
+  const todayPresences = useMemo(() => {
+    return presences.filter(p => p.date === selectedDate);
+  }, [presences, selectedDate]);
+
+  const countPresents = todayPresences.filter(p => p.statut === 'Présent').length;
+  const countAbsents = todayPresences.filter(p => p.statut.startsWith('Absent')).length;
+
+  // --- HISTORIQUE DES ABSENCES TRIÉ PAR JOUR (Pour l'onglet Historique) ---
+  const absencesGroupedByDay = useMemo(() => {
+    const allAbsences = presences.filter(p => p.statut.startsWith('Absent'));
+    
+    // Regrouper par date
+    const groups: Record<string, RichPresence[]> = {};
+    allAbsences.forEach(p => {
+      if (!groups[p.date]) {
+        groups[p.date] = [];
+      }
+      groups[p.date].push(p);
+    });
+
+    // Trier les dates par ordre décroissant (du plus récent au plus ancien)
+    return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [presences]);
 
   return (
-    <div className="space-y-4 sm:space-y-8">
-      {/* Upper Widgets Block */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4 hover:shadow-md transition">
-          <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+    <div className={`space-y-6 ${isArabic ? 'rtl' : 'ltr'}`}>
+      
+      {/* En-tête principal */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-black text-slate-900 flex items-center gap-2">
+            <CalendarCheck className="w-8 h-8 text-indigo-600" />
+            {isArabic ? 'تسيير الحضور والغيابات' : 'Registre des Présences'}
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            {isArabic 
+              ? 'سجل الحضور اليومي مقسم حسب الفصول، ومتابعة ذكية للغيابات الشهرية' 
+              : 'Registre d\'appel quotidien par classe et historique chronologique des absences.'}
+          </p>
+        </div>
+
+        {/* Sélectionneur de date globale */}
+        <div className="flex items-center gap-3 bg-white p-3 border border-slate-150 rounded-2xl shadow-xs self-start md:self-auto">
+          <Calendar className="w-5 h-5 text-indigo-600" />
+          <input 
+            type="date" 
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="outline-none text-sm font-bold text-slate-800 cursor-pointer"
+          />
+        </div>
+      </div>
+
+      {/* Widgets Statistiques */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
             <CheckCircle2 className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-              {isArabic ? 'الحاضرون اليوم' : 'Présents Aujourd\'hui'}
-            </p>
-            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{countPresents} {isArabic ? 'أطفال' : 'enfants'}</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{isArabic ? 'حاضر اليوم' : 'Présents'}</p>
+            <p className="text-xl sm:text-2xl font-black text-emerald-600 mt-0.5">{countPresents}</p>
           </div>
         </div>
 
-        <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4 hover:shadow-md transition">
-          <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
             <XCircle className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-              {isArabic ? 'الغائبون' : 'Absences'}
-            </p>
-            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{countAbsents} {isArabic ? 'غائب' : 'absents'}</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{isArabic ? 'غائب اليوم' : 'Absents'}</p>
+            <p className="text-xl sm:text-2xl font-black text-rose-600 mt-0.5">{countAbsents}</p>
           </div>
         </div>
 
-        <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4 hover:shadow-md transition">
-          <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-            <Thermometer className="w-6 h-6" />
+        <div className="col-span-2 md:col-span-1 bg-white p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+            <Users className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-              {isArabic ? 'معدل درجة الحرارة' : 'Suivi Santé'}
-            </p>
-            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">36.7 °C</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{isArabic ? 'إجمالي الأطفال' : 'Total Enfants'}</p>
+            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{enfantsData.length}</p>
           </div>
         </div>
       </div>
 
-      {/* Main Header and Action Row */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <CalendarCheck className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600" />
-            {isArabic ? 'دفتر الحضور والغياب اليومي' : 'Registre des Présences'}
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5 leading-tight">
-            {isArabic 
-              ? 'تسيير الحضور اليومي، أوقات الوصول والانصراف والمؤشرات الطبية والتبريرات' 
-              : 'Gerez le pointage quotidien, les arrivées/départs, les relevés de température et justificatifs.'}
-          </p>
-        </div>
-        <button 
-          className="flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-4 py-2.5 sm:px-6 sm:py-3.5 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/10 hover:shadow-indigo-600/20 transition-all cursor-pointer w-full sm:w-auto" 
-          onClick={() => setShowModal(true)}
+      {/* Barre de navigation des onglets */}
+      <div className="flex border-b border-slate-200 gap-6">
+        <button
+          onClick={() => setActiveTab('pointing')}
+          className={`pb-3 text-sm font-black transition-all cursor-pointer relative ${
+            activeTab === 'pointing' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'
+          }`}
         >
-          <Plus size={16} className="stroke-[3]" />
-          <span>{isArabic ? 'تسجيل حالة حضور/غياب' : 'Marquer une fiche'}</span>
+          {isArabic ? 'أخذ حضور الفصول اليومي' : 'Appel quotidien'}
+          {activeTab === 'pointing' && (
+            <motion.div layoutId="activeTabBorder" className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-600 rounded-full" />
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('history')}
+          className={`pb-3 text-sm font-black transition-all cursor-pointer relative flex items-center gap-2 ${
+            activeTab === 'history' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          {isArabic ? 'سجل الغيابات المنظم' : 'Registre des absences'}
+          <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full">
+            {presences.filter(p => p.statut.startsWith('Absent')).length}
+          </span>
+          {activeTab === 'history' && (
+            <motion.div layoutId="activeTabBorder" className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-600 rounded-full" />
+          )}
         </button>
       </div>
 
-      {/* Search and Filters Block */}
-      <div className="bg-white p-3 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex flex-col md:flex-row gap-3 items-center">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder={isArabic ? 'ابحث عن طفل...' : 'Rechercher un enfant...'}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition-all text-xs sm:text-sm font-medium text-slate-800"
-          />
-        </div>
-        <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 scrollbar-none flex-nowrap shrink-0">
-          <button
-            onClick={() => setFilterStatut('Tous')}
-            className={`flex-grow sm:flex-none px-3.5 py-2 text-[11px] sm:text-xs font-bold rounded-xl transition whitespace-nowrap shrink-0 ${
-              filterStatut === 'Tous'
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'bg-slate-50 text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            {isArabic ? 'الكل' : 'Tous'}
-          </button>
-          <button
-            onClick={() => setFilterStatut('Présent')}
-            className={`flex-grow sm:flex-none px-3.5 py-2 text-[11px] sm:text-xs font-bold rounded-xl transition whitespace-nowrap shrink-0 ${
-              filterStatut === 'Présent'
-                ? 'bg-emerald-600 text-white shadow-xs'
-                : 'bg-slate-50 text-slate-500 hover:text-emerald-600'
-            }`}
-          >
-            {isArabic ? 'حاضر' : 'Présents'}
-          </button>
-          <button
-            onClick={() => setFilterStatut('Absent')}
-            className={`flex-grow sm:flex-none px-3.5 py-2 text-[11px] sm:text-xs font-bold rounded-xl transition whitespace-nowrap shrink-0 ${
-              filterStatut === 'Absent'
-                ? 'bg-rose-600 text-white shadow-xs'
-                : 'bg-slate-50 text-slate-500 hover:text-rose-600'
-            }`}
-          >
-            {isArabic ? 'غائب' : 'Absents'}
-          </button>
-        </div>
-      </div>
+      {/* ======================================================== */}
+      {/* 1. ONGLET : POINTAGE QUOTIDIEN PAR CLASSE */}
+      {/* ======================================================== */}
+      {activeTab === 'pointing' && (
+        <div className="space-y-4">
+          
+          {/* Barre de recherche d'enfant */}
+          <div className="relative w-full max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder={isArabic ? 'ابحث عن طفل لتحديد صفه...' : 'Rechercher un enfant...'}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:border-indigo-500 transition text-sm font-semibold text-slate-800"
+            />
+          </div>
 
-      {/* Main Register Table */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden animate-slide-up">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50/70 border-b border-slate-100 text-[11px] font-black uppercase tracking-wider text-slate-400">
-                <th className="p-5">{isArabic ? 'الطفل' : 'Enfant'}</th>
-                <th className="p-5">{isArabic ? 'التاريخ' : 'Date'}</th>
-                <th className="p-5">{isArabic ? 'الحالة' : 'Statut'}</th>
-                <th className="p-5">{isArabic ? 'المعلومات الحيوية والوصول' : 'Santé & Horaires'}</th>
-                <th className="p-5">{isArabic ? 'التفاصيل والوجبة' : 'Détails & Repas'}</th>
-                <th className="p-5 text-center">{isArabic ? 'إجراءات' : 'Actions'}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-sm font-medium text-slate-700">
-              {filteredPresences.length > 0 ? (
-                filteredPresences.map((p) => {
-                  const enfant = enfantsData.find(e => e.id === p.enfantId);
+          {/* Grid des Classes (Accordéons) */}
+          <div className="space-y-3">
+            {classesData.map((classe) => {
+              // Filtrer les enfants appartenant à cette classe
+              const classeChildren = enfantsData.filter(e => 
+                classe.childrenIds?.includes(e.id) &&
+                `${e.prenom} ${e.nom}`.toLowerCase().includes(searchTerm.toLowerCase())
+              );
+
+              if (searchTerm && classeChildren.length === 0) return null;
+
+              const isExpanded = expandedClasseId === classe.id;
+
+              return (
+                <div key={classe.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                   
-                  return (
-                    <tr key={p.id} className="hover:bg-slate-50/50 transition">
-                      {/* Child Profile Column */}
-                      <td className="p-5">
+                  {/* Header de l'accordéon de classe */}
+                  <div 
+                    onClick={() => setExpandedClasseId(isExpanded ? null : classe.id)}
+                    className="p-5 flex items-center justify-between cursor-pointer hover:bg-slate-50/50 transition-all"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                        <Users className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-extrabold text-slate-950 text-base">{classe.nom}</h3>
+                        <p className="text-xs text-slate-400 font-bold">{classe.niveau} • {classeChildren.length} {isArabic ? 'أطفال مسجلين' : 'enfants'}</p>
+                      </div>
+                    </div>
+                    <ChevronDown className={`w-5 h-5 text-slate-400 transition-all ${isExpanded ? 'rotate-180 text-indigo-600' : ''}`} />
+                  </div>
+
+                  {/* Corps de l'accordéon contenant les enfants */}
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div 
+                        initial={{ height: 0 }}
+                        animate={{ height: 'auto' }}
+                        exit={{ height: 0 }}
+                        className="border-t border-slate-100 bg-slate-50/20"
+                      >
+                        <div className="p-5 divide-y divide-slate-100">
+                          {classeChildren.length > 0 ? (
+                            classeChildren.map((enfant) => {
+                              // Vérifier le statut de l'enfant pour la date sélectionnée
+                              const statusRecord = todayPresences.find(p => p.enfantId === enfant.id);
+                              
+                              return (
+                                <div key={enfant.id} className="py-4 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                  
+                                  {/* Infos Enfant */}
+                                  <div className="flex items-center gap-3">
+                                    <div className={`w-10 h-10 rounded-xl font-black text-xs flex items-center justify-center text-white ${
+                                      enfant.genre === 'Fille' ? 'bg-pink-500' : 'bg-sky-500'
+                                    }`}>
+                                      {enfant.prenom[0]}{enfant.nom[0]}
+                                    </div>
+                                    <div>
+                                      <p className="font-extrabold text-slate-900">{enfant.prenom} {enfant.nom}</p>
+                                      <p className="text-[11px] text-slate-400 font-bold">{enfant.genre}</p>
+                                    </div>
+                                  </div>
+
+                                  {/* Affichage des détails si pointé présent */}
+                                  {statusRecord?.statut === 'Présent' && (
+                                    <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-500">
+                                      <span className="flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-1 rounded-md font-bold">
+                                        <Thermometer className="w-3.5 h-3.5" /> {statusRecord.temperature}°C
+                                      </span>
+                                      <span className="flex items-center gap-1 bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-1 rounded-md font-bold">
+                                        <Clock className="w-3.5 h-3.5" /> {statusRecord.heureArrivee} - {statusRecord.heureDepart}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {/* Affichage du motif si pointé absent */}
+                                  {statusRecord?.statut.startsWith('Absent') && (
+                                    <div className="max-w-xs text-xs text-rose-600 bg-rose-50/50 border border-rose-100 px-3 py-1.5 rounded-xl font-bold">
+                                      {statusRecord.motifAbsence}
+                                    </div>
+                                  )}
+
+                                  {/* Double boutons interactifs de Pointage */}
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    
+                                    {/* Bouton : PRÉSENT */}
+                                    <button
+                                      onClick={() => handleMarkPresent(enfant.id)}
+                                      className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer border ${
+                                        statusRecord?.statut === 'Présent'
+                                          ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
+                                          : 'bg-white border-slate-200 text-slate-600 hover:border-emerald-300 hover:bg-emerald-50/30'
+                                      }`}
+                                    >
+                                      {isArabic ? 'حاضر' : 'Présent'}
+                                    </button>
+
+                                    {/* Bouton : ABSENT */}
+                                    <button
+                                      onClick={() => handleMarkAbsentClick(enfant.id)}
+                                      className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer border ${
+                                        statusRecord?.statut.startsWith('Absent')
+                                          ? 'bg-rose-600 border-rose-600 text-white shadow-sm'
+                                          : 'bg-white border-slate-200 text-slate-600 hover:border-rose-300 hover:bg-rose-50/30'
+                                      }`}
+                                    >
+                                      {isArabic ? 'غائب' : 'Absent'}
+                                    </button>
+
+                                    {/* Bouton : Re-initialiser le pointage */}
+                                    {statusRecord && (
+                                      <button 
+                                        onClick={() => handleResetPointing(enfant.id)}
+                                        className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+                                        title={isArabic ? 'إلغاء التحديد' : 'Réinitialiser'}
+                                      >
+                                        <ArrowLeftRight className="w-4 h-4" />
+                                      </button>
+                                    )}
+                                  </div>
+
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <p className="text-sm text-slate-400 text-center py-4">{isArabic ? 'لا توجد أطفال يطابقون بحثك' : 'Aucun enfant trouvé.'}</p>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                </div>
+              );
+            })}
+          </div>
+
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 2. ONGLET : HISTORIQUE DES ABSENCES CLASSÉ PAR JOURS */}
+      {/* ======================================================== */}
+      {activeTab === 'history' && (
+        <div className="space-y-6">
+          
+          {absencesGroupedByDay.length > 0 ? (
+            absencesGroupedByDay.map(([date, dailyAbsences]) => (
+              <div key={date} className="bg-white rounded-2xl border border-slate-100 shadow-xs overflow-hidden">
+                
+                {/* En-tête du jour */}
+                <div className="bg-slate-50 border-b border-slate-100 px-5 py-3.5 flex items-center justify-between">
+                  <span className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-slate-400" />
+                    {new Date(date).toLocaleDateString(language === 'ar' ? 'ar-DZ' : 'fr-FR', {
+                      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+                    })}
+                  </span>
+                  <span className="bg-rose-100 text-rose-700 text-xs px-2.5 py-1 rounded-full font-black">
+                    {dailyAbsences.length} {isArabic ? 'غيابات' : 'absences'}
+                  </span>
+                </div>
+
+                {/* Liste des absences de cette journée */}
+                <div className="divide-y divide-slate-100">
+                  {dailyAbsences.map((abs) => {
+                    const enfant = enfantsData.find(e => e.id === abs.enfantId);
+                    
+                    return (
+                      <div key={abs.id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        
+                        {/* Kid profile */}
                         <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-xl font-bold text-sm flex items-center justify-center text-white shadow-xs ${
-                            enfant?.genre === 'Fille' ? 'bg-pink-500' : 'bg-sky-500'
-                          }`}>
-                            {enfant ? `${enfant.prenom[0]}${enfant.nom[0]}` : p.enfantId[0]}
+                          <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 font-black text-xs flex items-center justify-center">
+                            {enfant ? `${enfant.prenom[0]}${enfant.nom[0]}` : '?'}
                           </div>
                           <div>
-                            <p className="text-slate-900 font-extrabold">{enfant ? `${enfant.prenom} ${enfant.nom}` : t('children.all')}</p>
-                            <p className="text-xs text-slate-400 font-semibold">{enfant?.groupeAge || 'N/A'}</p>
+                            <p className="font-extrabold text-slate-900">{enfant ? `${enfant.prenom} ${enfant.nom}` : 'Enfant Inconnu'}</p>
+                            <p className="text-[10px] text-slate-400 font-bold">
+                              {abs.statut === 'Absent justifié' ? (isArabic ? 'غياب مبرر 🟢' : 'Justifiée 🟢') : (isArabic ? 'غياب غير مبرر 🔴' : 'Non justifiée 🔴')}
+                            </p>
                           </div>
                         </div>
-                      </td>
 
-                      {/* Date Column */}
-                      <td className="p-5 whitespace-nowrap text-slate-500 font-bold">
-                        {p.date}
-                      </td>
-
-                      {/* Statut Badge Column */}
-                      <td className="p-5">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold leading-none ${
-                          p.statut === 'Présent' 
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
-                            : p.statut === 'Absent justifié' 
-                            ? 'bg-amber-50 text-amber-700 border border-amber-100' 
-                            : 'bg-rose-50 text-rose-700 border border-rose-100'
-                        }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${
-                            p.statut === 'Présent' ? 'bg-emerald-500' : p.statut === 'Absent justifié' ? 'bg-amber-500' : 'bg-rose-500'
-                          }`} />
-                          {p.statut}
-                        </span>
-                      </td>
-
-                      {/* Health & Arrival Column */}
-                      <td className="p-5">
-                        {p.statut === 'Présent' ? (
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                              <Clock className="w-3.5 h-3.5 text-slate-400" />
-                              <span>{p.heureArrivee || '08:30'} - {p.heureDepart || '16:30'}</span>
-                            </div>
-                            {p.temperature && (
-                              <div className="flex items-center gap-1 text-xs text-slate-600 font-bold">
-                                <Thermometer className="w-3.5 h-3.5 text-amber-500" />
-                                <span>{p.temperature} °C</span>
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <p className="text-xs text-rose-500 bg-rose-50/50 px-2.5 py-1 rounded-lg border border-rose-100 inline-block font-semibold">
-                            {p.motifAbsence || (isArabic ? 'لم يتم تقديم أي عذر' : 'Aucun motif renseigné')}
+                        {/* Motif d'absence */}
+                        <div className="flex-1 max-w-md bg-slate-50/80 border border-slate-100 p-3 rounded-xl">
+                          <p className="text-xs font-bold text-slate-700">
+                            {abs.motifAbsence}
                           </p>
-                        )}
-                      </td>
+                        </div>
 
-                      {/* Dinner & Mood Column */}
-                      <td className="p-5">
-                        {p.statut === 'Présent' ? (
-                          <div className="space-y-1">
-                            {p.repas && (
-                              <p className="text-xs text-slate-600 flex items-center gap-1">
-                                <Coffee className="w-3.5 h-3.5 text-indigo-500" />
-                                <span>{isArabic ? 'الشهية' : 'Repas'}: <strong className="text-slate-800">{p.repas}</strong></span>
-                              </p>
-                            )}
-                            {p.humeur && (
-                              <p className="text-xs text-slate-600 flex items-center gap-1 font-bold">
-                                <Heart className="w-3.5 h-3.5 text-pink-500" />
-                                <span>{isArabic ? 'المزاج' : 'Humeur'}: <strong className="text-pink-600">{p.humeur}</strong></span>
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-slate-400 italic">--</span>
-                        )}
-                      </td>
-
-                      {/* Delete actions */}
-                      <td className="p-5 text-center">
-                        <button 
-                          className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer" 
+                        {/* Action : Supprimer le rapport d'absence */}
+                        <button
                           onClick={() => {
-                            const confirmationMsg = isArabic
-                              ? 'هل أنت متأكد من حذف سجل الحضور هذا؟'
-                              : 'Êtes-vous sûr de vouloir supprimer ce relevé de présence ?';
-                            if (window.confirm(confirmationMsg)) {
-                              deletePresence(p.id);
+                            if (window.confirm(isArabic ? 'هل تريد حذف تسجيل الغياب هذا؟' : 'Supprimer cette absence ?')) {
+                              deletePresence(abs.id);
                             }
                           }}
+                          className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition cursor-pointer self-end sm:self-auto"
                         >
-                          <Trash2 size={17} />
+                          <Trash2 className="w-4 h-4" />
                         </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={6} className="p-12 text-center text-slate-400">
-                    <HelpCircle className="w-10 h-10 mx-auto text-slate-300 stroke-[1.5] mb-2" />
-                    <p className="font-extrabold">{isArabic ? 'لا توجد بيانات حضور متطابقة' : 'Aucune fiche de présence enregistrée'}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">{isArabic ? 'اضغط على زر التسجيل لبدء يوم جديد.' : 'Commencez par ajouter un nouveau relevé de pointage.'}</p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
-      {/* Exquisite Full Information Presence Form (As demanded by user) */}
+                      </div>
+                    );
+                  })}
+                </div>
+
+              </div>
+            ))
+          ) : (
+            <div className="text-center py-12 bg-white rounded-3xl border border-slate-100 shadow-xs">
+              <HelpCircle className="w-12 h-12 mx-auto text-slate-300 mb-2" />
+              <p className="font-extrabold text-slate-900">{isArabic ? 'لا توجد غيابات مسجلة' : 'Aucune absence enregistrée'}</p>
+              <p className="text-xs text-slate-400 mt-1">{isArabic ? 'تظهر الغيابات هنا عندما تقوم بتأشير الأطفال كغائبين.' : 'Les absences marquées apparaîtront ici triées par jour.'}</p>
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL 1 : SPÉCIFIER LES DÉTAILS DE L'ABSENCE */}
+      {/* ======================================================== */}
       <AnimatePresence>
-        {showModal && (
+        {showAbsenceModal && (
           <div 
-            className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-center justify-center z-[999] p-4 cursor-pointer"
-            onClick={() => setShowModal(false)}
+            className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center z-[999] p-4 cursor-pointer"
+            onClick={() => setShowAbsenceModal(false)}
           >
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-xl max-h-[85vh] mt-16 flex flex-col overflow-hidden font-sans cursor-default"
+              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md overflow-hidden cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
+              {/* Header */}
+              <div className="p-6 bg-rose-600 text-white flex justify-between items-center">
                 <div>
-                  <h3 className="text-xl font-black">{isArabic ? 'كتابة سجل يومي مفصل' : 'Fiche de Pointage Détaillée'}</h3>
-                  <p className="text-xs text-indigo-100 mt-0.5">{isArabic ? 'سجل الحضور والغياب، المعايير الصحية والمزاج والأكل' : 'Saisie complète d\'indicateurs physiologiques et justifications d\'absences'}</p>
+                  <h3 className="text-lg font-black">{isArabic ? 'تفاصيل عذر الغياب' : 'Enregistrer une Absence'}</h3>
+                  <p className="text-xs text-rose-100 mt-0.5">{isArabic ? 'تحديد تبرير وسبب الغياب بدقة' : 'Préciser la justification et le motif de l\'absence'}</p>
                 </div>
                 <button 
-                  onClick={() => setShowModal(false)}
+                  onClick={() => setShowAbsenceModal(false)}
                   className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
                 >
-                  <X size={20} />
+                  <X size={18} />
                 </button>
               </div>
 
-              <div className="p-6 space-y-5 overflow-y-auto flex-1">
+              {/* Form Body */}
+              <div className="p-6 space-y-4">
                 
-                {/* Child and Date Selector (Row 1) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {isArabic ? 'اختر الطفل *' : 'Sélectionner l\'Enfant *'}
-                    </label>
-                    <select 
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800" 
-                      value={formData.enfantId} 
-                      onChange={e => setFormData({...formData, enfantId: e.target.value})}
-                    >
-                      {enfantsData.map(e => <option key={e.id} value={e.id}>{e.prenom} {e.nom}</option>)}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {isArabic ? 'التاريخ *' : 'Sélectionner la Date *'}
-                    </label>
-                    <input 
-                      type="date" 
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-bold text-slate-800" 
-                      value={formData.date} 
-                      onChange={e => setFormData({...formData, date: e.target.value})} 
-                    />
-                  </div>
-                </div>
-
-                {/* Statut Toggle Selector */}
+                {/* Type de justification */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    {isArabic ? 'حالة الحضور والغياب *' : 'Statut de Présence / Absence *'}
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { key: 'Présent', label: isArabic ? 'حاضر' : 'Présent', bg: 'hover:border-emerald-500 active:bg-emerald-50', activeBg: 'bg-emerald-600 text-white' },
-                      { key: 'Absent justifié', label: isArabic ? 'غائب مبرر' : 'Absent Justifié', bg: 'hover:border-amber-500 active:bg-amber-50', activeBg: 'bg-amber-600 text-white' },
-                      { key: 'Absent non justifié', label: isArabic ? 'غائب غير مبرر' : 'Absent Non Justifié', bg: 'hover:border-rose-500 active:bg-rose-50', activeBg: 'bg-rose-600 text-white' }
-                    ].map(btn => (
-                      <button
-                        key={btn.key}
-                        type="button"
-                        onClick={() => setFormData({...formData, statut: btn.key as any})}
-                        className={`p-3 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
-                          formData.statut === btn.key 
-                            ? btn.activeBg 
-                            : `bg-slate-50 text-slate-600 border-slate-200 ${btn.bg}`
-                        }`}
-                      >
-                        {btn.label}
-                      </button>
-                    ))}
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{isArabic ? 'حالة الغياب *' : 'Statut de l\'absence *'}</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAbsenceForm({ ...absenceForm, statut: 'Absent justifié' })}
+                      className={`p-3 text-xs font-bold rounded-xl border transition cursor-pointer text-center ${
+                        absenceForm.statut === 'Absent justifié'
+                          ? 'bg-amber-600 text-white border-transparent'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      {isArabic ? 'مبرر' : 'Justifié'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAbsenceForm({ ...absenceForm, statut: 'Absent non justifié' })}
+                      className={`p-3 text-xs font-bold rounded-xl border transition cursor-pointer text-center ${
+                        absenceForm.statut === 'Absent non justifié'
+                          ? 'bg-rose-600 text-white border-transparent'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      {isArabic ? 'غير مبرر' : 'Non justifié'}
+                    </button>
                   </div>
                 </div>
 
-                {/* Conditional fields based on selected status (Exquisite design!) */}
-                {formData.statut === 'Présent' ? (
-                  <motion.div 
-                    initial={{ opacity: 0, y: -8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4"
-                  >
-                    <p className="text-xs font-black text-indigo-600 uppercase tracking-wider mb-2">{isArabic ? 'المعايير الصحية وأوقات الحضور' : 'Relevés d\'activité et physiologie (Présent)'}</p>
-                    
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                      {/* Temperature input */}
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-500 mb-1.5 flex items-center gap-1">
-                          <Thermometer className="w-3.5 h-3.5 text-amber-500" />
-                          {isArabic ? 'الحرارة (°C)' : 'Température'}
-                        </label>
-                        <input 
-                          type="text" 
-                          placeholder="36.5"
-                          className="w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-500 text-xs font-black text-slate-800" 
-                          value={formData.temperature} 
-                          onChange={e => setFormData({...formData, temperature: e.target.value})} 
-                        />
-                      </div>
-
-                      {/* Check-In time */}
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-500 mb-1.5 flex items-center gap-1">
-                          <Clock className="w-3.5 h-3.5 text-indigo-500" />
-                          {isArabic ? 'وقت الوصول' : 'Heure d\'Arrivé'}
-                        </label>
-                        <input 
-                          type="text" 
-                          placeholder="08:30"
-                          className="w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-500 text-xs font-bold text-slate-800" 
-                          value={formData.heureArrivee} 
-                          onChange={e => setFormData({...formData, heureArrivee: e.target.value})} 
-                        />
-                      </div>
-
-                      {/* Check-Out time */}
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-500 mb-1.5 flex items-center gap-1">
-                          <Clock className="w-3.5 h-3.5 text-indigo-500" />
-                          {isArabic ? 'وقت الخروج' : 'Heure de Départ'}
-                        </label>
-                        <input 
-                          type="text" 
-                          placeholder="16:30"
-                          className="w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-500 text-xs font-bold text-slate-800" 
-                          value={formData.heureDepart} 
-                          onChange={e => setFormData({...formData, heureDepart: e.target.value})} 
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                      {/* Repas selection */}
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-500 mb-1.5 flex items-center gap-1">
-                          <Coffee className="w-3.5 h-3.5 text-indigo-500" />
-                          {isArabic ? 'استهلاك الوجبة' : 'Repas de la journée'}
-                        </label>
-                        <select 
-                          className="w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-500 text-xs font-semibold text-slate-800"
-                          value={formData.repas}
-                          onChange={e => setFormData({...formData, repas: e.target.value})}
-                        >
-                          <option value="Tout">Tout mangé</option>
-                          <option value="Moyen">Moyen</option>
-                          <option value="Peu">Peu</option>
-                          <option value="Non">N'a pas mangé</option>
-                        </select>
-                      </div>
-
-                      {/* Humeur choice */}
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-500 mb-1.5 flex items-center gap-1">
-                          <Heart className="w-3.5 h-3.5 text-pink-500" />
-                          {isArabic ? 'مزاج وحالة الطفل' : 'Humeur générale'}
-                        </label>
-                        <select 
-                          className="w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-500 text-xs font-semibold text-slate-800"
-                          value={formData.humeur}
-                          onChange={e => setFormData({...formData, humeur: e.target.value})}
-                        >
-                          <option value="Souriant">Souriant & Enjoué</option>
-                          <option value="Calme">Calme & Stable</option>
-                          <option value="Agité">Agité</option>
-                          <option value="Fatigué">Fatigué / Somnolent</option>
-                        </select>
-                      </div>
-                    </div>
-                  </motion.div>
-                ) : (
-                  <motion.div 
-                    initial={{ opacity: 0, y: -8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-4 bg-rose-50/50 rounded-2xl border border-rose-100 space-y-4"
-                  >
-                    <p className="text-xs font-black text-rose-600 uppercase tracking-wider mb-2">{isArabic ? 'تفاصيل عذر الغياب' : 'Mémoriser l\'Absence (Justificatifs)'}</p>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-500 mb-1.5 flex items-center gap-1">
-                        <ShieldAlert className="w-3.5 h-3.5 text-rose-500" />
-                        {isArabic ? 'سبب الغياب بالتفصيل' : 'Description du motif d\'absence'}
-                      </label>
-                      <input 
-                        type="text" 
-                        placeholder={isArabic ? 'مثال: موعد طبي، زكام خفيف، سفر عائلي...' : 'Ex: Fièvre, rendez-vous pédiatre, déplacement familial...'}
-                        className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:border-rose-500 text-sm font-semibold text-slate-800" 
-                        value={formData.motifAbsence} 
-                        onChange={e => setFormData({...formData, motifAbsence: e.target.value})} 
-                      />
-                    </div>
-                  </motion.div>
-                )}
+                {/* Motif de l'absence */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{isArabic ? 'عذر أو سبب الغياب *' : 'Motif ou description *'}</label>
+                  <input
+                    type="text"
+                    value={absenceForm.motifAbsence}
+                    onChange={(e) => setAbsenceForm({ ...absenceForm, motifAbsence: e.target.value })}
+                    placeholder={isArabic ? 'مثال: موعد طبي، وعكة صحية، سفر...' : 'Ex: Malade, voyage, urgence familiale...'}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-rose-500 font-semibold text-sm text-slate-800"
+                  />
+                </div>
 
               </div>
 
-              {/* Save button and actions */}
-              <div className="p-6 pt-4 border-t border-slate-100 flex gap-3 flex-shrink-0 bg-slate-50/50">
-                <button 
-                  type="button"
-                  className="flex-1 p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer text-sm"
-                  onClick={() => setShowModal(false)}
+              {/* Actions Footer */}
+              <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
+                <button
+                  onClick={() => setShowAbsenceModal(false)}
+                  className="flex-1 py-3 bg-slate-200 hover:bg-slate-300 rounded-xl font-bold text-slate-700 transition cursor-pointer text-xs"
                 >
                   {t('common.cancel')}
                 </button>
-                <button 
-                  type="button"
-                  className="flex-1 p-3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-750 text-white font-bold rounded-xl transition cursor-pointer text-sm shadow-md"
-                  onClick={handleAjouter}
+                <button
+                  onClick={submitAbsence}
+                  className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold transition cursor-pointer text-xs shadow-md shadow-rose-200"
                 >
-                  {t('common.save')}
+                  {isArabic ? 'تأشير كغائب' : 'Marquer absent'}
                 </button>
               </div>
+
             </motion.div>
           </div>
         )}
       </AnimatePresence>
+
+      {/* ======================================================== */}
+      {/* MODAL 2 : SPÉCIFIER LES DÉTAILS DU PASSAGE / SANTÉ (PRÉSENT) */}
+      {/* ======================================================== */}
+      <AnimatePresence>
+        {showPresenceDetailsModal && (
+          <div 
+            className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center z-[999] p-4 cursor-pointer"
+            onClick={() => setShowPresenceDetailsModal(false)}
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md overflow-hidden cursor-default"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="p-6 bg-emerald-600 text-white flex justify-between items-center">
+                <div>
+                  <h3 className="text-lg font-black">{isArabic ? 'مؤشرات يوم الحضور' : 'Indicateurs de Présence'}</h3>
+                  <p className="text-xs text-emerald-100 mt-0.5">{isArabic ? 'مراقبة المعايير الصحية والمزاج والأكل' : 'Saisir les observations santé, repas et humeur'}</p>
+                </div>
+                <button 
+                  onClick={() => setShowPresenceDetailsModal(false)}
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Form Body */}
+              <div className="p-6 space-y-4">
+                
+                {/* Température */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{isArabic ? 'درجة الحرارة (°C)' : 'Température (°C)'}</label>
+                  <input
+                    type="text"
+                    value={presenceDetailsForm.temperature}
+                    onChange={(e) => setPresenceDetailsForm({ ...presenceDetailsForm, temperature: e.target.value })}
+                    placeholder="36.5"
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-black text-sm text-slate-800"
+                  />
+                </div>
+
+                {/* Heures Arrivée & Départ */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{isArabic ? 'وقت الدخول' : 'Heure d\'arrivée'}</label>
+                    <input
+                      type="text"
+                      value={presenceDetailsForm.heureArrivee}
+                      onChange={(e) => setPresenceDetailsForm({ ...presenceDetailsForm, heureArrivee: e.target.value })}
+                      placeholder="08:30"
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-semibold text-sm text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{isArabic ? 'وقت الانصراف' : 'Heure de départ'}</label>
+                    <input
+                      type="text"
+                      value={presenceDetailsForm.heureDepart}
+                      onChange={(e) => setPresenceDetailsForm({ ...presenceDetailsForm, heureDepart: e.target.value })}
+                      placeholder="16:30"
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-semibold text-sm text-slate-800"
+                    />
+                  </div>
+                </div>
+
+                {/* Repas & Humeur */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{isArabic ? 'الوجبة' : 'Repas mangé'}</label>
+                    <select
+                      value={presenceDetailsForm.repas}
+                      onChange={(e) => setPresenceDetailsForm({ ...presenceDetailsForm, repas: e.target.value })}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-semibold text-sm text-slate-800"
+                    >
+                      <option value="Tout">Tout mangé</option>
+                      <option value="Moyen">Moyen</option>
+                      <option value="Peu">Peu</option>
+                      <option value="Non">N'a pas mangé</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{isArabic ? 'المزاج اليومي' : 'Humeur globale'}</label>
+                    <select
+                      value={presenceDetailsForm.humeur}
+                      onChange={(e) => setPresenceDetailsForm({ ...presenceDetailsForm, humeur: e.target.value })}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-semibold text-sm text-slate-800"
+                    >
+                      <option value="Souriant">Souriant</option>
+                      <option value="Calme">Calme</option>
+                      <option value="Agité">Agité</option>
+                      <option value="Fatigué">Fatigué</option>
+                    </select>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Actions Footer */}
+              <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
+                <button
+                  onClick={() => setShowPresenceDetailsModal(false)}
+                  className="flex-1 py-3 bg-slate-200 hover:bg-slate-300 rounded-xl font-bold text-slate-700 transition cursor-pointer text-xs"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  onClick={submitPresenceDetails}
+                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition cursor-pointer text-xs shadow-md"
+                >
+                  {isArabic ? 'تأشير كحاضر' : 'Marquer présent'}
+                </button>
+              </div>
+
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }
