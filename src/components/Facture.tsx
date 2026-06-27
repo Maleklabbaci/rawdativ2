@@ -65,23 +65,27 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
         monthlyFee: 'رسوم الحضانة الشهرية',
       },
     };
-    return translations[language][key] || translations.fr[key];
+    // CORRECTION PRINCIPALE : Ajout du ?. pour éviter le crash si language est undefined
+    return translations[language]?.[key] || translations.fr[key];
   };
 
   const getStatusColor = () => {
-    if (paiement.statut === 'Payé') return 'text-green-600 bg-green-50';
-    if (paiement.statut === 'En attente') return 'text-amber-600 bg-amber-50';
+    if (paiement?.statut === 'Payé') return 'text-green-600 bg-green-50';
+    if (paiement?.statut === 'En attente') return 'text-amber-600 bg-amber-50';
     return 'text-rose-600 bg-rose-50';
   };
 
   const getStatusLabel = () => {
-    if (paiement.statut === 'Payé') return t('paid');
-    if (paiement.statut === 'En attente') return t('pending');
+    if (paiement?.statut === 'Payé') return t('paid');
+    if (paiement?.statut === 'En attente') return t('pending');
     return t('late');
   };
 
-  const parentInfo = enfant.parents[0] || {};
-  const invoiceNumber = `FAC-${paiement.id.slice(0, 8).toUpperCase()}`;
+  // CORRECTION : Ajout du ?. au cas où enfant.parents serait undefined
+  const parentInfo = enfant?.parents?.[0] || {};
+  
+  // CORRECTION : Ajout du ?. et d'un fallback au cas où paiement.id serait undefined
+  const invoiceNumber = `FAC-${paiement?.id?.slice(0, 8).toUpperCase() || 'INCONNU'}`;
   const invoiceDate = new Date().toLocaleDateString(language === 'ar' ? 'ar-DZ' : 'fr-FR');
 
   const handleDownloadPDF = () => {
@@ -187,8 +191,8 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
             <div>
               <h3 className="text-sm font-bold text-slate-500 uppercase mb-3">{t('creche')}</h3>
               <div className="space-y-2">
-                <p className="text-lg font-bold text-slate-900">{creche.nom}</p>
-                <p className="text-sm text-slate-600">{creche.adresse}</p>
+                <p className="text-lg font-bold text-slate-900">{creche?.nom}</p>
+                <p className="text-sm text-slate-600">{creche?.adresse}</p>
               </div>
             </div>
             <div>
@@ -210,14 +214,14 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
           <div className="grid grid-cols-2 gap-8 mb-8 p-6 bg-slate-50 rounded-xl">
             <div>
               <h3 className="text-sm font-bold text-slate-500 uppercase mb-3">{t('child')}</h3>
-              <p className="font-semibold text-slate-900">{enfant.prenom} {enfant.nom}</p>
-              <p className="text-sm text-slate-600">{enfant.dateNaissance} • {enfant.genre}</p>
+              <p className="font-semibold text-slate-900">{enfant?.prenom} {enfant?.nom}</p>
+              <p className="text-sm text-slate-600">{enfant?.dateNaissance} • {enfant?.genre}</p>
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-500 uppercase mb-3">{t('parent')}</h3>
-              <p className="font-semibold text-slate-900">{parentInfo.prenom} {parentInfo.nom}</p>
-              <p className="text-sm text-slate-600">{parentInfo.telephone}</p>
-              {parentInfo.email && <p className="text-sm text-slate-600">{parentInfo.email}</p>}
+              <p className="font-semibold text-slate-900">{parentInfo?.prenom} {parentInfo?.nom}</p>
+              <p className="text-sm text-slate-600">{parentInfo?.telephone}</p>
+              {parentInfo?.email && <p className="text-sm text-slate-600">{parentInfo?.email}</p>}
             </div>
           </div>
 
@@ -233,10 +237,10 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
             <tbody>
               <tr className="border-b border-slate-200">
                 <td className="px-4 py-4 text-slate-900 font-medium">{t('monthlyFee')}</td>
-                <td className="px-4 py-4 text-slate-600">{paiement.moisConcerne}</td>
+                <td className="px-4 py-4 text-slate-600">{paiement?.moisConcerne}</td>
                 <td className="px-4 py-4 text-right">
                   <span className="font-bold text-lg text-indigo-600">
-                    {paiement.montant.toLocaleString()} DA
+                    {paiement?.montant?.toLocaleString() || '0'} DA
                   </span>
                 </td>
               </tr>
@@ -250,7 +254,7 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
               <div className="flex justify-between items-center p-4 bg-indigo-50 rounded-lg border-2 border-indigo-200">
                 <span className="font-bold text-slate-900">{t('totalAmount')}:</span>
                 <span className="text-2xl font-black text-indigo-600">
-                  {paiement.montant.toLocaleString()} DA
+                  {paiement?.montant?.toLocaleString() || '0'} DA
                 </span>
               </div>
               <div className={`px-4 py-3 rounded-lg text-sm font-bold text-center ${getStatusColor()}`}>
@@ -264,12 +268,12 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
             <div>
               <p className="text-xs text-slate-500 font-semibold uppercase mb-12">{t('signature')}</p>
               <div className="h-20 border-b border-slate-400"></div>
-              <p className="text-xs text-slate-600 mt-2 font-semibold">{creche.nom}</p>
+              <p className="text-xs text-slate-600 mt-2 font-semibold">{creche?.nom}</p>
             </div>
             <div>
               <p className="text-xs text-slate-500 font-semibold uppercase mb-12">{t('signature')}</p>
               <div className="h-20 border-b border-slate-400"></div>
-              <p className="text-xs text-slate-600 mt-2 font-semibold">{parentInfo.nom}</p>
+              <p className="text-xs text-slate-600 mt-2 font-semibold">{parentInfo?.nom}</p>
             </div>
           </div>
 
