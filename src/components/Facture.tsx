@@ -65,7 +65,6 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
         monthlyFee: 'رسوم الحضانة الشهرية',
       },
     };
-    // CORRECTION PRINCIPALE : Ajout du ?. pour éviter le crash si language est undefined
     return translations[language]?.[key] || translations.fr[key];
   };
 
@@ -81,75 +80,81 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
     return t('late');
   };
 
-  // CORRECTION : Ajout du ?. au cas où enfant.parents serait undefined
   const parentInfo = enfant?.parents?.[0] || {};
-  
-  // CORRECTION : Ajout du ?. et d'un fallback au cas où paiement.id serait undefined
   const invoiceNumber = `FAC-${paiement?.id?.slice(0, 8).toUpperCase() || 'INCONNU'}`;
   const invoiceDate = new Date().toLocaleDateString(language === 'ar' ? 'ar-DZ' : 'fr-FR');
 
-  const handleDownloadPDF = () => {
-    if (!factureRef.current) return;
-
-    const html = factureRef.current.innerHTML;
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentDocument || iframe.contentWindow?.document;
-    if (!doc) return;
-
-    doc.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <style>
-            * { margin: 0; padding: 0; }
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            @media print { body { padding: 0; } }
-          </style>
-        </head>
-        <body>${html}</body>
-      </html>
-    `);
-    doc.close();
-
-    setTimeout(() => {
-      iframe.contentWindow?.print();
-      setTimeout(() => document.body.removeChild(iframe), 100);
-    }, 250);
+  // Fonction magique pour récupérer tous les styles Tailwind actifs de l'application
+  const getAppStyles = () => {
+    const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map((el) => el.outerHTML)
+      .join('\n');
+    return styles;
   };
+
+  // Styles CSS supplémentaires pour forcer les couleurs de fond à l'impression
+  const printStyles = `
+    <style>
+      @media print {
+        body { 
+          -webkit-print-color-adjust: exact !important; 
+          print-color-adjust: exact !important; 
+          background-color: white !important;
+        }
+      }
+      body {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        padding: 24px !important;
+        background-color: white !important;
+      }
+    </style>
+  `;
 
   const handlePrint = () => {
     if (!factureRef.current) return;
-    const printWindow = window.open('', '', 'height=800,width=900');
+
+    const printWindow = window.open('', '', 'height=850,width=900');
     if (printWindow) {
       printWindow.document.write(`
         <!DOCTYPE html>
-        <html>
+        <html dir="${isArabic ? 'rtl' : 'ltr'}">
           <head>
             <meta charset="UTF-8">
-            <style>
-              * { margin: 0; padding: 0; }
-              body { font-family: Arial, sans-serif; padding: 20px; }
-              @media print { body { padding: 0; } }
-            </style>
+            <title>${invoiceNumber}</title>
+            ${getAppStyles()}
+            ${printStyles}
           </head>
-          <body>${factureRef.current.innerHTML}</body>
+          <body class="bg-white">
+            <div class="max-w-4xl mx-auto">
+              ${factureRef.current.innerHTML}
+            </div>
+          </body>
         </html>
       `);
       printWindow.document.close();
       printWindow.focus();
-      setTimeout(() => printWindow.print(), 250);
+      
+      // Laisser un petit délai de 400ms pour charger les styles Tailwind avant d'imprimer
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 400);
     }
+  };
+
+  const handleDownloadPDF = () => {
+    // Sur le web, le bouton "Télécharger PDF" déclenche généralement la boîte d'impression 
+    // qui permet à l'utilisateur de faire "Enregistrer au format PDF". 
+    // On réutilise la même fonction propre.
+    handlePrint();
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" dir={isArabic ? 'rtl' : 'ltr'}>
       <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center">
+        {/* Header (Masqué à l'impression) */}
+        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center z-10">
           <h2 className="text-2xl font-bold text-slate-900">{t('invoice')}</h2>
           <div className="flex gap-3">
             <button
@@ -175,7 +180,7 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
           </div>
         </div>
 
-        {/* Content */}
+        {/* Content (Le contenu de la facture qui sera imprimé) */}
         <div ref={factureRef} className="p-8 bg-white print:p-0" style={{ fontFamily: 'Arial, sans-serif' }}>
           {/* Logo & Title */}
           <div className="text-center mb-8 pb-6 border-b-2 border-indigo-600">
@@ -188,21 +193,21 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
 
           {/* Creche & Invoice Info */}
           <div className="grid grid-cols-2 gap-8 mb-8">
-            <div>
+            <div className={isArabic ? 'text-right' : 'text-left'}>
               <h3 className="text-sm font-bold text-slate-500 uppercase mb-3">{t('creche')}</h3>
               <div className="space-y-2">
                 <p className="text-lg font-bold text-slate-900">{creche?.nom}</p>
                 <p className="text-sm text-slate-600">{creche?.adresse}</p>
               </div>
             </div>
-            <div>
+            <div className={isArabic ? 'text-left' : 'text-right'}>
               <h3 className="text-sm font-bold text-slate-500 uppercase mb-3">{t('invoice')}</h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
+              <div className="space-y-2 text-sm inline-block w-full">
+                <div className="flex justify-between gap-4">
                   <span className="text-slate-600">{t('number')}:</span>
                   <span className="font-semibold text-slate-900">{invoiceNumber}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between gap-4">
                   <span className="text-slate-600">{t('date')}:</span>
                   <span className="font-semibold text-slate-900">{invoiceDate}</span>
                 </div>
@@ -226,19 +231,19 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
           </div>
 
           {/* Invoice Table */}
-          <table className="w-full mb-8">
+          <table className="w-full mb-8 border-collapse">
             <thead>
               <tr className="bg-indigo-600 text-white">
-                <th className="px-4 py-3 text-left text-sm font-semibold">{t('description')}</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold">{t('month')}</th>
-                <th className="px-4 py-3 text-right text-sm font-semibold">{t('amount')}</th>
+                <th className="px-4 py-3 text-start text-sm font-semibold">{t('description')}</th>
+                <th className="px-4 py-3 text-start text-sm font-semibold">{t('month')}</th>
+                <th className="px-4 py-3 text-end text-sm font-semibold">{t('amount')}</th>
               </tr>
             </thead>
             <tbody>
               <tr className="border-b border-slate-200">
                 <td className="px-4 py-4 text-slate-900 font-medium">{t('monthlyFee')}</td>
                 <td className="px-4 py-4 text-slate-600">{paiement?.moisConcerne}</td>
-                <td className="px-4 py-4 text-right">
+                <td className="px-4 py-4 text-end">
                   <span className="font-bold text-lg text-indigo-600">
                     {paiement?.montant?.toLocaleString() || '0'} DA
                   </span>
