@@ -9,13 +9,11 @@ import {
   TrendingUp, 
   Clock, 
   AlertCircle, 
-  Filter, 
   CheckCircle2, 
-  Briefcase, 
   Calendar,
-  Layers,
   HelpCircle,
-  FileText
+  FileText,
+  Edit
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
@@ -30,13 +28,21 @@ interface RichPaiement extends Paiement {
   dateEcheance?: string;
   reductionCode?: string;
   notes?: string;
+  typeFacture?: 'Mensuel' | 'Annuel';
 }
 
 export default function Paiements() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
 
-  const { paiements: allDbPaiements, enfants: allEnfantsData, addPaiement, deletePaiement } = useDb();
+  const { 
+    paiements: allDbPaiements, 
+    enfants: allEnfantsData, 
+    addPaiement, 
+    deletePaiement,
+    updatePaiement // Utilisation de l'update depuis le DbContext
+  } = useDb();
+  
   const { user } = useAuth();
   const isDirecteur = user?.role === 'directeur';
   const enfantsData = isDirecteur ? allEnfantsData.filter(e => e.crecheId === user!.id) : allEnfantsData;
@@ -48,9 +54,11 @@ export default function Paiements() {
     moyenPaiement: p.moyenPaiement || (p.statut === 'Payé' ? 'Espèces' : undefined),
     dateEcheance: p.dateEcheance || (p.statut !== 'Payé' ? '2026-07-05' : undefined),
     reductionCode: p.reductionCode || 'Aucun',
+    typeFacture: p.typeFacture || 'Mensuel'
   }));
 
   const [showModal, setShowModal] = useState(false);
+  const [editingPaiementId, setEditingPaiementId] = useState<string | null>(null);
   const [selectedPaiement, setSelectedPaiement] = useState<any | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatut, setFilterStatut] = useState('Tous');
@@ -61,6 +69,7 @@ export default function Paiements() {
     enfantId: enfantsData[0]?.id || '',
     montant: 12000,
     statut: 'En attente' as 'Payé' | 'En attente' | 'Retard',
+    typeFacture: 'Mensuel' as 'Mensuel' | 'Annuel',
     moisConcerne: 'Mai 2026',
     moyenPaiement: 'Espèces' as 'Espèces' | 'Chèque' | 'Virement' | 'Carte',
     dateEcheance: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().split('T')[0],
@@ -68,15 +77,42 @@ export default function Paiements() {
     notes: ''
   });
 
-  const handleAjouter = () => {
+  // Déclenche l'édition d'une facture existante
+  const handleEditClick = (p: RichPaiement) => {
+    setEditingPaiementId(p.id);
+    setFormData({
+      enfantId: p.enfantId,
+      montant: p.montant,
+      statut: p.statut,
+      typeFacture: p.typeFacture || 'Mensuel',
+      moisConcerne: p.moisConcerne,
+      moyenPaiement: p.moyenPaiement || 'Espèces',
+      dateEcheance: p.dateEcheance || new Date().toISOString().split('T')[0],
+      reductionCode: p.reductionCode || 'Aucun',
+      notes: p.notes || ''
+    });
+    setShowModal(true);
+  };
+
+  const handleAjouterOuModifier = () => {
     if (!formData.enfantId || formData.montant <= 0 || !formData.moisConcerne) return;
-    addPaiement(formData);
+
+    if (editingPaiementId) {
+      // Modification
+      updatePaiement(editingPaiementId, formData);
+    } else {
+      // Ajout standard
+      addPaiement(formData);
+    }
+
     setShowModal(false);
+    setEditingPaiementId(null);
     // Reset state
     setFormData({
       enfantId: enfantsData[0]?.id || '',
       montant: 12000,
       statut: 'En attente',
+      typeFacture: 'Mensuel',
       moisConcerne: 'Mai 2026',
       moyenPaiement: 'Espèces',
       dateEcheance: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().split('T')[0],
@@ -85,7 +121,7 @@ export default function Paiements() {
     });
   };
 
-  // Finance summary math
+  // Mathématiques de synthèse financière
   const totalPaid = paiements.filter(p => p.statut === 'Payé').reduce((sum, p) => sum + p.montant, 0);
   const totalPending = paiements.filter(p => p.statut === 'En attente').reduce((sum, p) => sum + p.montant, 0);
   const totalLate = paiements.filter(p => p.statut === 'Retard').reduce((sum, p) => sum + p.montant, 0);
@@ -103,7 +139,7 @@ export default function Paiements() {
 
   return (
     <div className="space-y-4 sm:space-y-8">
-      {/* Upper finance analytics widget ribbon */}
+      {/* Statistiques financières */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-2.5 sm:gap-4 hover:shadow-md transition">
           <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
@@ -146,7 +182,7 @@ export default function Paiements() {
         </div>
       </div>
 
-      {/* Title & Add Button Action Header Row */}
+      {/* Titre & Action */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
@@ -155,20 +191,23 @@ export default function Paiements() {
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5 leading-tight">
             {isArabic 
-              ? 'توليد ومتابعة فواتير التمدرس الشهرية، الخصومات العائلية، وتاريخ المدفوعات والوضعيات المالية للأطفال' 
-              : 'Générez et suivez les appels de cotisation, remises fratries, règlements et retards de versement.'}
+              ? 'توليد ومتابعة فواتير التمدرس الشهرية، السنوية والخصومات العائلية' 
+              : 'Générez et suivez les cotisations mensuelles/annuelles, remises, règlements et retards.'}
           </p>
         </div>
         <button 
           className="flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-4 py-2.5 sm:px-6 sm:py-3.5 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/10 hover:shadow-indigo-600/20 transition-all cursor-pointer w-full sm:w-auto" 
-          onClick={() => setShowModal(true)}
+          onClick={() => {
+            setEditingPaiementId(null);
+            setShowModal(true);
+          }}
         >
           <Plus size={16} className="stroke-[3]" />
           <span>{isArabic ? 'إصدار فاتورة جديدة' : 'Créer une facture'}</span>
         </button>
       </div>
 
-      {/* Filters Strip */}
+      {/* Barre de Recherche et Filtres */}
       <div className="bg-white p-3 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex flex-col md:flex-row gap-3 items-center">
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -202,16 +241,16 @@ export default function Paiements() {
         </div>
       </div>
 
-      {/* Main invoices grid table list */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden animate-slide-up">
+      {/* Tableau des factures */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/70 border-b border-slate-100 text-[11px] font-black uppercase tracking-wider text-slate-400">
-                <th className="p-5">{isArabic ? 'الطفل والصف الخاص به' : 'Enfant'}</th>
-                <th className="p-5">{isArabic ? 'الفترة' : 'Mois'}</th>
+                <th className="p-5">{isArabic ? 'الطفل' : 'Enfant'}</th>
+                <th className="p-5">{isArabic ? 'النوع والفترة' : 'Type / Période'}</th>
                 <th className="p-5">{isArabic ? 'القيمة' : 'Montant'}</th>
-                <th className="p-5">{isArabic ? 'وسيلة الدفع والخصم' : 'Moyen / Remise'}</th>
+                <th className="p-5">{isArabic ? 'التفاصيل' : 'Mode / Échéance'}</th>
                 <th className="p-5">{isArabic ? 'الوضعية' : 'Statut'}</th>
                 <th className="p-5 text-center">{isArabic ? 'إجراءات' : 'Actions'}</th>
               </tr>
@@ -230,7 +269,7 @@ export default function Paiements() {
                       <td className="p-5">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm">
-                            {enfant ? `${enfant.prenom[0]}${enfant.nom[0]}` : p.enfantId[0]}
+                            {enfant ? `${enfant.prenom[0]}${enfant.nom[0]}` : '??'}
                           </div>
                           <div>
                             <p className="text-slate-900 font-extrabold">{enfant ? `${enfant.prenom} ${enfant.nom}` : t('children.all')}</p>
@@ -242,7 +281,12 @@ export default function Paiements() {
                       <td className="p-5 whitespace-nowrap text-slate-600 font-bold">
                         <span className="flex items-center gap-1.5">
                           <Calendar className="w-4 h-4 text-slate-400" />
-                          {p.moisConcerne}
+                          <div>
+                            <p className="text-slate-900 leading-none">{p.moisConcerne}</p>
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              {p.typeFacture === 'Annuel' ? (isArabic ? 'سنوي' : 'Annuel') : (isArabic ? 'شهري' : 'Mensuel')}
+                            </span>
+                          </div>
                         </span>
                       </td>
 
@@ -266,7 +310,7 @@ export default function Paiements() {
                         ) : (
                           <p className="text-xs text-rose-500 font-bold bg-rose-50/50 border border-rose-100 px-2 py-0.5 rounded-md inline-flex items-center gap-1">
                             <Clock className="w-3.5 h-3.5 text-rose-500" />
-                            <span>Échéance: {p.dateEcheance || 'Immédiat'}</span>
+                            <span>{isArabic ? 'الاستحقاق' : 'Échéance'}: {p.dateEcheance || 'Immédiat'}</span>
                           </p>
                         )}
                       </td>
@@ -286,26 +330,34 @@ export default function Paiements() {
                         </span>
                       </td>
 
-                      <td className="p-5 text-center">
+                      <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-2">
                           <button 
                             className="p-1.5 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer" 
-                            onClick={(e) => {
-                              e.stopPropagation();
+                            onClick={() => {
                               setSelectedFacturePaiement(p);
                               setShowFacture(true);
                             }}
-                            title={isArabic ? 'عرض الفاتورة' : 'Voir la facture'}
+                            title={isArabic ? 'عرض الفاتورة الرسمية' : 'Voir la facture'}
                           >
                             <FileText size={16} />
                           </button>
+                          
+                          {/* BOUTON MODIFIER */}
+                          <button 
+                            className="p-1.5 text-amber-500 hover:text-amber-750 hover:bg-amber-50 rounded-lg transition cursor-pointer" 
+                            onClick={() => handleEditClick(p)}
+                            title={isArabic ? 'تعديل الفاتورة' : 'Modifier la facture'}
+                          >
+                            <Edit size={16} />
+                          </button>
+
                           <button 
                             className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer" 
-                            onClick={(e) => {
-                              e.stopPropagation();
+                            onClick={() => {
                               const confirmationMsg = isArabic
-                                ? 'هل أنت متأكد من حذف هذا السجل المالي/الفاتورة؟'
-                                : 'Êtes-vous sûr de vouloir supprimer cette facture ou reçu de paiement ?';
+                                ? 'هل أنت متأكد من حذف هذه الفاتورة؟'
+                                : 'Êtes-vous sûr de vouloir supprimer cette facture ?';
                               if (window.confirm(confirmationMsg)) {
                                 deletePaiement(p.id);
                               }
@@ -333,12 +385,15 @@ export default function Paiements() {
         </div>
       </div>
 
-      {/* Highly detailed Invoice Modal ("PLEINE DE FORMATION") */}
+      {/* Modal Ajout & Edition */}
       <AnimatePresence>
         {showModal && (
           <div 
             className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-center justify-center z-[999] p-4 cursor-pointer"
-            onClick={() => setShowModal(false)}
+            onClick={() => {
+              setShowModal(false);
+              setEditingPaiementId(null);
+            }}
           >
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
@@ -349,11 +404,23 @@ export default function Paiements() {
             >
               <div className="p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
                 <div>
-                  <h3 className="text-xl font-black">{isArabic ? 'إصدار فاتورة وتفاصيل الدفع' : 'Création de Facture Complète'}</h3>
-                  <p className="text-xs text-indigo-100 mt-0.5">{isArabic ? 'إعداد فواتير المدارس والخدمات مع حساب الخصومات ووسائل الدفع والتواريخ' : 'Fiche d\'appel de fonds, remises scolarité fratrie & règlement'}</p>
+                  <h3 className="text-xl font-black">
+                    {editingPaiementId 
+                      ? (isArabic ? 'تعديل تفاصيل الفاتورة' : 'Modifier la Facture') 
+                      : (isArabic ? 'إصدار فاتورة جديدة' : 'Création de Facture')
+                    }
+                  </h3>
+                  <p className="text-xs text-indigo-100 mt-0.5">
+                    {isArabic 
+                      ? 'إعداد فواتير المدارس والخدمات مع حساب الخصومات والمدفوعات' 
+                      : 'Fiche d\'appel de fonds, remises scolarité fratrie & règlement'}
+                  </p>
                 </div>
                 <button 
-                  onClick={() => setShowModal(false)}
+                  onClick={() => {
+                    setShowModal(false);
+                    setEditingPaiementId(null);
+                  }}
                   className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
                 >
                   <X size={20} />
@@ -361,7 +428,41 @@ export default function Paiements() {
               </div>
 
               <div className="p-6 space-y-4 overflow-y-auto flex-1">
-                {/* Child Select */}
+                {/* Type de Facturation (Mensuel / Annuel) */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                    {isArabic ? 'نوع الفاتورة *' : 'Type de Facturation *'}
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { key: 'Mensuel', label: isArabic ? 'شهري' : 'Mensuelle' },
+                      { key: 'Annuel', label: isArabic ? 'سنوي' : 'Annuelle' }
+                    ].map(type => (
+                      <button
+                        key={type.key}
+                        type="button"
+                        onClick={() => {
+                          const isAnnuel = type.key === 'Annuel';
+                          setFormData({
+                            ...formData, 
+                            typeFacture: type.key as any,
+                            montant: isAnnuel ? 120000 : 12000, // Ajuste le montant par défaut
+                            moisConcerne: isAnnuel ? 'Année Scolaire 2026/2027' : 'Mai 2026'
+                          });
+                        }}
+                        className={`p-3 text-xs font-bold rounded-xl border transition cursor-pointer text-center ${
+                          formData.typeFacture === type.key 
+                            ? 'bg-indigo-600 text-white border-transparent' 
+                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        {type.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Choix de l'enfant */}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
                     {isArabic ? 'الطفل المستفيد *' : 'Sélectionner l\'Enfant Récepteur *'}
@@ -375,7 +476,7 @@ export default function Paiements() {
                   </select>
                 </div>
 
-                {/* Amount and Month Range (Row 2) */}
+                {/* Montant & Période */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
@@ -386,31 +487,46 @@ export default function Paiements() {
                       placeholder="Ex: 12000"
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-bold text-slate-800" 
                       value={formData.montant || ''} 
-                      onChange={e => setFormData({...formData, montant: parseInt(e.target.value)})} 
+                      onChange={e => setFormData({...formData, montant: parseInt(e.target.value) || 0})} 
                     />
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {isArabic ? 'الشهر المعني بالفاتورة *' : 'Période Facturée (Mois) *'}
+                      {formData.typeFacture === 'Annuel' 
+                        ? (isArabic ? 'السنة الدراسية المعنية *' : 'Année Scolaire *')
+                        : (isArabic ? 'الشهر المعني *' : 'Période Facturée (Mois) *')
+                      }
                     </label>
-                    <select
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800"
-                      value={formData.moisConcerne}
-                      onChange={e => setFormData({...formData, moisConcerne: e.target.value})}
-                    >
-                      <option value="Janvier 2026">Janvier 2026</option>
-                      <option value="Février 2026">Février 2026</option>
-                      <option value="Mars 2026">Mars 2026</option>
-                      <option value="Avril 2026">Avril 2026</option>
-                      <option value="Mai 2026">Mai 2026</option>
-                      <option value="Juin 2026">Juin 2026</option>
-                      <option value="Juillet 2026">Juillet 2026</option>
-                    </select>
+                    {formData.typeFacture === 'Annuel' ? (
+                      <select
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800"
+                        value={formData.moisConcerne}
+                        onChange={e => setFormData({...formData, moisConcerne: e.target.value})}
+                      >
+                        <option value="Année Scolaire 2025/2026">Année Scolaire 2025/2026</option>
+                        <option value="Année Scolaire 2026/2027">Année Scolaire 2026/2027</option>
+                        <option value="Année Scolaire 2027/2028">Année Scolaire 2027/2028</option>
+                      </select>
+                    ) : (
+                      <select
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800"
+                        value={formData.moisConcerne}
+                        onChange={e => setFormData({...formData, moisConcerne: e.target.value})}
+                      >
+                        <option value="Janvier 2026">Janvier 2026</option>
+                        <option value="Février 2026">Février 2026</option>
+                        <option value="Mars 2026">Mars 2026</option>
+                        <option value="Avril 2026">Avril 2026</option>
+                        <option value="Mai 2026">Mai 2026</option>
+                        <option value="Juin 2026">Juin 2026</option>
+                        <option value="Juillet 2026">Juillet 2026</option>
+                      </select>
+                    )}
                   </div>
                 </div>
 
-                {/* Discount Code & Payment Option */}
+                {/* Remise & Mode de règlement */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
@@ -445,16 +561,16 @@ export default function Paiements() {
                   </div>
                 </div>
 
-                {/* Status Toggle buttons */}
+                {/* Choix du statut */}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    {isArabic ? 'حالة الفاتورة والتحصيل *' : 'Statut initial d\'Émission *'}
+                    {isArabic ? 'حالة الفاتورة والتحصيل *' : 'Statut d\'Émission *'}
                   </label>
                   <div className="grid grid-cols-3 gap-2">
                     {[
                       { key: 'Payé', label: isArabic ? 'تم الدفع بالكامل' : 'Déjà Réglé', activeBg: 'bg-emerald-600 text-white border-transparent' },
-                      { key: 'En attente', label: isArabic ? 'قيد الانتظار' : 'Diligence', activeBg: 'bg-amber-500 text-white border-transparent' },
-                      { key: 'Retard', label: isArabic ? 'متأخر في الدفع' : 'Arriéré de Facture', activeBg: 'bg-rose-600 text-white border-transparent' }
+                      { key: 'En attente', label: isArabic ? 'قيد الانتظار' : 'En attente', activeBg: 'bg-amber-500 text-white border-transparent' },
+                      { key: 'Retard', label: isArabic ? 'متأخر في الدفع' : 'En Retard', activeBg: 'bg-rose-600 text-white border-transparent' }
                     ].map(status => (
                       <button
                         key={status.key}
@@ -472,12 +588,12 @@ export default function Paiements() {
                   </div>
                 </div>
 
-                {/* Due Date & Custom Notes */}
+                {/* Date d'échéance & Notes */}
                 <div className="grid grid-cols-1 gap-2 pt-2">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5 text-indigo-500" />
-                      {isArabic ? 'تاريخ الاستحقاق (في كلي الحالتين)' : 'Date limite de paiement'}
+                      {isArabic ? 'تاريخ استحقاق الفاتورة' : 'Date limite de paiement'}
                     </label>
                     <input 
                       type="date"
@@ -503,21 +619,24 @@ export default function Paiements() {
 
               </div>
 
-              {/* Save actions */}
+              {/* Pied de page actions */}
               <div className="p-6 pt-4 border-t border-slate-100 flex gap-3 flex-shrink-0 bg-slate-50/50">
                 <button 
                   type="button"
                   className="flex-1 p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer text-sm"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => {
+                    setShowModal(false);
+                    setEditingPaiementId(null);
+                  }}
                 >
                   {t('common.cancel')}
                 </button>
                 <button 
                   type="button"
-                  className="flex-1 p-3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-750 text-white font-bold rounded-xl transition cursor-pointer text-sm shadow-md"
-                  onClick={handleAjouter}
+                  className="flex-1 p-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-bold rounded-xl transition cursor-pointer text-sm shadow-md"
+                  onClick={handleAjouterOuModifier}
                 >
-                  {t('common.save')}
+                  {editingPaiementId ? (isArabic ? 'حفظ التعديلات' : 'Enregistrer les modifications') : t('common.save')}
                 </button>
               </div>
             </motion.div>
@@ -525,11 +644,10 @@ export default function Paiements() {
         )}
       </AnimatePresence>
 
-      {/* Invoice receipt/Facture Detail Modal */}
+      {/* Reçu détaillé (au clic sur une ligne) */}
       <AnimatePresence>
         {selectedPaiement && (() => {
           const enfant = enfantsData.find(e => e.id === selectedPaiement.enfantId);
-          // Calculate net amount with hypothetical display calculations for presentation
           const originPrice = selectedPaiement.montant;
           const reductionStr = selectedPaiement.reductionCode !== 'Aucun' ? selectedPaiement.reductionCode : null;
           
@@ -545,12 +663,11 @@ export default function Paiements() {
                 className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[85vh] mt-16 flex flex-col overflow-hidden font-sans cursor-default"
                 onClick={(e) => e.stopPropagation()}
               >
-                {/* Header as a receipt top */}
                 <div className="p-6 bg-slate-50 border-b border-dashed border-slate-200 text-slate-800 relative flex-shrink-0">
                   <div className="flex justify-between items-start">
                     <div>
-                      <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">{isArabic ? 'فاتورة سداد رسمية' : 'FACTURE DE SCOLARITÉ'}</span>
-                      <h4 className="text-lg font-black text-slate-900 mt-1">N° #{selectedPaiement.id || '2938173'}</h4>
+                      <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">{isArabic ? 'تفاصيل السداد الرسمية' : 'REÇU DE FACTURATION'}</span>
+                      <h4 className="text-lg font-black text-slate-900 mt-1">N° #{selectedPaiement.id?.slice(0, 8).toUpperCase() || '2938173'}</h4>
                     </div>
                     <button 
                       onClick={() => setSelectedPaiement(null)}
@@ -559,14 +676,11 @@ export default function Paiements() {
                       <X size={16} />
                     </button>
                   </div>
-
-                  {/* Cut-out receipt decoration left & right */}
                   <div className="absolute -bottom-2 -left-2 w-4 h-4 bg-slate-950 rounded-full" />
                   <div className="absolute -bottom-2 -right-2 w-4 h-4 bg-slate-950 rounded-full" />
                 </div>
 
                 <div className="p-6 space-y-5 overflow-y-auto flex-1">
-                  {/* Beneficiary particulars */}
                   <div>
                     <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider block mb-2">{isArabic ? 'المستلم والمعلومات العائلية' : 'Bénéficiaire / Élève'}</span>
                     <div className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-100 rounded-2xl">
@@ -580,14 +694,19 @@ export default function Paiements() {
                     </div>
                   </div>
 
-                  {/* Pricing details table summary */}
                   <div className="space-y-2 border-t border-b border-slate-100 py-4 text-xs font-bold text-slate-500">
                     <div className="flex justify-between">
-                      <span>{isArabic ? 'الشهر المعني' : 'Période administrative'}:</span>
+                      <span>{isArabic ? 'النوع والتاريخ' : 'Type de facturation'}:</span>
+                      <span className="text-slate-800 font-extrabold">
+                        {selectedPaiement.typeFacture === 'Annuel' ? (isArabic ? 'سنوي' : 'Annuel') : (isArabic ? 'شهري' : 'Mensuel')}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>{isArabic ? 'الفترة المعنية' : 'Période administrative'}:</span>
                       <span className="text-slate-800 font-extrabold">{selectedPaiement.moisConcerne}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>{isArabic ? 'المبلغ الأصلي قبل الخصم' : 'Prix initial scolarité'}:</span>
+                      <span>{isArabic ? 'المبلغ الأصلي' : 'Prix initial scolarité'}:</span>
                       <span className="text-slate-800">{formatCurrency(originPrice)}</span>
                     </div>
                     {reductionStr && (
@@ -597,30 +716,28 @@ export default function Paiements() {
                       </div>
                     )}
                     <div className="flex justify-between text-slate-800 text-sm font-black pt-3 border-t border-dashed border-slate-200">
-                      <span>{isArabic ? 'المبلغ الصافي المستحق' : 'Net à payer'} (DZD):</span>
+                      <span>{isArabic ? 'المبلغ المستحق' : 'Net à payer'} (DZD):</span>
                       <span className="text-indigo-600 text-base">{formatCurrency(selectedPaiement.montant)}</span>
                     </div>
                   </div>
 
-                  {/* Payment specifics */}
                   <div className="grid grid-cols-2 gap-4 text-xs">
                     <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                      <span className="text-[9px] font-bold text-slate-450 uppercase block tracking-wider mb-1">{isArabic ? 'وسيلة الدفع' : 'Mode de versement'}</span>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase block tracking-wider mb-1">{isArabic ? 'وسيلة الدفع' : 'Mode de versement'}</span>
                       <span className="font-extrabold text-slate-800">{selectedPaiement.moyenPaiement || 'Espèces'}</span>
                     </div>
                     <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                      <span className="text-[9px] font-bold text-slate-450 uppercase block tracking-wider mb-1">{isArabic ? 'تاريخ الاستحقاق' : 'Date de limite'}</span>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase block tracking-wider mb-1">{isArabic ? 'تاريخ الاستحقاق' : 'Date de limite'}</span>
                       <span className="font-extrabold text-slate-800">{selectedPaiement.dateEcheance || 'Complété'}</span>
                     </div>
                   </div>
 
-                  {/* Seal status indicator based state */}
                   <div className="flex justify-center pt-2">
                     <span className={`inline-flex items-center gap-1.5 px-6 py-2.5 rounded-full text-xs font-black uppercase tracking-widest leading-none border shadow-xs ${
                       selectedPaiement.statut === 'Payé'
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                         : selectedPaiement.statut === 'En attente'
-                        ? 'bg-amber-50 text-amber-750 border-amber-200'
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
                         : 'bg-rose-50 text-rose-700 border-rose-200'
                     }`}>
                       <span className={`w-2 h-2 rounded-full ${
@@ -630,7 +747,6 @@ export default function Paiements() {
                     </span>
                   </div>
 
-                  {/* Notes space */}
                   {selectedPaiement.notes && (
                     <div className="p-3 bg-slate-50 rounded-xl text-[11px] font-bold text-slate-400 italic text-center">
                       "{selectedPaiement.notes}"
@@ -643,7 +759,7 @@ export default function Paiements() {
         })()}
       </AnimatePresence>
 
-      {/* Facture Modal */}
+      {/* Modal d'Affichage & Impression de la Facture PDF */}
       {showFacture && selectedFacturePaiement && (
         <Facture 
           paiement={selectedFacturePaiement}
