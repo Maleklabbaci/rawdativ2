@@ -14,7 +14,8 @@ import {
   Briefcase, 
   Calendar,
   Layers,
-  HelpCircle
+  HelpCircle,
+  FileText
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
@@ -22,6 +23,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Paiement } from '../types';
 import { formatCurrency } from '../utils/format';
 import { motion, AnimatePresence } from 'motion/react';
+import Facture from './Facture';
 
 interface RichPaiement extends Paiement {
   moyenPaiement?: 'Espèces' | 'Chèque' | 'Virement' | 'Carte';
@@ -52,6 +54,8 @@ export default function Paiements() {
   const [selectedPaiement, setSelectedPaiement] = useState<any | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatut, setFilterStatut] = useState('Tous');
+  const [showFacture, setShowFacture] = useState(false);
+  const [selectedFacturePaiement, setSelectedFacturePaiement] = useState<any | null>(null);
 
   const [formData, setFormData] = useState({
     enfantId: enfantsData[0]?.id || '',
@@ -283,20 +287,34 @@ export default function Paiements() {
                       </td>
 
                       <td className="p-5 text-center">
-                        <button 
-                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer" 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const confirmationMsg = isArabic
-                              ? 'هل أنت متأكد من حذف هذا السجل المالي/الفاتورة؟'
-                              : 'Êtes-vous sûr de vouloir supprimer cette facture ou reçu de paiement ?';
-                            if (window.confirm(confirmationMsg)) {
-                              deletePaiement(p.id);
-                            }
-                          }}
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        <div className="flex items-center justify-center gap-2">
+                          <button 
+                            className="p-1.5 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedFacturePaiement(p);
+                              setShowFacture(true);
+                            }}
+                            title={isArabic ? 'عرض الفاتورة' : 'Voir la facture'}
+                          >
+                            <FileText size={16} />
+                          </button>
+                          <button 
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const confirmationMsg = isArabic
+                                ? 'هل أنت متأكد من حذف هذا السجل المالي/الفاتورة؟'
+                                : 'Êtes-vous sûr de vouloir supprimer cette facture ou reçu de paiement ?';
+                              if (window.confirm(confirmationMsg)) {
+                                deletePaiement(p.id);
+                              }
+                            }}
+                            title={isArabic ? 'حذف' : 'Supprimer'}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -624,6 +642,18 @@ export default function Paiements() {
           );
         })()}
       </AnimatePresence>
+
+      {/* Facture Modal */}
+      {showFacture && selectedFacturePaiement && (
+        <Facture 
+          paiement={selectedFacturePaiement}
+          enfant={enfantsData.find(e => e.id === selectedFacturePaiement.enfantId)!}
+          onClose={() => {
+            setShowFacture(false);
+            setSelectedFacturePaiement(null);
+          }}
+        />
+      )}
     </div>
   );
 }
