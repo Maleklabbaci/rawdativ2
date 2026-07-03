@@ -1,12 +1,12 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserAccount } from '../types';
-import { getCollectionData } from '../supabase';
+import { supabase } from '../supabase';
 
 interface AuthContextType {
   isAuthenticated: boolean;
   user: UserAccount | null;
+  loading: boolean;
   creche: { nom: string; adresse: string };
-  login: (user: UserAccount) => void;
   loginWithCredentials: (email: string, motDePasse: string) => Promise<UserAccount | null>;
   logout: () => void;
 }
@@ -14,68 +14,79 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<UserAccount | null>(() => {
-    const saved = localStorage.getItem('rawdati_current_user');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // ✅ FIX: Remove password from stored user
-        if (parsed.motDePasse) delete parsed.motDePasse;
-        return parsed;
-      } catch (e) {
-        console.error('Failed to parse user:', e);
-        return null;
-      }
+  const [user, setUser] = useState<UserAccount | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Charge le profil (table "comptes") associé à la session Auth active
+  const loadProfile = async (userId: string): Promise<UserAccount | null> => {
+    const { data, error } = await supabase
+      .from('comptes')
+      .select('id, data')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error || !data) {
+      console.error('Erreur chargement profil:', error);
+      return null;
     }
-    return null;
-  });
+    return { ...(data.data as object), id: data.id } as UserAccount;
+  };
+
+  useEffect(() => {
+    // Vérifie s'il y a déjà une session active (persistée par Supabase automatiquement)
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        const profile = await loadProfile(session.user.id);
+        setUser(profile);
+      }
+      setLoading(false);
+    });
+
+    // Écoute les changements de session (login/logout dans un autre onglet, expiration, etc.)
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const profile = await loadProfile(session.user.id);
+        setUser(profile);
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => listener.subscription.unsubscribe();
+  }, []);
 
   const isAuthenticated = !!user;
 
-  const login = (newUser: UserAccount) => {
-    // ✅ FIX: Create a copy without password
-    const userToStore = { ...newUser };
-    delete userToStore.motDePasse;
-    
-    setUser(userToStore);
-    localStorage.setItem('rawdati_current_user', JSON.stringify(userToStore));
-  };
-
   const loginWithCredentials = async (email: string, motDePasse: string): Promise<UserAccount | null> => {
-    try {
-      const allComptes = await getCollectionData<UserAccount>('comptes');
-      const matchedUser = allComptes.find(
-        (c) => c.email.toLowerCase().trim() === email.toLowerCase().trim() && c.motDePasse === motDePasse
-      );
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.toLowerCase().trim(),
+      password: motDePasse,
+    });
 
-      if (matchedUser) {
-        // ✅ FIX: Don't store password when logging in
-        const userToStore = { ...matchedUser };
-        delete userToStore.motDePasse;
-        login(userToStore);
-        return userToStore;
-      }
+    if (error || !data.user) {
+      console.error('Erreur de connexion:', error?.message);
       return null;
-    } catch (error) {
-      console.error("Erreur de connexion :", error);
-      throw new Error("Erreur de communication avec le serveur.");
     }
+
+    const profile = await loadProfile(data.user.id);
+    setUser(profile);
+    return profile;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('rawdati_current_user');
   };
 
   return (
     <AuthContext.Provider value={{
       isAuthenticated,
       user,
-      creche: { 
-        nom: user?.role === 'directeur' && user.nomCreche ? user.nomCreche : 'RAWDATI', 
-        adresse: 'Plateforme de Gestion | منصة التسيير' 
+      loading,
+      creche: {
+        nom: user?.role === 'directeur' && user.nomCreche ? user.nomCreche : 'RAWDATI',
+        adresse: 'Plateforme de Gestion | منصة التسيير'
       },
-      login,
       loginWithCredentials,
       logout
     }}>

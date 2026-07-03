@@ -5,7 +5,8 @@ import {
   addCollectionDocument, 
   updateCollectionDocument, 
   deleteCollectionDocument,
-  setCollectionDocument
+  setCollectionDocument,
+  supabase
 } from '../supabase';
 import { useAuth } from './AuthContext';
 
@@ -305,15 +306,19 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   // --- COMPTES ---
+  // Passe par l'Edge Function "create-account" : elle crée le vrai utilisateur Supabase Auth
+  // (mot de passe hashé côté serveur) ET la ligne profil, en une seule opération sécurisée.
   const addCompte = async (compte: Omit<UserAccount, 'id'>) => {
-    const tempId = (compte as any).id || 'acc_' + Date.now();
-    const cleanCompte = { ...compte, id: tempId } as UserAccount;
-    setComptes(prev => [...prev.filter(item => item.id !== tempId), cleanCompte]);
-    try {
-      const freshId = await addCollectionDocument('comptes', { ...compte });
-      setComptes(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
-      return freshId;
-    } catch (err) { return tempId; }
+    const { data: { session } } = await supabase.auth.getSession();
+    const { data, error } = await supabase.functions.invoke('create-account', {
+      body: compte,
+      headers: { Authorization: `Bearer ${session?.access_token}` },
+    });
+    if (error || data?.error) {
+      throw new Error(data?.error || error?.message || 'Erreur création compte');
+    }
+    await refreshAll(); // recharge depuis le serveur plutôt que de deviner l'état local
+    return data.id as string;
   };
 
   const updateCompte = async (id: string, data: Partial<UserAccount>) => {
