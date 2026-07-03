@@ -123,7 +123,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     refreshAll();
-  }, []);
+  }, [user?.id]);
 
   // --- FILTRE DE SÉCURITÉ GLOBAL ---
   // On s'assure que le directeur ne voit que les données rattachées à son propre ID (crecheId === user.id)
