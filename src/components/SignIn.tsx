@@ -1,19 +1,17 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { useDb } from '../contexts/DbContext';
 import { Baby, LogIn, Sparkles, Building, Lock, Mail, AlertCircle } from 'lucide-react';
 
 export default function SignIn() {
   const { isFrench } = useLanguage();
-  const { login } = useAuth();
-  const { comptes } = useDb();
+  const { loginWithCredentials } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
       setError(isFrench ? 'Veuillez remplir tous les champs.' : 'يرجى ملء جميع الحقول.');
@@ -22,23 +20,16 @@ export default function SignIn() {
     setLoading(true);
     setError('');
 
-    // Find in the database comptes list
-    const matched = comptes.find(
-      (c) => c.email.toLowerCase().trim() === email.toLowerCase().trim() && c.motDePasse === password
-    );
+    const matched = await loginWithCredentials(email, password);
 
-    setTimeout(() => {
-      if (matched) {
-        login(matched);
-      } else {
-        setError(
-          isFrench
-            ? 'Identifiants incorrects. Veuillez vérifier votre adresse e-mail et votre mot de passe.'
-            : 'بيانات الاعتماد غير صحيحة. يرجى التحقق من البريد الإلكتروني وكلمة المرور.'
-        );
-      }
-      setLoading(false);
-    }, 600);
+    if (!matched) {
+      setError(
+        isFrench
+          ? 'Identifiants incorrects. Veuillez vérifier votre adresse e-mail et votre mot de passe.'
+          : 'بيانات الاعتماد غير صحيحة. يرجى التحقق من البريد الإلكتروني وكلمة المرور.'
+      );
+    }
+    setLoading(false);
   };
 
   return (
