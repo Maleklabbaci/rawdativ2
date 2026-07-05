@@ -352,9 +352,19 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try { await updateCollectionDocument<UserAccount>('comptes', id, data); } catch (err) {}
   };
 
+  // ✅ FIX: appelle l'Edge Function "delete-account" qui supprime le VRAI utilisateur
+  // Supabase Auth + la ligne profil. L'ancienne version ne supprimait que la ligne
+  // "comptes", donc l'utilisateur Auth restait actif et le compte semblait "revenir".
   const deleteCompte = async (id: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const { data, error } = await supabase.functions.invoke('delete-account', {
+      body: { id },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
+    });
+    if (error || data?.error) {
+      throw new Error(data?.error || error?.message || 'Erreur suppression compte');
+    }
     setComptes(prev => prev.filter(item => item.id !== id));
-    try { await deleteCollectionDocument('comptes', id); } catch (err) {}
   };
 
   // --- MESSAGES ---
