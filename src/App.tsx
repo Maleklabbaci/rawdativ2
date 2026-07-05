@@ -17,13 +17,14 @@ import Repas from './components/Repas';
 import Parametres from './components/Parametres';
 import Comptes from './components/Comptes';
 import ChatBubble from './components/ChatBubble';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Lock, Check } from 'lucide-react';
 
 function AppContent() {
   const { isAuthenticated, user, creche, logout } = useAuth();
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [couponCode, setCouponCode] = useState(''); // ✅ champ code coupon sur l'écran d'abonnement expiré
+  const [couponCode, setCouponCode] = useState('');
+  const [showCouponInput, setShowCouponInput] = useState(false); // ✅ champ coupon replié par défaut, pour ne pas distraire du CTA principal // ✅ champ code coupon sur l'écran d'abonnement expiré
   const { language, setLanguage, t } = useLanguage();
   const { loading, comptes } = useDb();
 
@@ -93,105 +94,130 @@ function AppContent() {
   const whatsappLink = `https://wa.me/213697660969?text=${encodeURIComponent(whatsappMessage)}`;
 
 if (isSubscriptionExpired) {
+    const isAr = language === 'ar';
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 font-sans text-center" dir={language === 'ar' ? 'rtl' : 'ltr'}>
-        <div className="max-w-md w-full bg-white border border-slate-200 p-8 rounded-3xl shadow-xl space-y-6 relative overflow-hidden">
-          {/* Top colored accent line */}
-          <div className="absolute top-0 inset-x-0 h-2 bg-gradient-to-r from-rose-500 to-amber-500" />
-          
-          <div className="w-16 h-16 bg-rose-50 rounded-2xl flex items-center justify-center mx-auto text-rose-500 border border-rose-100">
-            <AlertCircle className="w-8 h-8 text-rose-500 animate-pulse" />
-          </div>
+      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-indigo-50/40 flex flex-col items-center justify-center p-4 font-sans" dir={isAr ? 'rtl' : 'ltr'}>
+        <div className="max-w-md w-full bg-white border border-slate-200 rounded-3xl shadow-2xl shadow-indigo-900/10 overflow-hidden">
 
-          <div className="space-y-3">
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-              {language === 'ar' ? 'انتهت صلاحية الحساب' : 'Abonnement Terminé'}
+          {/* Header */}
+          <div className="text-center px-8 pt-9 pb-6">
+            <div className="w-14 h-14 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-500/30">
+              <Lock className="w-7 h-7 text-white" />
+            </div>
+            <h1 className="text-xl font-black text-slate-900 tracking-tight mb-1.5">
+              {isAr ? 'حسابك في انتظارك 👋' : 'Ton compte t\'attend 👋'}
             </h1>
-            
-            <p className="text-slate-600 text-sm leading-relaxed">
-              {language === 'ar' 
-                ? 'عذراً، لقد انتهت صلاحية اشتراككم الشهري الخاص ببرنامج روضتي. يرجى التواصل معنا لتجديد الاشتراك.' 
-                : 'Votre abonnement mensuel Rawdha+ est arrivé à expiration. Veuillez nous contacter pour renouveler votre accès.'}
+            <p className="text-slate-500 text-sm leading-relaxed max-w-xs mx-auto">
+              {isAr
+                ? 'أطفالك، الحضور، الدفعات — كل شيء محفوظ بأمان. فعّل اشتراكك للمتابعة من حيث توقفت.'
+                : 'Enfants, présences, paiements — tout est sauvegardé en sécurité. Réactive ton accès pour reprendre où tu t\'es arrêté.'}
             </p>
-
             {expiryDateString && (
-              <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-700 text-xs font-bold rounded-lg border border-amber-200">
-                <span>{language === 'ar' ? `تاريخ الانتهاء: ${expiryDateString}` : `Expiré le : ${expiryDateString}`}</span>
-              </div>
+              <p className="mt-2 text-[11px] text-slate-400 font-medium">
+                {isAr ? `منتهي منذ ${expiryDateString}` : `Expiré depuis le ${expiryDateString}`}
+              </p>
             )}
           </div>
 
-          <div className="border-t border-slate-100 pt-5 space-y-4 text-left" dir={language === 'ar' ? 'rtl' : 'ltr'}>
-
-            {/* Plan Rawdha+ */}
-            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-black text-indigo-700 uppercase tracking-wide">
-                  {language === 'ar' ? 'خطة Rawdha+' : 'Plan Rawdha+'}
+          {/* Plan card — élément signature, gradient plein */}
+          <div className="mx-6 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 p-5 text-white shadow-lg shadow-indigo-500/20 relative overflow-hidden">
+            <div className="absolute -right-6 -top-6 w-24 h-24 bg-white/10 rounded-full" />
+            <div className="absolute -right-2 -bottom-8 w-20 h-20 bg-white/10 rounded-full" />
+            <div className="relative flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-100">
+                  {isAr ? 'خطة Rawdha+' : 'Plan Rawdha+'}
                 </span>
-                {couponDiscount > 0 && (
-                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                    {language === 'ar' ? `خصم ${couponDiscount} د.ج` : `-${couponDiscount} DA`}
-                  </span>
-                )}
+                <div className="flex items-baseline gap-2 mt-1">
+                  {couponDiscount > 0 && (
+                    <span className="text-sm text-indigo-200 line-through">3500 DA</span>
+                  )}
+                  <span className="text-3xl font-black">{finalPrice} DA</span>
+                  <span className="text-xs text-indigo-200">/{isAr ? 'شهر' : 'mois'}</span>
+                </div>
               </div>
-              <div className="flex items-baseline gap-2">
-                {couponDiscount > 0 && (
-                  <span className="text-sm text-slate-400 line-through">3500 DA</span>
-                )}
-                <span className="text-2xl font-black text-slate-900">{finalPrice} DA</span>
-                <span className="text-xs text-slate-500">/{language === 'ar' ? 'شهر' : 'mois'}</span>
-              </div>
-            </div>
-
-            {/* Code coupon */}
-            <div>
-              <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">
-                {language === 'ar' ? 'كود الخصم (إن وجد)' : 'Code promo (si tu en as un)'}
-              </label>
-              <input
-                type="text"
-                value={couponCode}
-                onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                placeholder={language === 'ar' ? 'مثال: RAWDHA500' : 'Ex: RAWDHA500'}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800 text-center tracking-widest uppercase"
-              />
-              {couponCode && (
-                couponDiscount > 0 ? (
-                  <p className="text-[11px] text-emerald-600 font-semibold mt-1.5">
-                    {language === 'ar' ? `✓ الكود صالح — خصم ${couponDiscount} د.ج` : `✓ Code valide — réduction de ${couponDiscount} DA`}
-                  </p>
-                ) : (
-                  <p className="text-[11px] text-rose-500 font-semibold mt-1.5">
-                    {language === 'ar' ? 'كود غير صالح' : 'Code invalide'}
-                  </p>
-                )
+              {couponDiscount > 0 && (
+                <span className="text-[10px] font-black text-indigo-700 bg-white px-2.5 py-1 rounded-full">
+                  -{couponDiscount} DA
+                </span>
               )}
             </div>
+            <div className="relative flex flex-wrap gap-x-4 gap-y-1 mt-3 pt-3 border-t border-white/20">
+              {[
+                isAr ? 'كل الأطفال والدفعات' : 'Tous les enfants & paiements',
+                isAr ? 'دعم مباشر' : 'Support direct',
+                isAr ? 'بدون التزام' : 'Sans engagement',
+              ].map((txt, i) => (
+                <span key={i} className="flex items-center gap-1 text-[11px] text-indigo-100 font-medium">
+                  <Check className="w-3 h-3" /> {txt}
+                </span>
+              ))}
+            </div>
+          </div>
 
-            {/* Bouton WhatsApp — envoie un message automatique pré-rempli à l'admin */}
+          {/* CTA principal — WhatsApp, plein, mis en avant */}
+          <div className="px-6 pt-5 pb-2">
             <a
               href={whatsappLink}
               target="_blank"
               rel="noopener noreferrer"
-              className="w-full py-3 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-xl transition font-bold text-sm tracking-wide flex items-center justify-center gap-2 border border-emerald-100 cursor-pointer"
+              className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl transition font-bold text-sm tracking-wide flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-500/30 cursor-pointer"
             >
               <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" xmlns="http://www.w3.org/2000/svg">
                 <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/>
               </svg>
-              <span>{language === 'ar' ? `تفعيل الاشتراك عبر واتساب (${finalPrice} د.ج)` : `Activer via WhatsApp (${finalPrice} DA)`}</span>
+              <span>{isAr ? 'تفعيل حسابي الآن' : 'Réactiver mon accès maintenant'}</span>
             </a>
+            <p className="text-center text-[11px] text-slate-400 mt-2">
+              {isAr ? 'رد سريع عبر واتساب، عادة خلال دقائق' : 'Réponse rapide sur WhatsApp, généralement en quelques minutes'}
+            </p>
+          </div>
 
+          {/* Coupon — discret, replié par défaut */}
+          <div className="px-6 pb-1">
+            {!showCouponInput ? (
+              <button
+                onClick={() => setShowCouponInput(true)}
+                className="text-[12px] font-semibold text-indigo-500 hover:text-indigo-600 transition cursor-pointer"
+              >
+                {isAr ? 'لدي كود خصم' : 'J\'ai un code promo'}
+              </button>
+            ) : (
+              <div>
+                <input
+                  type="text"
+                  autoFocus
+                  value={couponCode}
+                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                  placeholder={isAr ? 'كود الخصم' : 'Code promo'}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800 text-center tracking-widest uppercase"
+                />
+                {couponCode && (
+                  couponDiscount > 0 ? (
+                    <p className="text-[11px] text-emerald-600 font-semibold mt-1.5 text-center">
+                      {isAr ? `✓ خصم ${couponDiscount} د.ج مطبق` : `✓ Réduction de ${couponDiscount} DA appliquée`}
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-rose-500 font-semibold mt-1.5 text-center">
+                      {isAr ? 'الكود غير صالح' : 'Code invalide'}
+                    </p>
+                  )
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Déconnexion — discret, plus un bouton concurrent */}
+          <div className="text-center py-4 border-t border-slate-100 mt-3">
             <button
               onClick={logout}
-              className="w-full py-3 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl transition font-bold text-sm tracking-wide cursor-pointer flex items-center justify-center gap-2 border border-rose-100/50"
+              className="text-[12px] font-semibold text-slate-400 hover:text-rose-500 transition cursor-pointer"
             >
-              <LogOut className="w-4 h-4" />
-              <span>{language === 'ar' ? 'تسجيل الخروج' : 'Se déconnecter'}</span>
+              {isAr ? 'تسجيل الخروج' : 'Se déconnecter'}
             </button>
           </div>
         </div>
-        
+
         {/* Support Chat Bubble (Déjà présent et fonctionnel) */}
         <ChatBubble />
       </div>
