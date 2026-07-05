@@ -159,6 +159,8 @@ export default function Comptes() {
       await updateCompte(id, { abonnementActif: !currentStatus });
     } catch (err) {
       console.error('Error updating subscription status:', err);
+      alert((isFrench ? 'Échec de la mise à jour : ' : 'فشل التحديث: ') + (err instanceof Error ? err.message : String(err)));
+      await refreshAll(); // ré-affiche l'état réel de la base (annule la mise à jour optimiste ratée)
     }
   };
 
@@ -167,6 +169,8 @@ export default function Comptes() {
       await updateCompte(id, { dateFinAbonnement: dateValue });
     } catch (err) {
       console.error('Error updating subscription end date:', err);
+      alert((isFrench ? 'Échec de la mise à jour : ' : 'فشل التحديث: ') + (err instanceof Error ? err.message : String(err)));
+      await refreshAll();
     }
   };
 
@@ -180,6 +184,12 @@ export default function Comptes() {
         await deleteCompte(id);
       } catch (err) {
         console.error('Error deleting account:', err);
+        // ✅ FIX: on affiche l'erreur au lieu de l'avaler en silence — sinon l'admin
+        // croit que la suppression a marché alors qu'elle a échoué côté serveur.
+        alert(
+          (isFrench ? 'Échec de la suppression : ' : 'فشل الحذف: ') +
+          (err instanceof Error ? err.message : String(err))
+        );
       }
     }
   };
