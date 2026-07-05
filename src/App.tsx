@@ -39,6 +39,21 @@ function AppContent() {
     }
   }, [user, currentPage]);
 
+  // ✅ Favicon + titre d'onglet dynamiques : le logo PNG uploadé dans Paramètres
+  // remplace l'icône par défaut de RAWDHA+ dans la barre de tâches / onglet du navigateur.
+  useEffect(() => {
+    const faviconHref = creche?.logoUrl || '/favicon.png';
+    let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    link.href = faviconHref;
+
+    document.title = creche?.nom ? `${creche.nom} — RAWDHA+` : 'RAWDHA+';
+  }, [creche?.logoUrl, creche?.nom]);
+
   if (!isAuthenticated) {
     return <SignIn />;
   }
@@ -199,8 +214,12 @@ if (isSubscriptionExpired) {
                 </button>
 
                 <div className="flex items-center gap-2 sm:gap-4">
-                  <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl hidden sm:block flex-shrink-0">
-                    <School className="w-5 h-5 animate-pulse" />
+                  <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl hidden sm:flex items-center justify-center flex-shrink-0 w-10 h-10 overflow-hidden">
+                    {creche?.logoUrl ? (
+                      <img src={creche.logoUrl} alt="Logo" className="w-full h-full object-contain" />
+                    ) : (
+                      <School className="w-5 h-5 animate-pulse" />
+                    )}
                   </div>
                   <div>
                     <h1 className="text-sm sm:text-base md:text-lg lg:text-xl font-extrabold text-slate-950 tracking-tight flex items-center gap-1.5 leading-tight">
