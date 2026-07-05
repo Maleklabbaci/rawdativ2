@@ -87,82 +87,184 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
   );
 
   // ====================== FONCTIONS PDF & IMPRESSION ======================
-  const openPrintWindow = (isDownload: boolean = false) => {
-    if (!factureRef.current) return;
+  // ✅ FIX: L'ancienne version copiait le HTML on-screen (classes Tailwind) dans une
+  // fenêtre à part et tentait de charger Tailwind via un CDN externe EN DIRECT, puis
+  // lançait l'impression 600ms après. Le CDN met souvent plus longtemps que ça à
+  // télécharger + recompiler les styles (surtout sur connexion lente), donc
+  // l'impression partait avant que le style soit appliqué -> facture "moche" et brute.
+  //
+  // Ici, le HTML d'impression est généré à la main avec du CSS intégré en dur.
+  // Aucune dépendance réseau, aucun timing hasardeux : le rendu est garanti identique
+  // à chaque fois, en français comme en arabe (RTL).
+  const buildInvoiceHTML = () => {
+    const statusColors: Record<string, { bg: string; text: string }> = {
+      'Payé': { bg: '#dcfce7', text: '#16a34a' },
+      'En attente': { bg: '#fef3c7', text: '#d97706' },
+    };
+    const status = statusColors[paiement?.statut || ''] || { bg: '#ffe4e6', text: '#e11d48' };
+    const dir = isArabic ? 'rtl' : 'ltr';
+    const align1 = isArabic ? 'right' : 'left';
+    const align2 = isArabic ? 'left' : 'right';
 
+    return `
+<!DOCTYPE html>
+<html dir="${dir}" lang="${isArabic ? 'ar' : 'fr'}">
+<head>
+<meta charset="UTF-8">
+<title>${t('invoice')} - ${invoiceNumber}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Inter:wght@400;600;700;900&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: ${isArabic ? "'Amiri', Arial, sans-serif" : "'Inter', Arial, sans-serif"};
+    background: #f8fafc;
+    padding: 24px;
+    color: #0f172a;
+  }
+  .card {
+    max-width: 720px;
+    margin: 0 auto;
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    padding: 40px;
+  }
+  .header { text-align: center; padding-bottom: 24px; margin-bottom: 32px; border-bottom: 2px solid #4f46e5; }
+  .logo-circle { width: 64px; height: 64px; background: #e0e7ff; border-radius: 999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px auto; font-size: 26px; }
+  .title { font-size: 28px; font-weight: 900; color: #0f172a; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #64748b; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-bottom: 32px; }
+  .label { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 10px; letter-spacing: 0.03em; }
+  .value-strong { font-size: 16px; font-weight: 700; color: #0f172a; }
+  .value-muted { font-size: 13px; color: #475569; margin-top: 4px; }
+  .row-between { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
+  .row-between span:first-child { color: #475569; }
+  .row-between span:last-child { font-weight: 600; color: #0f172a; }
+  .info-box { background: #f8fafc; border-radius: 12px; padding: 20px; margin-bottom: 32px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 32px; }
+  thead tr { background: #4f46e5; color: #ffffff; }
+  th { padding: 12px 16px; font-size: 13px; font-weight: 600; text-align: ${align1}; }
+  th:last-child { text-align: ${align2}; }
+  td { padding: 16px; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
+  td:last-child { text-align: ${align2}; }
+  .amount-cell { font-weight: 700; font-size: 17px; color: #4f46e5; }
+  .total-box { display: flex; justify-content: space-between; align-items: center; background: #eef2ff; border: 2px solid #c7d2fe; border-radius: 10px; padding: 16px 20px; margin-bottom: 14px; }
+  .total-label { font-weight: 700; color: #0f172a; }
+  .total-value { font-size: 24px; font-weight: 900; color: #4f46e5; }
+  .status-badge { padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 700; text-align: center; text-transform: uppercase; background: ${status.bg}; color: ${status.text}; }
+  .sign-block { border-top: 2px solid #cbd5e1; padding-top: 28px; display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 32px; }
+  .sign-label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 48px; }
+  .sign-line { border-bottom: 1px solid #94a3b8; height: 1px; margin-bottom: 8px; }
+  .sign-name { font-size: 11px; font-weight: 700; color: #475569; }
+  .footer { margin-top: 32px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8; }
+  @media print {
+    body { background: #fff; padding: 0; }
+    .card { box-shadow: none; max-width: 100%; }
+  }
+  @page { size: A4; margin: 12mm; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="logo-circle">🏫</div>
+      <div class="title">${t('invoice')}</div>
+      <div class="subtitle">${invoiceNumber}</div>
+    </div>
+
+    <div class="grid2">
+      <div>
+        <div class="label">${t('creche')}</div>
+        <div class="value-strong">${creche?.nom || ''}</div>
+        <div class="value-muted">${creche?.adresse || ''}</div>
+      </div>
+      <div>
+        <div class="label">${t('invoice')}</div>
+        <div class="row-between"><span>${t('number')}:</span><span>${invoiceNumber}</span></div>
+        <div class="row-between"><span>${t('date')}:</span><span>${invoiceDate}</span></div>
+      </div>
+    </div>
+
+    <div class="info-box grid2" style="margin-bottom:0;">
+      <div>
+        <div class="label">${t('child')}</div>
+        <div class="value-strong">${enfant?.prenom || ''} ${enfant?.nom || ''}</div>
+        <div class="value-muted">${enfant?.dateNaissance || ''} • ${enfant?.genre || ''}</div>
+      </div>
+      <div>
+        <div class="label">${t('parent')}</div>
+        <div class="value-strong">${parentInfo?.prenom || ''} ${parentInfo?.nom || ''}</div>
+        <div class="value-muted">${parentInfo?.telephone || ''}</div>
+        ${parentInfo?.email ? `<div class="value-muted">${parentInfo.email}</div>` : ''}
+      </div>
+    </div>
+    <div style="height:32px;"></div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>${t('description')}</th>
+          <th>${t('month')}</th>
+          <th>${t('amount')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="font-weight:600;">${t('monthlyFee')}</td>
+          <td style="color:#475569;">${paiement?.moisConcerne || ''}</td>
+          <td class="amount-cell">${paiement?.montant?.toLocaleString() || '0'} DA</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="display:flex; justify-content:${isArabic ? 'flex-start' : 'flex-end'};">
+      <div style="width:50%;">
+        <div class="total-box">
+          <span class="total-label">${t('totalAmount')}:</span>
+          <span class="total-value">${paiement?.montant?.toLocaleString() || '0'} DA</span>
+        </div>
+        <div class="status-badge">${getStatusLabel()}</div>
+      </div>
+    </div>
+
+    <div class="sign-block">
+      <div>
+        <div class="sign-label">${t('signature')}</div>
+        <div class="sign-line"></div>
+        <div class="sign-name">${creche?.nom || ''}</div>
+      </div>
+      <div>
+        <div class="sign-label">${t('signature')}</div>
+        <div class="sign-line"></div>
+        <div class="sign-name">${parentInfo?.nom || ''}</div>
+      </div>
+    </div>
+
+    <div class="footer">© ${new Date().getFullYear()} RAWDHA+ - Plateforme de Gestion</div>
+  </div>
+</body>
+</html>`;
+  };
+
+  const openPrintWindow = () => {
     const printWindow = window.open('', '_blank', 'height=900,width=800');
     if (!printWindow) return;
 
-    const htmlContent = factureRef.current.innerHTML;
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html dir="${isArabic ? 'rtl' : 'ltr'}">
-      <head>
-        <meta charset="UTF-8">
-        <title>${t('invoice')} - ${invoiceNumber}</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <style>
-          @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap');
-          
-          body {
-            font-family: 'Amiri', Arial, sans-serif;
-            background: #f8fafc;
-            padding: 20px;
-          }
-          .print-container {
-            max-width: 210mm;
-            margin: 0 auto;
-            background: white;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
-            padding: 30px;
-          }
-          @page {
-            size: A4;
-            margin: 10mm;
-          }
-          .bg-indigo-600 { background-color: #4f46e5 !important; }
-          .text-indigo-600 { color: #4f46e5 !important; }
-          .border-indigo-600 { border-color: #4f46e5 !important; }
-          table { border-collapse: collapse; width: 100%; }
-          th, td { padding: 12px; }
-        </style>
-      </head>
-      <body>
-        <div class="print-container">
-          ${htmlContent}
-        </div>
-        <script>
-          tailwind.config = {
-            content: [],
-            theme: { extend: {} }
-          };
-          // Force l'application des classes Tailwind
-          setTimeout(() => {
-            document.querySelectorAll('.print-container').forEach(el => {
-              el.style.visibility = 'visible';
-            });
-          }, 100);
-        <\/script>
-      </body>
-      </html>
-    `);
-
+    printWindow.document.write(buildInvoiceHTML());
     printWindow.document.close();
 
-    setTimeout(() => {
-      printWindow.focus();
-      printWindow.print();
-      
-      // Fermer la fenêtre après impression (optionnel)
-      if (isDownload) {
-        setTimeout(() => printWindow.close(), 800);
-      }
-    }, 600);
+    // On attend que la police Google Fonts ait fini de charger avant d'imprimer,
+    // pour être sûr que le rendu (et donc le PDF/impression) soit propre du premier coup.
+    printWindow.onload = () => {
+      setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+      }, 250);
+    };
   };
 
-  const handleDownloadPDF = () => openPrintWindow(true);
-  const handlePrint = () => openPrintWindow(false);
+  const handleDownloadPDF = () => openPrintWindow();
+  const handlePrint = () => openPrintWindow();
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" dir={isArabic ? 'rtl' : 'ltr'}>
