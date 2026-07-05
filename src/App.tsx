@@ -80,7 +80,7 @@ if (isSubscriptionExpired) {
             <p className="text-slate-600 text-sm leading-relaxed">
               {language === 'ar' 
                 ? 'عذراً، لقد انتهت صلاحية اشتراككم الشهري الخاص ببرنامج روضتي. يرجى التواصل معنا لتجديد الاشتراك.' 
-                : 'Votre abonnement mensuel Rawdati est arrivé à expiration. Veuillez nous contacter pour renouveler votre accès.'}
+                : 'Votre abonnement mensuel Rawdha+ est arrivé à expiration. Veuillez nous contacter pour renouveler votre accès.'}
             </p>
 
             {expiryDateString && (
@@ -125,7 +125,7 @@ if (isSubscriptionExpired) {
       <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center gap-4">
         <School className="w-12 h-12 text-indigo-600 animate-bounce" />
         <p id="loading-text" className="text-sm font-bold text-slate-600 animate-pulse">
-          {language === 'ar' ? 'جاري الاتصال بقاعدة البيانات روضتي...' : 'Connexion à la base de données Rawdati en cours...'}
+          {language === 'ar' ? 'جاري الاتصال بقاعدة البيانات روضتي...' : 'Connexion à la base de données Rawdha+ en cours...'}
         </p>
       </div>
     );

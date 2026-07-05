@@ -84,7 +84,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       user,
       loading,
       creche: {
-        nom: user?.role === 'directeur' && user.nomCreche ? user.nomCreche : 'RAWDATI',
+        nom: user?.role === 'directeur' && user.nomCreche ? user.nomCreche : 'RAWDHA+',
         adresse: 'Plateforme de Gestion | منصة التسيير'
       },
       loginWithCredentials,

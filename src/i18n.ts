@@ -15,7 +15,7 @@ const resources = {
       meals: 'Repas',
       settings: 'Paramètres',
       comptes: 'Comptes / Abonnés',
-      welcome: 'Bienvenue sur RAWDATI',
+      welcome: 'Bienvenue sur RAWDHA+',
       'nav.logout': 'Déconnexion',
       'children.title': 'Gestion des enfants',
       'children.enrolled': 'enfants inscrits',

@@ -298,7 +298,7 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
 
           {/* Footer */}
           <div className="mt-8 pt-6 border-t border-slate-200 text-center text-xs text-slate-500">
-            <p>© {new Date().getFullYear()} RAWDATI - Plateforme de Gestion</p>
+            <p>© {new Date().getFullYear()} RAWDHA+ - Plateforme de Gestion</p>
           </div>
         </div>
       </div>

@@ -43,10 +43,10 @@ export default function Parametres() {
 
   // 1. Admin/Platform global state
   const [platformData, setPlatformData] = useState({
-    platformName: 'Rawdati Platform',
+    platformName: 'Rawdha+ Platform',
     platformVersion: 'v2.5.0 Premium',
     baseLicensingFee: '5000',
-    platformSupportEmail: 'support@rawdati.com',
+    platformSupportEmail: 'support@rawdha.com',
     platformSupportPhone: '+213 21 73 88 19',
     defaultGracePeriodDays: '30',
     maintenanceMode: false,
@@ -182,7 +182,7 @@ export default function Parametres() {
           <p className="text-xs sm:text-sm text-slate-500 mt-1 font-bold">
             {user?.role === 'admin' && (
               isFrench 
-                ? 'Super-administration de la plateforme globale Rawdati, licences crèches et infrastructure.' 
+                ? 'Super-administration de la plateforme globale Rawdha+, licences crèches et infrastructure.' 
                 : 'التحكم الإداري الأعلى لمنصة روضتي الشاملة وتراخيص المؤسسات الشريكة.'
             )}
             {user?.role === 'directeur' && (
@@ -811,7 +811,7 @@ export default function Parametres() {
                   <h4 className="text-sm font-bold">{isFrench ? 'Besoin d\'assistance technique ?' : 'هل تحتاج لمساعدة تقنية؟'}</h4>
                   <p className="text-[11px] text-indigo-200 font-semibold leading-relaxed">
                     {isFrench 
-                      ? 'N\'hésitez pas à contacter le support centralisé Rawdati ou l\'administration de votre crèche pour tout problème de licence.' 
+                      ? 'N\'hésitez pas à contacter le support centralisé Rawdha+ ou l\'administration de votre crèche pour tout problème de licence.' 
                       : 'يمكنك التواصل مباشرة مع إدارة الروضة أو الدعم البرمجي لشركة روضتي لمراجعة تفاصيل حسابك وربط طفلك.'}
                   </p>
                 </div>

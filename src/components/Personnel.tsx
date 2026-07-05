@@ -44,7 +44,7 @@ export default function Personnel() {
     return {
       ...p,
       telephone: p.telephone || `0555 ${12 + idx * 3} ${34 + idx * 2} ${56 - idx}`,
-      email: p.email || `${p.prenom.toLowerCase()}.${p.nom.toLowerCase()}@rawdati.dz`,
+      email: p.email || `${p.prenom.toLowerCase()}.${p.nom.toLowerCase()}@rawdha.dz`,
       dateEmbauche: p.dateEmbauche || `2024-0${Math.max(1, 9 - idx)}-12`,
       classeAssignee: p.classeAssignee || classesAssigned[idx % classesAssigned.length],
       groupeSanguin: p.groupeSanguin || ['O+', 'A+', 'B+', 'AB+'][idx % 4],
@@ -71,7 +71,7 @@ export default function Personnel() {
     if (!formData.nom || !formData.prenom || !formData.poste) return;
     
     // Auto populate email if blank
-    const calculatedEmail = formData.email || `${formData.prenom.toLowerCase()}.${formData.nom.toLowerCase()}@rawdati.dz`;
+    const calculatedEmail = formData.email || `${formData.prenom.toLowerCase()}.${formData.nom.toLowerCase()}@rawdha.dz`;
 
     addPersonnel({
       ...formData,
@@ -375,7 +375,7 @@ export default function Personnel() {
                   </label>
                   <input 
                     type="email" 
-                    placeholder="Ex: nassima.b@rawdati.dz"
+                    placeholder="Ex: nassima.b@rawdha.dz"
                     className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800" 
                     value={formData.email} 
                     onChange={e => setFormData({...formData, email: e.target.value})} 

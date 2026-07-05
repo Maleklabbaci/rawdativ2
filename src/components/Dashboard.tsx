@@ -141,7 +141,7 @@ export default function Dashboard() {
         <div>
           <span className="text-[10px] sm:text-xs font-bold text-indigo-600 uppercase tracking-widest block mb-0.5 flex items-center gap-1">
             <Zap className="w-3 h-3 sm:w-3.5 sm:h-3.5 animate-bounce" />
-            {isArabic ? 'الفضاء الإداري لروضتي' : 'Espace RAWDATI Premium'}
+            {isArabic ? 'الفضاء الإداري لروضتي' : 'Espace RAWDHA+ Premium'}
           </span>
           <h1 className="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
             {isArabic ? 'لوحة التحكم الإحصائية' : 'Vue d\'Ensemble'}

@@ -80,18 +80,27 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const [avis, setAvis] = useState<Avis[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // ✅ FIX PERF (v2) : chargement en 2 vagues au lieu d'attendre les 10 tables d'un coup.
+  //
+  // VAGUE 1 (bloquante, mais courte) : uniquement ce qui est nécessaire pour afficher
+  // le Dashboard tout de suite -> comptes (vérif abonnement) + enfants + presences +
+  // paiements + personnel. Dès que ça arrive, on coupe "loading" et l'utilisateur
+  // voit son tableau de bord.
+  //
+  // VAGUE 2 (en arrière-plan, NE bloque plus rien) : classes, activites, repas,
+  // messages, avis. Elles arrivent pendant que l'utilisateur est déjà en train de
+  // regarder son dashboard, et se glissent dans l'appli dès qu'elles sont prêtes
+  // (utile seulement s'il va sur les pages Classes / Activités / Repas / Messagerie).
   const refreshAll = async () => {
     try {
-      const dbEnfants = await getCollectionData<Enfant>('enfants');
-      const dbClasses = await getCollectionData<Classe>('classes');
-      const dbPresences = await getCollectionData<Presence>('presences');
-      const dbPaiements = await getCollectionData<Paiement>('paiements');
-      const dbPersonnel = await getCollectionData<Personnel>('personnel');
-      const dbActivites = await getCollectionData<Activite>('activites');
-      const dbRepas = await getCollectionData<Repas>('repas');
-      let dbComptes = await getCollectionData<UserAccount>('comptes');
-      const dbMessages = await getCollectionData<DiscussionMessage>('discussion_messages');
-      const dbAvis = await getCollectionData<Avis>('avis');
+      // --- VAGUE 1 : critique pour le Dashboard, on attend ---
+      const [dbComptes, dbEnfants, dbPresences, dbPaiements, dbPersonnel] = await Promise.all([
+        getCollectionData<UserAccount>('comptes'),
+        getCollectionData<Enfant>('enfants'),
+        getCollectionData<Presence>('presences'),
+        getCollectionData<Paiement>('paiements'),
+        getCollectionData<Personnel>('personnel'),
+      ]);
 
       // ✅ FIX: Don't create hardcoded admin - security risk!
       if (dbComptes.length === 0) {
@@ -104,19 +113,36 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         );
       }
 
+      setComptes(dbComptes);
       setEnfants(dbEnfants);
-      setClasses(dbClasses);
       setPresences(dbPresences);
       setPaiements(dbPaiements);
       setPersonnel(dbPersonnel);
-      setActivites(dbActivites);
-      setRepas(dbRepas);
-      setComptes(dbComptes);
-      setMessages(dbMessages);
-      setAvis(dbAvis);
+
+      // On arrête l'écran de chargement ICI -> le Dashboard s'affiche déjà,
+      // pendant que la vague 2 continue en silence derrière.
+      setLoading(false);
+
+      // --- VAGUE 2 : le reste, en arrière-plan, ne bloque plus rien ---
+      Promise.all([
+        getCollectionData<Classe>('classes'),
+        getCollectionData<Activite>('activites'),
+        getCollectionData<Repas>('repas'),
+        getCollectionData<DiscussionMessage>('discussion_messages'),
+        getCollectionData<Avis>('avis'),
+      ])
+        .then(([dbClasses, dbActivites, dbRepas, dbMessages, dbAvis]) => {
+          setClasses(dbClasses);
+          setActivites(dbActivites);
+          setRepas(dbRepas);
+          setMessages(dbMessages);
+          setAvis(dbAvis);
+        })
+        .catch(err => {
+          console.error('Erreur de connexion à Supabase (chargement arrière-plan):', err);
+        });
     } catch (err) {
       console.error('Erreur de connexion à Supabase:', err);
-    } finally {
       setLoading(false);
     }
   };

@@ -69,7 +69,7 @@ export default function Comptes() {
         </h3>
         <p className="text-sm mt-2 text-slate-400 leading-relaxed">
           {isFrench 
-            ? 'Seul l’administrateur de la plateforme Rawdati peut accéder à la gestion des comptes directeurs.' 
+            ? 'Seul l’administrateur de la plateforme Rawdha+ peut accéder à la gestion des comptes directeurs.' 
             : 'يُسمح فقط لمدير المنصة الشاملة بالولوج وإدارة حسابات واشتراكات مدراء الروضات.'}
         </p>
       </div>
@@ -321,7 +321,7 @@ export default function Comptes() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition font-medium text-slate-800"
-                      placeholder="ex: directeur@rawdati.com"
+                      placeholder="ex: directeur@rawdha.com"
                       required
                     />
                   </div>

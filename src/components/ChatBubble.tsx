@@ -97,7 +97,7 @@ export default function ChatBubble() {
       } else if (user.role === 'admin' && activeDirectorThread) {
         await addMessage({
           senderId: 'adm1',
-          senderName: isFrench ? 'Support Central RAWDATI' : 'الدعم الفني المركزي',
+          senderName: isFrench ? 'Support Central RAWDHA+' : 'الدعم الفني المركزي',
           recipientId: activeDirectorThread,
           parentId: activeDirectorThread,
           text: textToSend,
@@ -155,7 +155,7 @@ export default function ChatBubble() {
                   <Star className="w-8 h-8 text-amber-500 fill-amber-500" />
                 </div>
                 <h2 className="text-2xl font-black text-slate-900">{isFrench ? 'Votre avis compte !' : 'رأيك يهمنا!'}</h2>
-                <p className="text-sm text-slate-500 mt-2">{isFrench ? 'Aidez-nous à améliorer la plateforme RAWDATI.' : 'ساعدنا في تقييم وتحسين منصة روضتي.'}</p>
+                <p className="text-sm text-slate-500 mt-2">{isFrench ? 'Aidez-nous à améliorer la plateforme RAWDHA+.' : 'ساعدنا في تقييم وتحسين منصة روضتي.'}</p>
               </div>
 
               <div className="flex justify-center gap-2 mb-6 cursor-pointer">
@@ -224,7 +224,7 @@ export default function ChatBubble() {
                   <div>
                     <h4 className="text-sm font-black tracking-wide">
                       {activeTab === 'chat' 
-                        ? (user.role === 'directeur' ? (isFrench ? 'Support RAWDATI' : 'الدعم الفني') : activeDirectorThread ? comptes.find(c => c.id === activeDirectorThread)?.prenom : (isFrench ? 'Messagerie' : 'صندوق الرسائل'))
+                        ? (user.role === 'directeur' ? (isFrench ? 'Support RAWDHA+' : 'الدعم الفني') : activeDirectorThread ? comptes.find(c => c.id === activeDirectorThread)?.prenom : (isFrench ? 'Messagerie' : 'صندوق الرسائل'))
                         : (isFrench ? 'Avis des Crèches' : 'تقييمات الروضات')}
                     </h4>
                     <p className="text-[10px] text-slate-300 font-bold flex items-center gap-1">

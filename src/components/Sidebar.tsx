@@ -68,7 +68,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose }: 
               </div>
               <div className="truncate">
                 <h1 className="text-xl font-black tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent">
-                  RAWDATI
+                  RAWDHA+
                 </h1>
                 <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest block -mt-1 truncate">
                   {language === 'ar' ? 'روضتي بريميوم' : 'Nursery Hub'}

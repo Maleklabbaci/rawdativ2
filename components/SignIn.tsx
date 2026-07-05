@@ -49,7 +49,7 @@ export default function SignIn() {
             <Baby className="w-8 h-8 text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold tracking-wider font-display drop-shadow-sm">RAWDATI</h2>
+            <h2 className="text-2xl font-bold tracking-wider font-display drop-shadow-sm">RAWDHA+</h2>
             <p className="text-xs text-white/80 uppercase tracking-widest">Premium Nursery Platform</p>
           </div>
         </div>
@@ -70,7 +70,7 @@ export default function SignIn() {
 
         {/* Footer info and stats */}
         <div className="relative flex justify-between items-center border-t border-white/20 pt-6">
-          <p className="text-sm text-white/70">© 2026 RAWDATI. Tous droits réservés.</p>
+          <p className="text-sm text-white/70">© 2026 RAWDHA+. Tous droits réservés.</p>
           <div className="flex gap-4 text-xs font-mono">
             <span>v1.2.0</span>
             <span>Propulsé par iVISION</span>
@@ -88,7 +88,7 @@ export default function SignIn() {
             </div>
             <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Connectez-vous</h2>
             <p className="text-slate-500">
-              Saisissez vos identifiants pour accéder au portail d'administration de RAWDATI.
+              Saisissez vos identifiants pour accéder au portail d'administration de RAWDHA+.
             </p>
           </div>
 
@@ -111,7 +111,7 @@ export default function SignIn() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all font-medium text-slate-800"
-                  placeholder="exemple@rawdati.com"
+                  placeholder="exemple@rawdha.com"
                   required
                 />
               </div>
@@ -146,7 +146,7 @@ export default function SignIn() {
               ) : (
                 <>
                   <LogIn className="w-5 h-5" />
-                  <span>Se connecter à RAWDATI</span>
+                  <span>Se connecter à RAWDHA+</span>
                 </>
               )}
             </button>
