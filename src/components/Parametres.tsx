@@ -23,7 +23,10 @@ import {
   Info,
   RefreshCw,
   Sliders,
-  Smartphone
+  Smartphone,
+  Lock,
+  Image as ImageIcon,
+  Trash2
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -32,7 +35,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 export default function Parametres() {
   const { t, language } = useLanguage();
-  const { user } = useAuth();
+  const { user, refreshCreche } = useAuth();
   const isFrench = language === 'fr';
   const isArabic = language === 'ar';
 
@@ -70,7 +73,44 @@ export default function Parametres() {
     weeklyFicheEmail: true,
     securityCheckRequired: true,
     mealsOrganicPriority: true,
+    logoUrl: '' as string, // ✅ Logo PNG de la crèche, en base64 (affiché sidebar, header, factures, favicon)
   });
+
+  const [logoError, setLogoError] = useState('');
+
+  // ✅ Upload du logo : on exige un vrai fichier PNG (type MIME + extension), on
+  // convertit en base64 pour le stocker directement dans le document "parametres"
+  // (pas besoin d'un bucket de stockage séparé pour un simple logo).
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    setLogoError('');
+    if (!file) return;
+
+    const isPng = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png');
+    if (!isPng) {
+      setLogoError(isFrench ? 'Le logo doit être un fichier PNG.' : 'يجب أن يكون الشعار بصيغة PNG.');
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setLogoError(isFrench ? 'Le fichier ne doit pas dépasser 2 Mo.' : 'يجب ألا يتجاوز حجم الملف 2 ميغابايت.');
+      e.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCrecheData(prev => ({ ...prev, logoUrl: reader.result as string }));
+    };
+    reader.onerror = () => {
+      setLogoError(isFrench ? 'Erreur de lecture du fichier.' : 'خطأ أثناء قراءة الملف.');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveLogo = () => {
+    setCrecheData(prev => ({ ...prev, logoUrl: '' }));
+  };
 
   // 3. Parent's custom preferences state
   const [parentData, setParentData] = useState({
@@ -146,7 +186,13 @@ export default function Parametres() {
       }
 
       await setCollectionDocument('parametres', docId, dataToSave);
-      
+
+      // ✅ Propage immédiatement le nom / logo / tarif dans toute l'appli
+      // (sidebar, header, factures) sans que le directeur ait besoin de se reconnecter.
+      if (user.role === 'directeur') {
+        await refreshCreche();
+      }
+
       setSavedSuccess(true);
       setTimeout(() => {
         setSavedSuccess(false);
@@ -439,6 +485,45 @@ export default function Parametres() {
                   <span>{isFrench ? '1. Identité & Registre Légal de l’Établissement' : '1. الهوية الرسمية وترخيص الروضة'}</span>
                 </h2>
 
+                {/* Logo Upload — apparaît dans la sidebar, le header, les factures et l'onglet du navigateur */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 pb-4 border-b border-slate-100">
+                  <div className="w-20 h-20 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {crecheData.logoUrl ? (
+                      <img src={crecheData.logoUrl} alt="Logo" className="w-full h-full object-contain p-1.5" />
+                    ) : (
+                      <ImageIcon className="w-7 h-7 text-slate-300" />
+                    )}
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase">
+                      {isFrench ? 'Logo de la Crèche (PNG uniquement)' : 'شعار الروضة (بصيغة PNG فقط)'}
+                    </label>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <label className="px-4 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl text-xs font-bold cursor-pointer transition">
+                        {isFrench ? 'Choisir un fichier PNG' : 'اختر ملف PNG'}
+                        <input type="file" accept="image/png,.png" onChange={handleLogoUpload} className="hidden" />
+                      </label>
+                      {crecheData.logoUrl && (
+                        <button
+                          type="button"
+                          onClick={handleRemoveLogo}
+                          className="px-3 py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-xs font-bold cursor-pointer transition flex items-center gap-1.5"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          {isFrench ? 'Retirer' : 'إزالة'}
+                        </button>
+                      )}
+                    </div>
+                    {logoError ? (
+                      <p className="text-[11px] text-rose-500 font-semibold">{logoError}</p>
+                    ) : (
+                      <p className="text-[10px] text-slate-400">
+                        {isFrench ? 'Remplace le logo par défaut partout : menu, factures, onglet du navigateur. 2 Mo max.' : 'يستبدل الشعار الافتراضي في كل مكان: القائمة، الفواتير، تبويب المتصفح. 2 ميغابايت كحد أقصى.'}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
@@ -451,36 +536,48 @@ export default function Parametres() {
                       onChange={e => setCrecheData({...crecheData, crecheName: e.target.value})}
                       required
                     />
+                    <p className="text-[10px] text-slate-400 mt-1.5">
+                      {isFrench ? 'Se met à jour partout (menu, factures) dès l\'enregistrement.' : 'يتم تحديثه في كل مكان (القائمة، الفواتير) فور الحفظ.'}
+                    </p>
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                    <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase mb-2">
+                      <Lock className="w-3 h-3 text-slate-400" />
                       {isFrench ? 'Code de Licence d\'Agrément' : 'رقم رخصة الاعتماد المالي'}
                     </label>
                     <input 
                       type="text" 
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800" 
+                      disabled
+                      title={isFrench ? 'Attribué par la plateforme, non modifiable. Contactez le support pour toute correction.' : 'يُحدَّد من طرف المنصة ولا يمكن تعديله. تواصل مع الدعم الفني لأي تصحيح.'}
+                      className="w-full p-3 bg-slate-100 border border-slate-200 rounded-xl outline-none text-sm font-bold text-slate-500 cursor-not-allowed" 
                       value={crecheData.licenseCode}
-                      onChange={e => setCrecheData({...crecheData, licenseCode: e.target.value})}
                     />
+                    <p className="text-[10px] text-slate-400 mt-1.5">
+                      {isFrench ? 'Attribué par la plateforme — contactez le support pour le modifier.' : 'محدد من طرف المنصة — تواصل مع الدعم لتعديله.'}
+                    </p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                    <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase mb-2">
+                      <Lock className="w-3 h-3 text-slate-400" />
                       {isFrench ? 'Email de Support Parents *' : 'بريد الاتصال واستقبال الأولياء *'}
                     </label>
                     <div className="relative">
                       <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                       <input 
                         type="email" 
-                        className="w-full pl-10 pr-4 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800" 
+                        disabled
+                        title={isFrench ? 'Attribué par la plateforme, non modifiable. Contactez le support pour toute correction.' : 'يُحدَّد من طرف المنصة ولا يمكن تعديله. تواصل مع الدعم الفني لأي تصحيح.'}
+                        className="w-full pl-10 pr-4 p-3 bg-slate-100 border border-slate-200 rounded-xl outline-none text-sm font-semibold text-slate-500 cursor-not-allowed" 
                         value={crecheData.principalEmail}
-                        onChange={e => setCrecheData({...crecheData, principalEmail: e.target.value})}
-                        required
                       />
                     </div>
+                    <p className="text-[10px] text-slate-400 mt-1.5">
+                      {isFrench ? 'Attribué par la plateforme — contactez le support pour le modifier.' : 'محدد من طرف المنصة — تواصل مع الدعم لتعديله.'}
+                    </p>
                   </div>
 
                   <div>
@@ -550,8 +647,12 @@ export default function Parametres() {
                         onChange={e => setCrecheData({...crecheData, tuitionFeeRate: e.target.value})}
                       />
                     </div>
+                    <p className="text-[10px] text-slate-400 mt-1.5">
+                      {isFrench ? 'Ce montant devient le tarif par défaut proposé lors de la création d\'un nouveau paiement.' : 'يصبح هذا المبلغ التعرفة الافتراضية عند إنشاء دفعة جديدة.'}
+                    </p>
                   </div>
                 </div>
+
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>

@@ -130,7 +130,8 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
     padding: 40px;
   }
   .header { text-align: center; padding-bottom: 24px; margin-bottom: 32px; border-bottom: 2px solid #4f46e5; }
-  .logo-circle { width: 64px; height: 64px; background: #e0e7ff; border-radius: 999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px auto; font-size: 26px; }
+  .logo-circle { width: 64px; height: 64px; background: #e0e7ff; border-radius: 999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px auto; font-size: 26px; overflow: hidden; }
+  .logo-circle img { width: 100%; height: 100%; object-fit: contain; padding: 6px; }
   .title { font-size: 28px; font-weight: 900; color: #0f172a; margin-bottom: 4px; }
   .subtitle { font-size: 13px; color: #64748b; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-bottom: 32px; }
@@ -167,7 +168,7 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
 <body>
   <div class="card">
     <div class="header">
-      <div class="logo-circle">🏫</div>
+      <div class="logo-circle">${creche?.logoUrl ? `<img src="${creche.logoUrl}" alt="Logo" />` : '🏫'}</div>
       <div class="title">${t('invoice')}</div>
       <div class="subtitle">${invoiceNumber}</div>
     </div>
@@ -300,8 +301,12 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
         <div ref={factureRef} className="p-8 bg-white print:p-0" style={{ fontFamily: 'Arial, sans-serif' }}>
           {/* Logo & Title */}
           <div className="text-center mb-8 pb-6 border-b-2 border-indigo-600">
-            <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-3">
-              <span className="text-2xl">🏫</span>
+            <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-3 overflow-hidden">
+              {creche?.logoUrl ? (
+                <img src={creche.logoUrl} alt="Logo" className="w-full h-full object-contain p-1" />
+              ) : (
+                <span className="text-2xl">🏫</span>
+              )}
             </div>
             <h1 className="text-3xl font-black text-slate-900 mb-1">{t('invoice')}</h1>
             <p className="text-sm text-slate-500">{invoiceNumber}</p>

@@ -43,7 +43,7 @@ export default function Paiements() {
     updatePaiement // Utilisation de l'update depuis le DbContext
   } = useDb();
   
-  const { user } = useAuth();
+  const { user, creche } = useAuth();
   const isDirecteur = user?.role === 'directeur';
   const enfantsData = isDirecteur ? allEnfantsData.filter(e => e.crecheId === user!.id) : allEnfantsData;
   const enfantIdsVisibles = new Set(enfantsData.map(e => e.id));
@@ -67,7 +67,7 @@ export default function Paiements() {
 
   const [formData, setFormData] = useState({
     enfantId: enfantsData[0]?.id || '',
-    montant: 12000,
+    montant: creche?.tuitionFeeRate || 12000, // ✅ synchronisé avec le tarif défini dans Paramètres
     statut: 'En attente' as 'Payé' | 'En attente' | 'Retard',
     typeFacture: 'Mensuel' as 'Mensuel' | 'Annuel',
     moisConcerne: 'Mai 2026',
@@ -110,7 +110,7 @@ export default function Paiements() {
     // Reset state
     setFormData({
       enfantId: enfantsData[0]?.id || '',
-      montant: 12000,
+      montant: creche?.tuitionFeeRate || 12000, // ✅ synchronisé avec le tarif défini dans Paramètres
       statut: 'En attente',
       typeFacture: 'Mensuel',
       moisConcerne: 'Mai 2026',
@@ -443,10 +443,11 @@ export default function Paiements() {
                         type="button"
                         onClick={() => {
                           const isAnnuel = type.key === 'Annuel';
+                          const monthlyRate = creche?.tuitionFeeRate || 12000; // ✅ synchronisé avec Paramètres
                           setFormData({
                             ...formData, 
                             typeFacture: type.key as any,
-                            montant: isAnnuel ? 120000 : 12000, // Ajuste le montant par défaut
+                            montant: isAnnuel ? monthlyRate * 12 : monthlyRate,
                             moisConcerne: isAnnuel ? 'Année Scolaire 2026/2027' : 'Mai 2026'
                           });
                         }}

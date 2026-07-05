@@ -18,7 +18,7 @@ import {
 import { motion } from 'motion/react';
 
 export default function Sidebar({ currentPage, onPageChange, isOpen, onClose }: any) {
-  const { user } = useAuth();
+  const { user, creche } = useAuth();
   const { language, t } = useLanguage();
 
   let items: any[] = [];
@@ -63,8 +63,12 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose }: 
         <div className="p-6 border-b border-slate-800">
           <div className="flex items-center justify-between gap-3.5">
             <div className="flex items-center gap-3.5 overflow-hidden">
-              <div className="p-2.5 bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 rounded-2xl shadow-lg shadow-indigo-500/20 text-white flex-shrink-0">
-                <Baby className="w-6 h-6" />
+              <div className="p-2.5 bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 rounded-2xl shadow-lg shadow-indigo-500/20 text-white flex-shrink-0 w-11 h-11 flex items-center justify-center overflow-hidden">
+                {creche?.logoUrl ? (
+                  <img src={creche.logoUrl} alt="Logo" className="w-full h-full object-contain" />
+                ) : (
+                  <Baby className="w-6 h-6" />
+                )}
               </div>
               <div className="truncate">
                 <h1 className="text-xl font-black tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent">
