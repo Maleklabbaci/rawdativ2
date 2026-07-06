@@ -36,10 +36,11 @@ export default function Comptes() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   
-  // Default end date set to 30 days from now
+  // ✅ Essai gratuit de 7 jours par défaut (le blocage auto existe déjà dans App.tsx :
+  // dès que "dateFinAbonnement" est dépassée, le compte est bloqué automatiquement).
   const getDefaultDate = () => {
     const d = new Date();
-    d.setDate(d.getDate() + 30);
+    d.setDate(d.getDate() + 7);
     return d.toISOString().split('T')[0];
   };
 
@@ -379,7 +380,7 @@ export default function Comptes() {
                     {/* Subscription End Datepicker */}
                     <div>
                       <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-                        {isFrench ? 'Date fin d\'abonnement *' : 'تاريخ نهاية الاشتراك *'}
+                        {isFrench ? 'Fin de la période (essai gratuit 7j par défaut) *' : 'نهاية الفترة (تجربة مجانية 7 أيام افتراضياً) *'}
                       </label>
                       <div className="relative">
                         <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -391,6 +392,9 @@ export default function Comptes() {
                           required
                         />
                       </div>
+                      <p className="text-[10px] text-slate-400 mt-1.5">
+                        {isFrench ? 'Modifiable ici si tu veux offrir une durée différente.' : 'قابل للتعديل هنا إذا أردت تحديد مدة مختلفة.'}
+                      </p>
                     </div>
                   </>
                 )}
