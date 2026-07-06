@@ -347,9 +347,12 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     return data.id as string;
   };
 
+  // ✅ FIX: on ne cache plus l'erreur. Si la policy RLS bloque la modification
+  // (ex: admin qui essaie de suspendre le compte d'un directeur), l'appelant
+  // le sait maintenant au lieu de croire que ça a marché.
   const updateCompte = async (id: string, data: Partial<UserAccount>) => {
     setComptes(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try { await updateCollectionDocument<UserAccount>('comptes', id, data); } catch (err) {}
+    await updateCollectionDocument<UserAccount>('comptes', id, data);
   };
 
   // ✅ FIX: appelle l'Edge Function "delete-account" qui supprime le VRAI utilisateur
