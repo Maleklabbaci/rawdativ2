@@ -65,7 +65,8 @@ export interface Paiement {
 
 // ✅ Notification envoyée par l'admin à un ou tous les directeurs (annonce), ou
 // notification système (rappel de paiement). "readBy" liste les ids des comptes
-// qui l'ont déjà vue/fermée.
+// qui l'ont déjà vue/fermée. Les champs de style permettent à l'admin de
+// personnaliser entièrement l'apparence du popup (couleurs, icône, bouton).
 export interface AppNotification {
   id: string;
   title: string;
@@ -75,6 +76,12 @@ export interface AppNotification {
   senderName?: string;
   createdAt: string;
   readBy: string[];
+  // --- Personnalisation visuelle du popup (définie par l'admin à l'envoi) ---
+  bgColor?: string;       // couleur de fond du popup (ex: '#4f46e5')
+  textColor?: string;     // couleur du texte (ex: '#ffffff')
+  buttonColor?: string;   // couleur du bouton "Fermer/OK"
+  icon?: string;          // emoji affiché en haut du popup (ex: '🎉')
+  showAsPopup?: boolean;  // true = s'affiche en popup plein écran, false = juste dans la cloche
 }
 
 export interface Personnel {
