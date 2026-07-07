@@ -19,6 +19,7 @@ import Parametres from './components/Parametres';
 import Comptes from './components/Comptes';
 import Notifications from './components/Notifications';
 import NotificationBell from './components/NotificationBell';
+import NotificationPopup from './components/NotificationPopup';
 import ChatBubble from './components/ChatBubble';
 import { AlertCircle, Lock, Check } from 'lucide-react';
 
@@ -375,6 +376,9 @@ if (isSubscriptionExpired) {
 
       {/* Persistent Live Chat Bubble */}
       <ChatBubble />
+
+      {/* Popup d'annonce admin personnalisé — uniquement pour les directeurs */}
+      {user?.role === 'directeur' && <NotificationPopup />}
     </div>
   );
 }
