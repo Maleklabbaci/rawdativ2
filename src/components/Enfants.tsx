@@ -71,6 +71,7 @@ export default function Enfants() {
     docVaccin: true,
     docDomicile: false,
     docPhoto: false,
+    jourEcheanceMensuel: '5', // ✅ jour du mois (1-31) pour la facture auto + notification de paiement
   });
 
   const filteredEnfants = enfants.filter(enfant => {
@@ -131,7 +132,8 @@ export default function Enfants() {
           carnetVaccination: formData.docVaccin,
           justificatifDomicile: formData.docDomicile,
           photoIdentite: formData.docPhoto
-        }
+        },
+        jourEcheanceMensuel: formData.jourEcheanceMensuel ? Number(formData.jourEcheanceMensuel) : undefined
       };
       updateEnfant(editingEnfantId, updatedEnfant);
       setEditingEnfantId(null);
@@ -173,7 +175,8 @@ export default function Enfants() {
           carnetVaccination: formData.docVaccin,
           justificatifDomicile: formData.docDomicile,
           photoIdentite: formData.docPhoto
-        }
+        },
+        jourEcheanceMensuel: formData.jourEcheanceMensuel ? Number(formData.jourEcheanceMensuel) : undefined
       };
       addEnfant(nouvelEnfant);
     }
@@ -201,6 +204,7 @@ export default function Enfants() {
       docVaccin: true,
       docDomicile: false,
       docPhoto: false,
+      jourEcheanceMensuel: '5',
     });
   };
 
@@ -257,6 +261,7 @@ export default function Enfants() {
               docVaccin: true,
               docDomicile: false,
               docPhoto: false,
+              jourEcheanceMensuel: '5',
             });
             setShowModal(true);
           }}
@@ -402,6 +407,7 @@ export default function Enfants() {
                                 docCertif: enfant.documentsRequis.certificatMedical,
                                 docVaccin: enfant.documentsRequis.carnetVaccination,
                                 docDomicile: enfant.documentsRequis.justificatifDomicile,
+                                jourEcheanceMensuel: String(enfant.jourEcheanceMensuel || 5),
                                 docPhoto: enfant.documentsRequis.photoIdentite,
                                 allergie: enfant.allergie || '',
                                 regimeAlimentaire: enfant.regimeAlimentaire || ''
@@ -573,6 +579,7 @@ export default function Enfants() {
                           docCertif: enfant.documentsRequis.certificatMedical,
                           docVaccin: enfant.documentsRequis.carnetVaccination,
                           docDomicile: enfant.documentsRequis.justificatifDomicile,
+                          jourEcheanceMensuel: String(enfant.jourEcheanceMensuel || 5),
                           docPhoto: enfant.documentsRequis.photoIdentite,
                           allergie: enfant.allergie || '',
                           regimeAlimentaire: enfant.regimeAlimentaire || ''
@@ -765,6 +772,26 @@ export default function Enfants() {
                         value={formData.regimeAlimentaire}
                         onChange={e => setFormData({...formData, regimeAlimentaire: e.target.value})} 
                       />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                        {isArabic ? 'يوم استحقاق الدفع الشهري' : 'Jour d\'échéance de paiement mensuel'}
+                      </label>
+                      <select
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
+                        value={formData.jourEcheanceMensuel}
+                        onChange={e => setFormData({...formData, jourEcheanceMensuel: e.target.value})}
+                      >
+                        {Array.from({ length: 28 }, (_, i) => i + 1).map(jour => (
+                          <option key={jour} value={jour}>{jour}</option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-slate-400 mt-1.5">
+                        {isArabic
+                          ? 'كل شهر، في هذا اليوم، يتم إنشاء فاتورة تلقائياً وتبقى الإشعارات ظاهرة حتى يتم الدفع.'
+                          : 'Chaque mois, à ce jour, une facture est générée automatiquement et une notification reste active jusqu\'au règlement.'}
+                      </p>
                     </div>
                   </div>
                 </div>

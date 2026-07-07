@@ -13,6 +13,7 @@ import {
   User,
   Crown,
   MapPin,
+  Bell,
   X
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -25,6 +26,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose }: 
   if (user?.role === 'admin') {
     items = [
       { key: 'comptes', label: 'comptes', icon: User, color: 'text-violet-500' },
+      { key: 'notifications', label: 'notifications', icon: Bell, color: 'text-pink-500' },
       { key: 'parametres', label: 'settings', icon: Settings, color: 'text-slate-500' },
     ];
   } else if (user?.role === 'directeur') {
@@ -44,6 +46,9 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose }: 
   const getTabLabel = (key: string, originalLabel: string) => {
     if (key === 'comptes' && user?.role === 'admin') {
       return language === 'ar' ? 'مدراء الروضات' : 'Directeurs de Crèches';
+    }
+    if (key === 'notifications') {
+      return language === 'ar' ? 'الإشعارات' : 'Notifications';
     }
     return t(originalLabel);
   };
