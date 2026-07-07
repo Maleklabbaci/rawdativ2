@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Enfant, Presence, Paiement, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis } from '../types';
+import { Enfant, Presence, Paiement, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification } from '../types';
 import { 
   getCollectionData, 
   addCollectionDocument, 
@@ -21,8 +21,13 @@ interface DbContextType {
   comptes: UserAccount[];
   messages: DiscussionMessage[];
   avis: Avis[];
+  notifications: AppNotification[];
   loading: boolean;
   refreshAll: () => Promise<void>;
+
+  addNotification: (notif: Omit<AppNotification, 'id'>) => Promise<string>;
+  markNotificationRead: (id: string, userId: string) => Promise<void>;
+  deleteNotification: (id: string) => Promise<void>;
   
   addMessage: (message: Omit<DiscussionMessage, 'id'>) => Promise<string>;
   updateMessage: (id: string, message: Partial<DiscussionMessage>) => Promise<void>;
@@ -66,7 +71,7 @@ interface DbContextType {
 const DbContext = createContext<DbContextType | null>(null);
 
 export const DbProvider = ({ children }: { children: React.ReactNode }) => {
-  const { user } = useAuth(); // Récupère l'utilisateur connecté pour filtrer ses données
+  const { user, creche } = useAuth(); // Récupère l'utilisateur connecté + les paramètres de sa crèche (tarif, etc.)
   
   const [enfants, setEnfants] = useState<Enfant[]>([]);
   const [classes, setClasses] = useState<Classe[]>([]);
@@ -78,7 +83,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const [comptes, setComptes] = useState<UserAccount[]>([]);
   const [messages, setMessages] = useState<DiscussionMessage[]>([]);
   const [avis, setAvis] = useState<Avis[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
+  const autoInvoiceRanRef = React.useRef(false); // évite de relancer la génération auto plusieurs fois par session
 
   // ✅ FIX PERF (v2) : chargement en 2 vagues au lieu d'attendre les 10 tables d'un coup.
   //
@@ -130,13 +137,15 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         getCollectionData<Repas>('repas'),
         getCollectionData<DiscussionMessage>('discussion_messages'),
         getCollectionData<Avis>('avis'),
+        getCollectionData<AppNotification>('notifications'),
       ])
-        .then(([dbClasses, dbActivites, dbRepas, dbMessages, dbAvis]) => {
+        .then(([dbClasses, dbActivites, dbRepas, dbMessages, dbAvis, dbNotifications]) => {
           setClasses(dbClasses);
           setActivites(dbActivites);
           setRepas(dbRepas);
           setMessages(dbMessages);
           setAvis(dbAvis);
+          setNotifications(dbNotifications);
         })
         .catch(err => {
           console.error('Erreur de connexion à Supabase (chargement arrière-plan):', err);
@@ -404,6 +413,82 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     } catch (err) { return tempId; }
   };
 
+  // --- NOTIFICATIONS (annonces admin -> directeurs) ---
+  const addNotification = async (notif: Omit<AppNotification, 'id'>) => {
+    const tempId = 'notif_' + Date.now();
+    const cleanNotif = { ...notif, id: tempId } as AppNotification;
+    setNotifications(prev => [cleanNotif, ...prev]);
+    const freshId = await addCollectionDocument('notifications', notif);
+    setNotifications(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+    return freshId;
+  };
+
+  const markNotificationRead = async (id: string, userId: string) => {
+    const target = notifications.find(n => n.id === id);
+    if (!target || target.readBy?.includes(userId)) return; // déjà lue, on ne réécrit pas pour rien
+    const updatedReadBy = [...(target.readBy || []), userId];
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, readBy: updatedReadBy } : n));
+    try {
+      await updateCollectionDocument<AppNotification>('notifications', id, { readBy: updatedReadBy });
+    } catch (err) {
+      console.error('Erreur marquage notification comme lue:', err);
+    }
+  };
+
+  const deleteNotification = async (id: string) => {
+    setNotifications(prev => prev.filter(item => item.id !== id));
+    await deleteCollectionDocument('notifications', id);
+  };
+
+  // --- GÉNÉRATION AUTOMATIQUE DES FACTURES MENSUELLES ---
+  // Pour chaque enfant ayant un "jourEcheanceMensuel" défini (Paramètres enfant),
+  // dès que ce jour est atteint dans le mois en cours, on génère automatiquement
+  // une facture "En attente" si elle n'existe pas déjà pour ce mois. La notification
+  // de paiement correspondante reste visible (dans la cloche du directeur) tant que
+  // le statut de cette facture n'est pas passé à "Payé" — pas besoin de la stocker
+  // séparément, elle est directement dérivée de la liste des paiements.
+  const MOIS_FR = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+  useEffect(() => {
+    if (autoInvoiceRanRef.current) return; // une seule fois par session, pour éviter les doublons
+    if (user?.role !== 'directeur') return;
+    if (enfants.length === 0) return; // attend que les enfants (Vague 1) soient chargés
+
+    const today = new Date();
+    const currentMoisConcerne = `${MOIS_FR[today.getMonth()]} ${today.getFullYear()}`;
+
+    const enfantsDuDirecteur = enfants.filter(e => e.crecheId === user.id && e.statut === 'Actif');
+    const aGenerer = enfantsDuDirecteur.filter(enfant => {
+      if (!enfant.jourEcheanceMensuel) return false;
+      if (today.getDate() < enfant.jourEcheanceMensuel) return false; // échéance pas encore atteinte ce mois-ci
+      const dejaExistant = paiements.some(p => p.enfantId === enfant.id && p.moisConcerne === currentMoisConcerne);
+      return !dejaExistant;
+    });
+
+    if (aGenerer.length === 0) {
+      autoInvoiceRanRef.current = true;
+      return;
+    }
+
+    autoInvoiceRanRef.current = true; // on marque tout de suite pour ne pas relancer en double pendant les awaits
+    (async () => {
+      for (const enfant of aGenerer) {
+        try {
+          await addPaiement({
+            enfantId: enfant.id,
+            montant: creche?.tuitionFeeRate || 4500,
+            statut: 'En attente',
+            moisConcerne: currentMoisConcerne,
+            dateEcheance: new Date(today.getFullYear(), today.getMonth(), enfant.jourEcheanceMensuel).toISOString().split('T')[0],
+            autoGenere: true,
+          });
+        } catch (err) {
+          console.error(`Erreur génération auto facture pour ${enfant.prenom} ${enfant.nom}:`, err);
+        }
+      }
+    })();
+  }, [enfants, paiements, user, creche]);
+
   return (
     <DbContext.Provider value={{
       // On injecte ici les listes FILTRÉES et isolées pour chaque directeur
@@ -417,12 +502,16 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       comptes,
       messages,
       avis,
+      notifications,
       loading,
       refreshAll,
       addMessage,
       updateMessage,
       deleteMessage,
       addAvis,
+      addNotification,
+      markNotificationRead,
+      deleteNotification,
       addCompte,
       updateCompte,
       deleteCompte,
