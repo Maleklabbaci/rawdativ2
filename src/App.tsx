@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { School, LogOut, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -16,6 +17,8 @@ import Activites from './components/Activites';
 import Repas from './components/Repas';
 import Parametres from './components/Parametres';
 import Comptes from './components/Comptes';
+import Notifications from './components/Notifications';
+import NotificationBell from './components/NotificationBell';
 import ChatBubble from './components/ChatBubble';
 import { AlertCircle, Lock, Check } from 'lucide-react';
 
@@ -30,7 +33,7 @@ function AppContent() {
 
   useEffect(() => {
     if (user?.role === 'admin') {
-      if (currentPage !== 'comptes' && currentPage !== 'parametres') {
+      if (currentPage !== 'comptes' && currentPage !== 'parametres' && currentPage !== 'notifications') {
         setCurrentPage('comptes');
       }
     } else {
@@ -255,6 +258,8 @@ if (isSubscriptionExpired) {
         return <Repas />;
       case 'comptes':
         return <Comptes />;
+      case 'notifications':
+        return <Notifications />;
       case 'parametres':
         return <Parametres />;
       default:
@@ -320,6 +325,11 @@ if (isSubscriptionExpired) {
                 </div>
               </div>
               <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+                {/* Cloche de notifications — uniquement pour les directeurs */}
+                {user?.role === 'directeur' && (
+                  <NotificationBell onNavigateToPaiements={() => setCurrentPage('paiements')} />
+                )}
+
                 {/* Language Selector */}
                 <div className="flex gap-1 p-1 bg-slate-100/80 rounded-xl border border-slate-200/50">
                   <button
