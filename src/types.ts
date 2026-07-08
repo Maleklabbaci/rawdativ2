@@ -36,6 +36,12 @@ export interface Enfant {
     justificatifDomicile: boolean;
     photoIdentite: boolean;
   };
+  // ✅ Jour du mois (1-31) où la facture mensuelle de cet enfant doit être générée
+  // automatiquement + notification envoyée au directeur jusqu'au règlement.
+  jourEcheanceMensuel?: number;
+  // ✅ Suivi de départ : date de sortie + motif (fin d'année, déménagement, etc.)
+  dateSortie?: string;
+  motifSortie?: string;
 }
 
 export interface Presence {
@@ -51,6 +57,34 @@ export interface Paiement {
   montant: number;
   statut: 'Payé' | 'En attente' | 'Retard';
   moisConcerne: string;
+  dateEcheance?: string;
+  moyenPaiement?: string;
+  typeFacture?: string;
+  reductionCode?: string;
+  notes?: string;
+  // ✅ Marque une facture créée automatiquement à l'échéance (vs. créée manuellement)
+  autoGenere?: boolean;
+}
+
+// ✅ Notification envoyée par l'admin à un ou tous les directeurs (annonce), ou
+// notification système (rappel de paiement). "readBy" liste les ids des comptes
+// qui l'ont déjà vue/fermée. Les champs de style permettent à l'admin de
+// personnaliser entièrement l'apparence du popup (couleurs, icône, bouton).
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  // 'all_directeurs' = diffusée à tous les directeurs, sinon l'id exact d'un compte
+  recipientRole: string;
+  senderName?: string;
+  createdAt: string;
+  readBy: string[];
+  // --- Personnalisation visuelle du popup (définie par l'admin à l'envoi) ---
+  bgColor?: string;       // couleur de fond du popup (ex: '#4f46e5')
+  textColor?: string;     // couleur du texte (ex: '#ffffff')
+  buttonColor?: string;   // couleur du bouton "Fermer/OK"
+  icon?: string;          // emoji affiché en haut du popup (ex: '🎉')
+  showAsPopup?: boolean;  // true = s'affiche en popup plein écran, false = juste dans la cloche
 }
 
 export interface Personnel {
@@ -60,6 +94,9 @@ export interface Personnel {
   prenom: string;
   poste: string;
   statut: 'Actif' | 'Inactif';
+  // ✅ Assurance de l'éducatrice/employé + référence (numéro de police, etc.)
+  assuranceActive?: boolean;
+  numeroAssurance?: string;
 }
 
 export interface Classe {
