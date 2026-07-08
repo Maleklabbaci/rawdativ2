@@ -22,7 +22,10 @@ import {
   Pencil,
   Trash2,
   List,
-  LayoutGrid
+  LayoutGrid,
+  LogOut,
+  MessageCircle,
+  RotateCcw
 } from 'lucide-react';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -43,6 +46,10 @@ export default function Enfants() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterGroupe, setFilterGroupe] = useState('Tous');
   const [showModal, setShowModal] = useState(false);
+  const [showInactifs, setShowInactifs] = useState(false); // ✅ affiche aussi les enfants sortis
+  const [sortieModalEnfant, setSortieModalEnfant] = useState<any | null>(null); // ✅ enfant en cours de "marquer comme sorti"
+  const [sortieDate, setSortieDate] = useState(new Date().toISOString().split('T')[0]);
+  const [sortieMotif, setSortieMotif] = useState('Fin d\'année scolaire');
   const [selectedEnfant, setSelectedEnfant] = useState<Enfant | null>(null);
   const [editingEnfantId, setEditingEnfantId] = useState<string | null>(null);
   
@@ -87,8 +94,31 @@ export default function Enfants() {
       matchesGroupe = enfant.groupeAge === normalizedFilter;
     }
     
-    return matchesSearch && matchesGroupe && enfant.statut === 'Actif';
+    const matchesStatut = showInactifs ? true : enfant.statut === 'Actif';
+    return matchesSearch && matchesGroupe && matchesStatut;
   });
+
+  // ✅ Marque un enfant comme "sorti" : statut Inactif + date + motif de sortie
+  const handleConfirmerSortie = () => {
+    if (!sortieModalEnfant) return;
+    updateEnfant(sortieModalEnfant.id, {
+      statut: 'Inactif',
+      dateSortie: sortieDate,
+      motifSortie: sortieMotif,
+    });
+    setSortieModalEnfant(null);
+    setSortieDate(new Date().toISOString().split('T')[0]);
+    setSortieMotif('Fin d\'année scolaire');
+  };
+
+  // ✅ Réintègre un enfant marqué comme sorti par erreur
+  const handleReintegrer = (enfant: any) => {
+    updateEnfant(enfant.id, {
+      statut: 'Actif',
+      dateSortie: undefined,
+      motifSortie: undefined,
+    });
+  };
 
   const handleAjouter = () => {
     if (!formData.nom || !formData.prenom || !formData.dateNaissance || 
@@ -321,6 +351,19 @@ export default function Enfants() {
               {grp.label}
             </button>
           ))}
+
+          {/* ✅ Toggle : afficher aussi les enfants sortis */}
+          <button
+            onClick={() => setShowInactifs(prev => !prev)}
+            className={`flex-grow sm:flex-none px-3.5 py-2 text-[11px] sm:text-xs font-bold rounded-xl transition whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+              showInactifs
+                ? 'bg-slate-800 text-white shadow-xs'
+                : 'bg-slate-50 text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            {isArabic ? 'الأطفال المغادرون' : 'Enfants sortis'}
+          </button>
         </div>
       </div>
 
@@ -417,6 +460,21 @@ export default function Enfants() {
                             className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition"
                           >
                             <Pencil size={16} />
+                          </button>
+                          <button
+                            onClick={() => enfant.statut === 'Actif'
+                              ? setSortieModalEnfant(enfant)
+                              : handleReintegrer(enfant)}
+                            className={`p-1.5 rounded-lg transition ${
+                              enfant.statut === 'Actif'
+                                ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'
+                                : 'text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50'
+                            }`}
+                            title={enfant.statut === 'Actif'
+                              ? (isArabic ? 'تسجيل خروج' : 'Marquer comme sorti')
+                              : (isArabic ? 'إعادة التسجيل' : 'Réintégrer')}
+                          >
+                            {enfant.statut === 'Actif' ? <LogOut size={16} /> : <RotateCcw size={16} />}
                           </button>
                           <button 
                             onClick={() => {
@@ -590,6 +648,21 @@ export default function Enfants() {
                       title={isArabic ? 'تعديل' : 'Modifier'}
                     >
                       <Pencil size={15} />
+                    </button>
+                    <button
+                      onClick={() => enfant.statut === 'Actif'
+                        ? setSortieModalEnfant(enfant)
+                        : handleReintegrer(enfant)}
+                      className={`p-3 rounded-xl font-bold text-xs transition cursor-pointer ${
+                        enfant.statut === 'Actif'
+                          ? 'bg-slate-50 hover:bg-amber-100 text-slate-600 hover:text-amber-700'
+                          : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-600'
+                      }`}
+                      title={enfant.statut === 'Actif'
+                        ? (isArabic ? 'تسجيل خروج' : 'Marquer comme sorti')
+                        : (isArabic ? 'إعادة التسجيل' : 'Réintégrer')}
+                    >
+                      {enfant.statut === 'Actif' ? <LogOut size={15} /> : <RotateCcw size={15} />}
                     </button>
                     <button 
                       onClick={() => {
@@ -965,6 +1038,75 @@ export default function Enfants() {
                   onClick={handleAjouter}
                 >
                   {t('common.save')}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ✅ Mini-modal : confirmer la sortie d'un enfant (date + motif) */}
+      <AnimatePresence>
+        {sortieModalEnfant && (
+          <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
+            >
+              <div className="flex items-center gap-2.5 mb-1">
+                <LogOut className="w-5 h-5 text-amber-500" />
+                <h3 className="font-black text-slate-900">
+                  {isArabic ? 'تسجيل خروج الطفل' : 'Marquer comme sorti(e)'}
+                </h3>
+              </div>
+              <p className="text-xs text-slate-500 mb-5">
+                {isArabic ? sortieModalEnfant.prenom + ' ' + sortieModalEnfant.nom : `${sortieModalEnfant.prenom} ${sortieModalEnfant.nom}`}
+              </p>
+
+              <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">
+                {isArabic ? 'تاريخ الخروج' : 'Date de sortie'}
+              </label>
+              <input
+                type="date"
+                value={sortieDate}
+                onChange={e => setSortieDate(e.target.value)}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-amber-500 text-sm font-semibold text-slate-800 mb-4"
+              />
+
+              <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">
+                {isArabic ? 'سبب الخروج' : 'Motif de sortie'}
+              </label>
+              <select
+                value={sortieMotif}
+                onChange={e => setSortieMotif(e.target.value)}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-amber-500 text-sm font-semibold text-slate-800 mb-6"
+              >
+                {[
+                  { fr: 'Fin d\'année scolaire', ar: 'نهاية السنة الدراسية' },
+                  { fr: 'Déménagement', ar: 'انتقال / تغيير السكن' },
+                  { fr: 'Changement de crèche', ar: 'تغيير الروضة' },
+                  { fr: 'Problème de paiement', ar: 'مشكل في الدفع' },
+                  { fr: 'Insatisfaction des parents', ar: 'عدم رضا الأولياء' },
+                  { fr: 'Autre', ar: 'سبب آخر' },
+                ].map(m => (
+                  <option key={m.fr} value={m.fr}>{isArabic ? m.ar : m.fr}</option>
+                ))}
+              </select>
+
+              <div className="flex gap-2.5">
+                <button
+                  onClick={() => setSortieModalEnfant(null)}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-sm transition cursor-pointer"
+                >
+                  {isArabic ? 'إلغاء' : 'Annuler'}
+                </button>
+                <button
+                  onClick={handleConfirmerSortie}
+                  className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold text-sm transition cursor-pointer"
+                >
+                  {isArabic ? 'تأكيد' : 'Confirmer'}
                 </button>
               </div>
             </motion.div>

@@ -64,7 +64,9 @@ export default function Personnel() {
     email: '',
     dateEmbauche: new Date().toISOString().split('T')[0],
     classeAssignee: 'Classe des Papillons (Bébés)',
-    groupeSanguin: 'O+'
+    groupeSanguin: 'O+',
+    assuranceActive: false, // ✅ assurance de l'employé(e)
+    numeroAssurance: '', // ✅ numéro de police / référence CNAS
   });
 
   const handleAjouter = () => {
@@ -89,7 +91,9 @@ export default function Personnel() {
       email: '',
       dateEmbauche: new Date().toISOString().split('T')[0],
       classeAssignee: 'Classe des Papillons (Bébés)',
-      groupeSanguin: 'O+'
+      groupeSanguin: 'O+',
+      assuranceActive: false,
+      numeroAssurance: '',
     });
   };
 
@@ -245,6 +249,11 @@ export default function Personnel() {
                     <span>Inscrit: {p.dateEmbauche}</span>
                   </div>
                   <div className="flex items-center gap-2">
+                    {p.assuranceActive && (
+                      <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded font-black border border-emerald-100/30" title={p.numeroAssurance || ''}>
+                        {isArabic ? 'مؤمَّن' : 'Assuré(e)'}
+                      </span>
+                    )}
                     <span className="px-1.5 py-0.5 bg-rose-50 text-rose-600 rounded font-black border border-rose-100/30">
                       Group: {p.groupeSanguin}
                     </span>
@@ -445,6 +454,36 @@ export default function Personnel() {
                       <option value="Actif">Actif (En poste)</option>
                       <option value="Inactif">Inactif / Congé</option>
                     </select>
+                  </div>
+                </div>
+
+                {/* ✅ Assurance de l'employé(e) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="flex items-center gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <input
+                      type="checkbox"
+                      id="assuranceActive"
+                      checked={formData.assuranceActive}
+                      onChange={e => setFormData({...formData, assuranceActive: e.target.checked})}
+                      className="w-4 h-4 accent-indigo-600 cursor-pointer"
+                    />
+                    <label htmlFor="assuranceActive" className="text-sm font-semibold text-slate-700 cursor-pointer select-none">
+                      {isArabic ? 'مؤمَّن(ة) اجتماعياً' : 'Assuré(e) socialement'}
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                      {isArabic ? 'رقم التأمين (CNAS)' : 'N° Assurance (CNAS)'}
+                    </label>
+                    <input
+                      type="text"
+                      disabled={!formData.assuranceActive}
+                      placeholder={isArabic ? 'مثال: 123456789012' : 'Ex: 123456789012'}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                      value={formData.numeroAssurance}
+                      onChange={e => setFormData({...formData, numeroAssurance: e.target.value})}
+                    />
                   </div>
                 </div>
 
