@@ -244,6 +244,11 @@ export interface UserAccount {
   lastActivityAt?: string;
   dateFinAbonnement?: string;
   nomCreche?: string;
+  telephone?: string;
+  ville?: string;
+  bio?: string;
+  avatarUrl?: string;
+  siteWeb?: string;
   enfantId?: string;
 }
 
@@ -275,6 +280,8 @@ export interface CommunityPost {
   id: string;
   authorId: string;
   authorName: string;
+  authorAvatarUrl?: string;
+  authorBio?: string;
   crecheId: string;
   nomCreche: string;
   categorie: CommunityPostCategory;
@@ -295,6 +302,8 @@ export interface CommunityComment {
   postId: string;
   authorId: string;
   authorName: string;
+  authorAvatarUrl?: string;
+  authorBio?: string;
   crecheId: string;
   nomCreche: string;
   contenu: string;

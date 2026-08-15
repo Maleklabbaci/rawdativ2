@@ -1,18 +1,22 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Archive,
   Building2,
+  Camera,
   Check,
   ChevronDown,
   Clock3,
   Filter,
   Heart,
   MessageCircle,
+  MapPin,
   MoreHorizontal,
   Plus,
   Send,
   ShieldCheck,
+  UserRound,
+  Globe2,
   Tag,
   Trash2,
   Users,
@@ -59,7 +63,7 @@ function categoryLabel(value: CommunityPostCategory, language: 'fr' | 'ar') {
 }
 
 export default function Community() {
-  const { user, creche } = useAuth();
+  const { user, creche, updateProfile } = useAuth();
   const { language } = useLanguage();
   const {
     communityPosts,
@@ -83,6 +87,32 @@ export default function Community() {
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [showProfileEditor, setShowProfileEditor] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    prenom: user?.prenom || '',
+    nom: user?.nom || '',
+    nomCreche: user?.nomCreche || creche?.nom || '',
+    telephone: user?.telephone || '',
+    ville: user?.ville || '',
+    bio: user?.bio || '',
+    avatarUrl: user?.avatarUrl || '',
+    siteWeb: user?.siteWeb || '',
+  });
+
+  useEffect(() => {
+    if (!user) return;
+    setProfileForm({
+      prenom: user.prenom || '',
+      nom: user.nom || '',
+      nomCreche: user.nomCreche || creche?.nom || '',
+      telephone: user.telephone || '',
+      ville: user.ville || '',
+      bio: user.bio || '',
+      avatarUrl: user.avatarUrl || '',
+      siteWeb: user.siteWeb || '',
+    });
+  }, [user, creche?.nom]);
 
   const filteredPosts = useMemo(() => {
     return [...communityPosts]
@@ -96,7 +126,31 @@ export default function Community() {
 
   const canManagePost = (post: CommunityPost) => isAdmin || post.authorId === user.id;
   const authorName = `${user.prenom || ''} ${user.nom || ''}`.trim() || user.email;
-  const crecheName = creche?.nom || user.nomCreche || (isAr ? 'روضة' : 'Crèche');
+  const crecheName = user.nomCreche || creche?.nom || (isAr ? 'روضة' : 'Crèche');
+  const profileInitials = `${user.prenom?.[0] || ''}${user.nom?.[0] || ''}`.toUpperCase() || 'R+';
+  const myPostsCount = communityPosts.filter(post => post.authorId === user.id).length;
+  const myLikesCount = communityReactions.filter(reaction => reaction.userId === user.id).length;
+
+  const handleSaveProfile = async (event: FormEvent) => {
+    event.preventDefault();
+    if (profileSaving) return;
+    setProfileSaving(true);
+    try {
+      await updateProfile({
+        prenom: profileForm.prenom.trim(),
+        nom: profileForm.nom.trim(),
+        nomCreche: profileForm.nomCreche.trim() || undefined,
+        telephone: profileForm.telephone.trim() || undefined,
+        ville: profileForm.ville.trim() || undefined,
+        bio: profileForm.bio.trim() || undefined,
+        avatarUrl: profileForm.avatarUrl.trim() || undefined,
+        siteWeb: profileForm.siteWeb.trim() || undefined,
+      });
+      setShowProfileEditor(false);
+    } finally {
+      setProfileSaving(false);
+    }
+  };
 
   const handleSubmitPost = async (event: FormEvent) => {
     event.preventDefault();
@@ -106,6 +160,8 @@ export default function Community() {
       await addCommunityPost({
         authorId: user.id,
         authorName,
+        authorAvatarUrl: user.avatarUrl || undefined,
+        authorBio: user.bio || undefined,
         crecheId: user.id,
         nomCreche: crecheName,
         categorie: form.categorie,
@@ -134,6 +190,8 @@ export default function Community() {
         postId: post.id,
         authorId: user.id,
         authorName,
+        authorAvatarUrl: user.avatarUrl || undefined,
+        authorBio: user.bio || undefined,
         crecheId: user.id,
         nomCreche: crecheName,
         contenu: content,
@@ -207,6 +265,24 @@ export default function Community() {
           <div className="flex items-center gap-2 text-xs font-semibold text-indigo-100"><Users className="h-4 w-4 text-indigo-300" />{isAr ? 'تبادل مهني' : 'Échanges professionnels'}</div>
           <div className="hidden items-center gap-2 text-xs font-semibold text-indigo-100 md:flex"><ShieldCheck className="h-4 w-4 text-indigo-300" />{isAr ? 'إشراف الإدارة' : 'Modération admin'}</div>
         </div>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-[1fr_auto]">
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-4">
+              {user.avatarUrl ? <img src={user.avatarUrl} alt={authorName} className="h-16 w-16 rounded-2xl object-cover ring-4 ring-indigo-50" /> : <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 text-lg font-black text-white ring-4 ring-indigo-50">{profileInitials}</div>}
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2"><h2 className="text-lg font-black text-slate-900">{authorName}</h2><span className="rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-black text-indigo-700">{isAr ? 'مدير' : 'Directeur'}</span></div>
+                <p className="mt-1 flex items-center gap-1 text-sm font-bold text-slate-600"><Building2 className="h-4 w-4 text-indigo-500" />{crecheName}</p>
+                <div className="mt-2 flex flex-wrap gap-3 text-xs font-semibold text-slate-400"><span>{myPostsCount} {isAr ? 'منشور' : 'publication(s)'}</span><span>{myLikesCount} {isAr ? 'إعجاب' : 'interaction(s)'}</span>{user.ville && <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{user.ville}</span>}</div>
+              </div>
+            </div>
+            <button type="button" onClick={() => setShowProfileEditor(true)} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-xs font-black text-indigo-700 transition hover:bg-indigo-100"><UserRound className="h-4 w-4" />{isAr ? 'تعديل ملفي' : 'Modifier mon profil'}</button>
+          </div>
+          {user.bio && <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">{user.bio}</p>}
+        </div>
+        <div className="rounded-3xl bg-gradient-to-br from-indigo-600 to-violet-700 p-5 text-white shadow-lg shadow-indigo-200/50 md:min-w-64 md:p-6"><div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-indigo-100"><ShieldCheck className="h-4 w-4" />{isAr ? 'ملف موثوق' : 'Profil vérifié'}</div><p className="mt-3 text-sm leading-6 text-indigo-100">{isAr ? 'شارك باسمك واسم روضتك في كل منشور.' : 'Votre nom et votre crèche apparaissent sur chaque publication.'}</p><div className="mt-4 flex items-center gap-2 text-xs font-black"><Globe2 className="h-4 w-4" />{user.siteWeb || 'Rawdha Connect'}</div></div>
       </section>
 
       <AnimatePresence initial={false}>
@@ -293,13 +369,13 @@ export default function Community() {
               <motion.article layout key={post.id} className={`rounded-3xl border bg-white p-5 shadow-sm transition hover:shadow-lg md:p-6 ${post.statut === 'masquee' ? 'border-rose-200 bg-rose-50/30' : 'border-slate-200'}`}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-black text-white">{post.nomCreche.slice(0, 2).toUpperCase()}</div>
+                    {post.authorAvatarUrl ? <img src={post.authorAvatarUrl} alt={post.authorName} className="h-12 w-12 shrink-0 rounded-2xl object-cover ring-2 ring-indigo-50" /> : <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-black text-white">{post.authorName.slice(0, 2).toUpperCase()}</div>}
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="truncate text-sm font-black text-slate-900">{post.nomCreche}</p>
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-700"><Check className="h-3 w-3" />{isAr ? 'موثقة' : 'Vérifiée'}</span>
                       </div>
-                      <p className="mt-1 flex items-center gap-1 text-[11px] font-medium text-slate-400"><Clock3 className="h-3 w-3" />{formatDate(post.createdAt, language)} · {post.authorName}</p>
+                      <p className="mt-1 flex flex-wrap items-center gap-1 text-[11px] font-medium text-slate-400"><Clock3 className="h-3 w-3" />{formatDate(post.createdAt, language)} · <span className="font-black text-slate-500">{post.authorName}</span>{post.authorBio && <span className="hidden md:inline">· {post.authorBio}</span>}</p>
                     </div>
                   </div>
                   {(canManagePost(post) || isAdmin) && (
@@ -359,6 +435,19 @@ export default function Community() {
           })}
         </div>
       )}
+
+      <AnimatePresence>
+        {showProfileEditor && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+            <motion.form initial={{ opacity: 0, y: 16, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} onSubmit={handleSaveProfile} className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl md:p-7" dir={isAr ? 'rtl' : 'ltr'}>
+              <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-wider text-indigo-600">Rawdha Connect</p><h2 className="mt-1 text-2xl font-black text-slate-900">{isAr ? 'تعديل ملفي المهني' : 'Modifier mon profil professionnel'}</h2><p className="mt-2 text-sm leading-6 text-slate-500">{isAr ? 'ستظهر هذه المعلومات مع كل منشور تنشره.' : 'Ces informations accompagneront chacune de vos publications.'}</p></div><button type="button" onClick={() => setShowProfileEditor(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100"><X className="h-5 w-5" /></button></div>
+              <div className="mt-6 flex items-center gap-4 rounded-2xl bg-indigo-50 p-4"><div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white">{profileForm.avatarUrl ? <img src={profileForm.avatarUrl} alt="" className="h-full w-full object-cover" /> : <Camera className="h-6 w-6" />}</div><label className="flex-1 text-xs font-black text-indigo-900">{isAr ? 'رابط صورة الملف الشخصي' : 'URL de votre photo de profil'}<input value={profileForm.avatarUrl} onChange={event => setProfileForm(current => ({ ...current, avatarUrl: event.target.value }))} className="mt-2 w-full rounded-xl border border-indigo-100 bg-white px-3 py-2.5 text-sm font-medium outline-none focus:border-indigo-500" placeholder="https://..." /></label></div>
+              <div className="mt-5 grid gap-4 md:grid-cols-2"><label className="text-xs font-black text-slate-600">{isAr ? 'الاسم' : 'Prénom'}<input required value={profileForm.prenom} onChange={event => setProfileForm(current => ({ ...current, prenom: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" /></label><label className="text-xs font-black text-slate-600">{isAr ? 'اللقب' : 'Nom'}<input required value={profileForm.nom} onChange={event => setProfileForm(current => ({ ...current, nom: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" /></label><label className="text-xs font-black text-slate-600 md:col-span-2">{isAr ? 'اسم الروضة' : 'Nom de la crèche'}<input value={profileForm.nomCreche} onChange={event => setProfileForm(current => ({ ...current, nomCreche: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" /></label><label className="text-xs font-black text-slate-600">{isAr ? 'الهاتف' : 'Téléphone'}<input value={profileForm.telephone} onChange={event => setProfileForm(current => ({ ...current, telephone: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" /></label><label className="text-xs font-black text-slate-600">{isAr ? 'المدينة' : 'Ville'}<input value={profileForm.ville} onChange={event => setProfileForm(current => ({ ...current, ville: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" /></label><label className="text-xs font-black text-slate-600 md:col-span-2">{isAr ? 'الموقع الإلكتروني' : 'Site web'}<input value={profileForm.siteWeb} onChange={event => setProfileForm(current => ({ ...current, siteWeb: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="https://..." /></label><label className="text-xs font-black text-slate-600 md:col-span-2">{isAr ? 'نبذة مهنية' : 'Présentation professionnelle'}<textarea value={profileForm.bio} onChange={event => setProfileForm(current => ({ ...current, bio: event.target.value }))} maxLength={280} rows={4} className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none focus:border-indigo-500" placeholder={isAr ? 'قدم نفسك ومهمتك...' : 'Présentez-vous et votre crèche...'} /></label></div>
+              <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={() => setShowProfileEditor(false)} className="rounded-xl px-4 py-3 text-sm font-black text-slate-500 hover:bg-slate-100">{isAr ? 'إلغاء' : 'Annuler'}</button><button type="submit" disabled={profileSaving} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-50">{profileSaving ? (isAr ? 'جارٍ الحفظ...' : 'Enregistrement...') : (isAr ? 'حفظ الملف' : 'Enregistrer le profil')}</button></div>
+            </motion.form>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -40,6 +40,7 @@ interface AuthContextType {
   // ✅ À appeler après une sauvegarde réussie dans Paramètres pour que le nom / logo /
   // tarif se mettent à jour PARTOUT dans l'appli (sidebar, header, factures) sans recharger la page.
   refreshCreche: () => Promise<void>;
+  updateProfile: (changes: Partial<UserAccount>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -210,6 +211,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     await loadCrecheSettings(user);
   };
 
+  const updateProfile = async (changes: Partial<UserAccount>) => {
+    if (!user?.id) throw new Error('Utilisateur non connecté');
+    const safeChanges = { ...changes };
+    delete (safeChanges as Partial<UserAccount>).id;
+    delete (safeChanges as Partial<UserAccount>).role;
+    delete (safeChanges as Partial<UserAccount>).email;
+    delete (safeChanges as Partial<UserAccount>).motDePasse;
+    await updateCollectionDocument<UserAccount>('comptes', user.id, safeChanges);
+    const nextUser = { ...user, ...safeChanges } as UserAccount;
+    setUser(nextUser);
+    await loadCrecheSettings(nextUser);
+  };
+
   return (
     <AuthContext.Provider value={{
       isAuthenticated,
@@ -219,6 +233,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       loginWithCredentials,
       logout,
       refreshCreche,
+      updateProfile,
     }}>
       {children}
     </AuthContext.Provider>
