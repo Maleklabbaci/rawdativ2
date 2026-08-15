@@ -49,8 +49,17 @@ const DEFAULT_DOCUMENTS_REQUIS: Record<DocumentKey, boolean> = {
   photoIdentite: false,
 };
 
-function getDocumentsRequis(enfant: Partial<Enfant>) {
-  return { ...DEFAULT_DOCUMENTS_REQUIS, ...(enfant.documentsRequis || {}) };
+function getDocumentsRequis(enfant?: Partial<Enfant> | null): Record<DocumentKey, boolean> {
+  const documents = enfant?.documentsRequis;
+  const source = documents && typeof documents === 'object' && !Array.isArray(documents)
+    ? documents as Partial<Record<DocumentKey, unknown>>
+    : {};
+  return {
+    certificatMedical: source.certificatMedical === true,
+    carnetVaccination: source.carnetVaccination === true,
+    justificatifDomicile: source.justificatifDomicile === true,
+    photoIdentite: source.photoIdentite === true,
+  };
 }
 
 export default function Enfants() {
@@ -68,7 +77,9 @@ export default function Enfants() {
   } = useDb();
   const { user } = useAuth();
   const isDirecteur = user?.role === 'directeur';
-  const enfants = isDirecteur ? allEnfants.filter(e => e.crecheId === user!.id) : allEnfants;
+  const enfants = allEnfants
+    .filter((e): e is Enfant => Boolean(e && e.id))
+    .filter(e => !isDirecteur || e.crecheId === user?.id);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [filterGroupe, setFilterGroupe] = useState('Tous');
@@ -623,8 +634,7 @@ export default function Enfants() {
                                 weightKg: enfant.poidsKg ? String(enfant.poidsKg) : '',
                                                           pediatricianName: enfant.medecinTraitant || '',
                           vaccinations: enfant.vaccinations || '',
-                          notesMedicales: enfant.notesMedicales || '',
-                          docFiles: enfant.documentsFichiers || {},
+                                notesMedicales: enfant.notesMedicales || '',
 
                                 parentNom: enfant.parents[0]?.nom || '',
                                 parentPrenom: enfant.parents[0]?.prenom || '',
@@ -633,12 +643,12 @@ export default function Enfants() {
                                 parentEmail: enfant.parents[0]?.email || '',
                                 parentProfession: enfant.parents[0]?.profession || '',
                                 parentAdresse: enfant.parents[0]?.adresse || '',
-                                docCertif: getDocumentsRequis(enfant).certificatMedical,
-                                docVaccin: getDocumentsRequis(enfant).carnetVaccination,
-                                docDomicile: getDocumentsRequis(enfant).justificatifDomicile,
+                                docCertif: getDocumentsRequis(enfant)?.certificatMedical ?? false,
+                                docVaccin: getDocumentsRequis(enfant)?.carnetVaccination ?? false,
+                                docDomicile: getDocumentsRequis(enfant)?.justificatifDomicile ?? false,
                                 docFiles: enfant.documentsFichiers || {},
                                 jourEcheanceMensuel: String(enfant.jourEcheanceMensuel || 5),
-                                docPhoto: getDocumentsRequis(enfant).photoIdentite,
+                                docPhoto: getDocumentsRequis(enfant)?.photoIdentite ?? false,
                                 allergie: enfant.allergie || '',
                                 regimeAlimentaire: enfant.regimeAlimentaire || ''
                               });
@@ -744,33 +754,33 @@ export default function Enfants() {
                       <div className="grid grid-cols-4 gap-2 text-center text-[10px] font-bold text-slate-500">
                         <div className="space-y-1">
                           <div className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
-                            getDocumentsRequis(enfant).certificatMedical ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
+                            getDocumentsRequis(enfant)?.certificatMedical ?? false ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
                           }`}>
-                            {getDocumentsRequis(enfant).certificatMedical ? '✓' : '✗'}
+                            {getDocumentsRequis(enfant)?.certificatMedical ?? false ? '✓' : '✗'}
                           </div>
                           <span className="block text-[9px] truncate">Médic</span>
                         </div>
                         <div className="space-y-1">
                           <div className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
-                            getDocumentsRequis(enfant).carnetVaccination ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
+                            getDocumentsRequis(enfant)?.carnetVaccination ?? false ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
                           }`}>
-                            {getDocumentsRequis(enfant).carnetVaccination ? '✓' : '✗'}
+                            {getDocumentsRequis(enfant)?.carnetVaccination ?? false ? '✓' : '✗'}
                           </div>
                           <span className="block text-[9px] truncate">Vaccin</span>
                         </div>
                         <div className="space-y-1">
                           <div className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
-                            getDocumentsRequis(enfant).justificatifDomicile ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
+                            getDocumentsRequis(enfant)?.justificatifDomicile ?? false ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
                           }`}>
-                            {getDocumentsRequis(enfant).justificatifDomicile ? '✓' : '✗'}
+                            {getDocumentsRequis(enfant)?.justificatifDomicile ?? false ? '✓' : '✗'}
                           </div>
                           <span className="block text-[9px] truncate">Domi</span>
                         </div>
                         <div className="space-y-1">
                           <div className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
-                            getDocumentsRequis(enfant).photoIdentite ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
+                            getDocumentsRequis(enfant)?.photoIdentite ?? false ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
                           }`}>
-                            {getDocumentsRequis(enfant).photoIdentite ? '✓' : '✗'}
+                            {getDocumentsRequis(enfant)?.photoIdentite ?? false ? '✓' : '✗'}
                           </div>
                           <span className="block text-[9px] truncate pointer-events-none">Photo</span>
                         </div>
@@ -811,9 +821,12 @@ export default function Enfants() {
                           dateNaissance: enfant.dateNaissance,
                           genre: enfant.genre,
                           groupeAge: enfant.groupeAge,
-                          bloodGroup: 'O+',
-                          weightKg: '12',
-                          pediatricianName: 'Dr. Belkacem',
+                          bloodGroup: enfant.groupeSanguin || 'O+',
+                          weightKg: enfant.poidsKg ? String(enfant.poidsKg) : '',
+                          pediatricianName: enfant.medecinTraitant || '',
+                          vaccinations: enfant.vaccinations || '',
+                          notesMedicales: enfant.notesMedicales || '',
+                          docFiles: enfant.documentsFichiers || {},
                           parentNom: enfant.parents[0]?.nom || '',
                           parentPrenom: enfant.parents[0]?.prenom || '',
                           parentLien: enfant.parents[0]?.lien || 'Mère',
@@ -821,8 +834,8 @@ export default function Enfants() {
                           parentEmail: enfant.parents[0]?.email || '',
                           parentProfession: enfant.parents[0]?.profession || '',
                           parentAdresse: enfant.parents[0]?.adresse || '',
-                          docCertif: getDocumentsRequis(enfant).certificatMedical,
-                          docVaccin: getDocumentsRequis(enfant).carnetVaccination,
+                          docCertif: getDocumentsRequis(enfant)?.certificatMedical ?? false,
+                          docVaccin: getDocumentsRequis(enfant)?.carnetVaccination ?? false,
                           docDomicile: getDocumentsRequis(enfant).justificatifDomicile,
                           jourEcheanceMensuel: String(enfant.jourEcheanceMensuel || 5),
                           docPhoto: getDocumentsRequis(enfant).photoIdentite,

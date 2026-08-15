@@ -11,6 +11,73 @@ import {
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
 
+const DEFAULT_CHILD_DOCUMENTS: Enfant['documentsRequis'] = {
+  certificatMedical: false,
+  carnetVaccination: false,
+  justificatifDomicile: false,
+  photoIdentite: false,
+};
+
+function normalizeDocumentsRequis(value: unknown): Enfant['documentsRequis'] {
+  const source = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+
+  // Rebuild the object explicitly instead of spreading arbitrary JSON. This keeps
+  // every child record total and prevents undefined.certificatMedical at runtime.
+  return {
+    certificatMedical: source.certificatMedical === true,
+    carnetVaccination: source.carnetVaccination === true,
+    justificatifDomicile: source.justificatifDomicile === true,
+    photoIdentite: source.photoIdentite === true,
+  };
+}
+
+function normalizeEnfantData(enfant: Partial<Enfant> | null | undefined): Enfant {
+  const candidate = (enfant || {}) as Partial<Enfant>;
+  const normalizeParent = (parent: any, index: number) => ({
+    id: typeof parent?.id === 'string' ? parent.id : `parent_${index}`,
+    nom: typeof parent?.nom === 'string' ? parent.nom : '',
+    prenom: typeof parent?.prenom === 'string' ? parent.prenom : '',
+    lien: parent?.lien === 'Père' || parent?.lien === 'Tuteur' ? parent.lien : 'Mère',
+    telephone: typeof parent?.telephone === 'string' ? parent.telephone : '',
+    email: typeof parent?.email === 'string' ? parent.email : undefined,
+    adresse: typeof parent?.adresse === 'string' ? parent.adresse : undefined,
+    profession: typeof parent?.profession === 'string' ? parent.profession : undefined,
+  });
+  const normalizeContact = (contact: any, index: number) => ({
+    id: typeof contact?.id === 'string' ? contact.id : `contact_${index}`,
+    nom: typeof contact?.nom === 'string' ? contact.nom : '',
+    telephone: typeof contact?.telephone === 'string' ? contact.telephone : '',
+    lien: contact?.lien === 'Père' || contact?.lien === 'Tuteur' ? contact.lien : 'Mère',
+  });
+  const parents = Array.isArray(candidate.parents)
+    ? candidate.parents.filter(Boolean).map(normalizeParent)
+    : [];
+  const contactsUrgence = Array.isArray(candidate.contactsUrgence)
+    ? candidate.contactsUrgence.filter(Boolean).map(normalizeContact)
+    : [];
+  const documentsFichiers = candidate.documentsFichiers && typeof candidate.documentsFichiers === 'object' && !Array.isArray(candidate.documentsFichiers)
+    ? candidate.documentsFichiers
+    : {};
+
+  return {
+    ...candidate,
+    id: typeof candidate.id === 'string' ? candidate.id : `child_${Date.now()}`,
+    nom: typeof candidate.nom === 'string' ? candidate.nom : '',
+    prenom: typeof candidate.prenom === 'string' ? candidate.prenom : '',
+    dateNaissance: typeof candidate.dateNaissance === 'string' ? candidate.dateNaissance : '',
+    genre: candidate.genre === 'Fille' ? 'Fille' : 'Garçon',
+    groupeAge: candidate.groupeAge === 'Moyens' || candidate.groupeAge === 'Grands' ? candidate.groupeAge : 'Bébés',
+    dateInscription: typeof candidate.dateInscription === 'string' ? candidate.dateInscription : new Date().toISOString().split('T')[0],
+    statut: candidate.statut === 'Inactif' ? 'Inactif' : 'Actif',
+    parents,
+    contactsUrgence,
+    documentsRequis: normalizeDocumentsRequis(candidate.documentsRequis),
+    documentsFichiers,
+  } as Enfant;
+}
+
 interface DbContextType {
   enfants: Enfant[];
   classes: Classe[];
@@ -200,7 +267,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       setComptes(dbComptes);
-      setEnfants(dbEnfants);
+      setEnfants(dbEnfants.filter(Boolean).map(normalizeEnfantData));
       setPresences(dbPresences);
       setPresenceJournees(dbPresenceJournees);
       setPaiements(dbPaiements);
@@ -381,10 +448,11 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   // --- ENFANTS ---
   const addEnfant = async (enfant: Omit<Enfant, 'id'>) => {
     const tempId = (enfant as any).id || 'child_' + Date.now();
-    const cleanEnfant = { ...enfant, id: tempId } as Enfant;
+    const cleanEnfant = normalizeEnfantData({ ...enfant, id: tempId } as Enfant);
     setEnfants(prev => [...prev.filter(item => item.id !== tempId), cleanEnfant]);
     try {
-      const freshId = await addCollectionDocument('enfants', enfant);
+      const persistedEnfant = normalizeEnfantData({ ...enfant, id: tempId });
+      const freshId = await addCollectionDocument('enfants', persistedEnfant);
       setEnfants(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
     } catch (err) {
@@ -396,9 +464,17 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   const updateEnfant = async (id: string, data: Partial<Enfant>) => {
     const previous = enfants.find(item => item.id === id);
-    setEnfants(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    const normalized = normalizeEnfantData({ ...previous, ...data, id });
+    const persistedData: Partial<Enfant> = {
+      ...data,
+      parents: normalized.parents,
+      contactsUrgence: normalized.contactsUrgence,
+      documentsRequis: normalized.documentsRequis,
+      documentsFichiers: normalized.documentsFichiers,
+    };
+    setEnfants(prev => prev.map(item => item.id === id ? normalized : item));
     try {
-      await updateCollectionDocument<Enfant>('enfants', id, data);
+      await updateCollectionDocument<Enfant>('enfants', id, persistedData);
     } catch (err) {
       if (previous) setEnfants(prev => prev.map(item => item.id === id ? previous : item)); // rollback
       notifyWriteError('modification');
