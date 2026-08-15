@@ -14,6 +14,7 @@ import {
   Crown,
   MapPin,
   Bell,
+  BarChart3,
   X
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -36,6 +37,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose }: 
       { key: 'classes', label: 'classes', icon: School, color: 'text-amber-500' },
       { key: 'presences', label: 'attendance', icon: CalendarCheck, color: 'text-emerald-500' },
       { key: 'paiements', label: 'invoices', icon: CreditCard, color: 'text-cyan-500' },
+      { key: 'rapports', label: 'reports', icon: BarChart3, color: 'text-indigo-400' },
       { key: 'personnel', label: 'staff', icon: UserCheck, color: 'text-teal-500' },
       { key: 'activites', label: 'activities', icon: Sparkles, color: 'text-purple-500' },
       { key: 'repas', label: 'meals', icon: Utensils, color: 'text-orange-500' },

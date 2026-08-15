@@ -20,6 +20,7 @@ const Repas = lazy(() => import('./components/Repas'));
 const Parametres = lazy(() => import('./components/Parametres'));
 const Comptes = lazy(() => import('./components/Comptes'));
 const Notifications = lazy(() => import('./components/Notifications'));
+const Rapports = lazy(() => import('./components/Rapports'));
 import NotificationBell from './components/NotificationBell';
 import SubscriptionStatusBadge from './components/SubscriptionStatusBadge';
 import NotificationPopup from './components/NotificationPopup';
@@ -267,6 +268,7 @@ if (isSubscriptionExpired) {
         case 'repas': return <Repas />;
         case 'comptes': return <Comptes />;
         case 'notifications': return <Notifications />;
+        case 'rapports': return <Rapports />;
         case 'parametres': return <Parametres />;
         default: return <Dashboard />;
       }
