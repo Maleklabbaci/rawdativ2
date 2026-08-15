@@ -59,6 +59,13 @@ export interface Presence {
   enfantId: string;
   date: string;
   statut: 'Présent' | 'Absent justifié' | 'Absent non justifié';
+  // Détails du pointage quotidien conservés dans la colonne JSONB de presences.
+  heureArrivee?: string;
+  heureDepart?: string;
+  motifAbsence?: string;
+  temperature?: string;
+  repas?: string;
+  humeur?: string;
 }
 
 export interface Paiement {

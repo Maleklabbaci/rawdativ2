@@ -21,28 +21,22 @@ import {
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { Presence } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-
-interface RichPresence extends Presence {
-  heureArrivee?: string;
-  heureDepart?: string;
-  temperature?: string;
-  motifAbsence?: string;
-  repas?: string;
-  humeur?: string;
-}
 
 export default function PresencesPage() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
+  const { showToast } = useToast();
 
   const { 
     presences: allDbPresences, 
     enfants: allEnfantsData, 
     classes: classesData,
-    addPresence, 
-    deletePresence 
+    addPresence,
+    updatePresence,
+    deletePresence
   } = useDb();
   
   const { user } = useAuth();
@@ -53,7 +47,7 @@ export default function PresencesPage() {
   const enfantIdsVisibles = new Set(enfantsData.map(e => e.id));
   const dbPresences = isDirecteur ? allDbPresences.filter(p => enfantIdsVisibles.has(p.enfantId)) : allDbPresences;
 
-  const presences: RichPresence[] = dbPresences.map((p: any) => ({
+  const presences: Presence[] = dbPresences.map((p: any) => ({
     ...p,
     heureArrivee: p.heureArrivee || (p.statut === 'Présent' ? '08:30' : undefined),
     heureDepart: p.heureDepart || (p.statut === 'Présent' ? '16:30' : undefined),
@@ -65,7 +59,12 @@ export default function PresencesPage() {
 
   // Gestion des États (Tabs)
   const [activeTab, setActiveTab] = useState<'pointing' | 'history'>('pointing');
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const getLocalDate = () => {
+    const now = new Date();
+    const offset = now.getTimezoneOffset();
+    return new Date(now.getTime() - offset * 60_000).toISOString().split('T')[0];
+  };
+  const [selectedDate, setSelectedDate] = useState<string>(getLocalDate);
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedClasseId, setExpandedClasseId] = useState<string | null>(null);
 
@@ -89,33 +88,61 @@ export default function PresencesPage() {
     humeur: 'Souriant'
   });
 
-  // Action rapide de pointage "Présent"
+  // Action rapide de pointage "Présent" : on conserve l’id existant pour éviter
+  // les doublons et permettre une vraie modification du pointage du jour.
   const handleMarkPresent = (enfantId: string) => {
-    // Supprimer le pointage existant pour ce jour s'il y en a un
     const existing = presences.find(p => p.enfantId === enfantId && p.date === selectedDate);
-    if (existing) {
-      deletePresence(existing.id);
+    if (existing?.statut === 'Présent') {
+      setPresenceDetailsForm({
+        heureArrivee: existing.heureArrivee || '08:30',
+        heureDepart: existing.heureDepart || '16:30',
+        temperature: existing.temperature || '36.5',
+        repas: existing.repas || 'Tout',
+        humeur: existing.humeur || 'Souriant'
+      });
+    } else {
+      setPresenceDetailsForm({
+        heureArrivee: '08:30',
+        heureDepart: '16:30',
+        temperature: '36.5',
+        repas: 'Tout',
+        humeur: 'Souriant'
+      });
     }
-    
-    // Ouvrir le modal des détails de présence (repas, humeur, température)
     setSelectedEnfantForPresenceDetails(enfantId);
     setShowPresenceDetailsModal(true);
   };
 
-  // Soumission des détails de présence
+  // Soumission des détails de présence avec validation minimale des données métier.
   const submitPresenceDetails = () => {
     if (!selectedEnfantForPresenceDetails) return;
-    
-    addPresence({
+    const arrival = presenceDetailsForm.heureArrivee;
+    const departure = presenceDetailsForm.heureDepart;
+    const temperature = Number(presenceDetailsForm.temperature.replace(',', '.'));
+    if (!arrival || !departure || arrival >= departure) {
+      showToast(isArabic ? 'يرجى التحقق من وقت الدخول والخروج.' : 'Vérifiez les heures d’arrivée et de départ.', 'error');
+      return;
+    }
+    if (!Number.isFinite(temperature) || temperature < 30 || temperature > 45) {
+      showToast(isArabic ? 'درجة الحرارة غير صالحة.' : 'La température saisie est invalide.', 'error');
+      return;
+    }
+    const existing = presences.find(p => p.enfantId === selectedEnfantForPresenceDetails && p.date === selectedDate);
+    const details = {
       enfantId: selectedEnfantForPresenceDetails,
       date: selectedDate,
-      statut: 'Présent',
-      ...presenceDetailsForm
-    });
+      statut: 'Présent' as const,
+      ...presenceDetailsForm,
+      temperature: temperature.toFixed(1)
+    };
+    if (existing) {
+      updatePresence(existing.id, details);
+    } else {
+      addPresence(details);
+    }
 
     setShowPresenceDetailsModal(false);
     setSelectedEnfantForPresenceDetails(null);
-    // Reset form
     setPresenceDetailsForm({
       heureArrivee: '08:30',
       heureDepart: '16:30',
@@ -127,26 +154,35 @@ export default function PresencesPage() {
 
   // Action rapide de pointage "Absent" (Ouvre le modal de saisie de motif)
   const handleMarkAbsentClick = (enfantId: string) => {
+    const existing = presences.find(p => p.enfantId === enfantId && p.date === selectedDate);
+    setAbsenceForm({
+      statut: existing?.statut === 'Absent justifié' ? 'Absent justifié' : 'Absent non justifié',
+      motifAbsence: existing?.motifAbsence || ''
+    });
     setSelectedEnfantForAbsence(enfantId);
     setShowAbsenceModal(true);
   };
 
-  // Soumission de l'absence
+  // Soumission de l’absence : le motif est obligatoire pour garder un registre exploitable.
   const submitAbsence = () => {
     if (!selectedEnfantForAbsence) return;
-
-    // Supprimer le pointage existant pour ce jour
-    const existing = presences.find(p => p.enfantId === selectedEnfantForAbsence && p.date === selectedDate);
-    if (existing) {
-      deletePresence(existing.id);
+    const motif = absenceForm.motifAbsence.trim();
+    if (!motif) {
+      showToast(isArabic ? 'يرجى إدخال سبب الغياب.' : 'Veuillez renseigner le motif de l’absence.', 'error');
+      return;
     }
-
-    addPresence({
+    const existing = presences.find(p => p.enfantId === selectedEnfantForAbsence && p.date === selectedDate);
+    const absence = {
       enfantId: selectedEnfantForAbsence,
       date: selectedDate,
       statut: absenceForm.statut,
-      motifAbsence: absenceForm.motifAbsence || (isArabic ? 'بدون عذر محدد' : 'Aucun motif renseigné'),
-    });
+      motifAbsence: motif,
+    };
+    if (existing) {
+      updatePresence(existing.id, absence);
+    } else {
+      addPresence(absence);
+    }
 
     setShowAbsenceModal(false);
     setSelectedEnfantForAbsence(null);
@@ -163,18 +199,23 @@ export default function PresencesPage() {
 
   // --- CALCULS DES STATISTIQUES POUR LA DATE SÉLECTIONNÉE ---
   const todayPresences = useMemo(() => {
-    return presences.filter(p => p.date === selectedDate);
+    // Une seule fiche par enfant et par jour : les anciens doublons ne faussent plus les compteurs.
+    const recordsByChild = new Map<string, Presence>();
+    presences.filter(p => p.date === selectedDate).forEach(p => recordsByChild.set(p.enfantId, p));
+    return Array.from(recordsByChild.values());
   }, [presences, selectedDate]);
 
   const countPresents = todayPresences.filter(p => p.statut === 'Présent').length;
   const countAbsents = todayPresences.filter(p => p.statut.startsWith('Absent')).length;
+  const countNonPointes = Math.max(enfantsData.length - todayPresences.length, 0);
+  const isDayComplete = enfantsData.length > 0 && countNonPointes === 0;
 
   // --- HISTORIQUE DES ABSENCES TRIÉ PAR JOUR (Pour l'onglet Historique) ---
   const absencesGroupedByDay = useMemo(() => {
     const allAbsences = presences.filter(p => p.statut.startsWith('Absent'));
     
     // Regrouper par date
-    const groups: Record<string, RichPresence[]> = {};
+    const groups: Record<string, Presence[]> = {};
     allAbsences.forEach(p => {
       if (!groups[p.date]) {
         groups[p.date] = [];
@@ -203,20 +244,31 @@ export default function PresencesPage() {
           </p>
         </div>
 
-        {/* Sélectionneur de date globale */}
-        <div className="flex items-center gap-3 bg-white p-3 border border-slate-150 rounded-2xl shadow-xs self-start md:self-auto">
-          <Calendar className="w-5 h-5 text-indigo-600" />
-          <input 
-            type="date" 
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="outline-none text-sm font-bold text-slate-800 cursor-pointer"
-          />
+        {/* Sélectionneur de date et état de clôture du pointage */}
+        <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
+          <div className="flex items-center gap-3 bg-white p-3 border border-slate-150 rounded-2xl shadow-xs">
+            <Calendar className="w-5 h-5 text-indigo-600" />
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="outline-none text-sm font-bold text-slate-800 cursor-pointer"
+            />
+          </div>
+          <div className={`px-3 py-2 rounded-xl text-xs font-black border ${
+            isDayComplete
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+              : 'bg-amber-50 text-amber-700 border-amber-100'
+          }`}>
+            {isDayComplete
+              ? (isArabic ? 'اليوم مكتمل' : 'Pointage complet')
+              : (isArabic ? `${countNonPointes} أطفال لم يسجلوا` : `${countNonPointes} enfant(s) à pointer`)}
+          </div>
         </div>
       </div>
 
       {/* Widgets Statistiques */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
             <CheckCircle2 className="w-6 h-6" />
@@ -244,6 +296,16 @@ export default function PresencesPage() {
           <div>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{isArabic ? 'إجمالي الأطفال' : 'Total Enfants'}</p>
             <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{enfantsData.length}</p>
+          </div>
+        </div>
+
+        <div className="col-span-2 md:col-span-1 bg-white p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4">
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${isDayComplete ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+            <HelpCircle className="w-6 h-6" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{isArabic ? 'المتبقي' : 'À pointer'}</p>
+            <p className={`text-xl sm:text-2xl font-black mt-0.5 ${isDayComplete ? 'text-emerald-600' : 'text-amber-600'}`}>{countNonPointes}</p>
           </div>
         </div>
       </div>
@@ -664,7 +726,7 @@ export default function PresencesPage() {
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{isArabic ? 'وقت الدخول' : 'Heure d\'arrivée'}</label>
                     <input
-                      type="text"
+                      type="time"
                       value={presenceDetailsForm.heureArrivee}
                       onChange={(e) => setPresenceDetailsForm({ ...presenceDetailsForm, heureArrivee: e.target.value })}
                       placeholder="08:30"
@@ -674,7 +736,7 @@ export default function PresencesPage() {
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{isArabic ? 'وقت الانصراف' : 'Heure de départ'}</label>
                     <input
-                      type="text"
+                      type="time"
                       value={presenceDetailsForm.heureDepart}
                       onChange={(e) => setPresenceDetailsForm({ ...presenceDetailsForm, heureDepart: e.target.value })}
                       placeholder="16:30"
