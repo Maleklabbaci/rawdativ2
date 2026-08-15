@@ -220,3 +220,19 @@ export interface Avis {
   comment: string;
   date: string;
 }
+
+export type SignalementType = 'bug' | 'probleme' | 'suggestion' | 'amelioration';
+export type SignalementStatut = 'nouveau' | 'en_cours' | 'resolu' | 'rejete';
+
+export interface Signalement {
+  id: string;
+  userId: string;
+  userName: string;
+  nomCreche: string;
+  type: SignalementType;
+  titre: string;
+  description: string;
+  statut: SignalementStatut;
+  date: string;
+  reponseAdmin?: string;
+}

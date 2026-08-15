@@ -500,8 +500,8 @@ if (isSubscriptionExpired) {
         language={language as 'fr' | 'ar'}
       />
 
-      {/* Le support flottant reste réservé aux directeurs ; l’admin utilise sa page dédiée. */}
-      {user?.role === 'directeur' && <ChatBubble />}
+      {/* Le support, les avis et les retours sont disponibles pour tous les comptes sauf l’admin. */}
+      {user && user.role !== 'admin' && <ChatBubble />}
 
       {/* Popup d'annonce admin personnalisé — uniquement pour les directeurs */}
       {user?.role === 'directeur' && <NotificationPopup onNavigate={setCurrentPage} />}

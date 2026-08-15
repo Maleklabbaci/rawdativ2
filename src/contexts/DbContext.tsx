@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Enfant, Presence, PresenceJournee, Paiement, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur } from '../types';
+import { Enfant, Presence, PresenceJournee, Paiement, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement } from '../types';
 import { 
   getCollectionData, 
   addCollectionDocument, 
@@ -24,6 +24,7 @@ interface DbContextType {
   demandesDirecteur: DemandeDirecteur[];
   messages: DiscussionMessage[];
   avis: Avis[];
+  signalements: Signalement[];
   notifications: AppNotification[];
   loading: boolean;
   refreshAll: () => Promise<void>;
@@ -37,6 +38,11 @@ interface DbContextType {
   deleteMessage: (id: string) => Promise<void>;
 
   addAvis: (avis: Omit<Avis, 'id'>) => Promise<string>;
+  deleteAvis: (id: string) => Promise<void>;
+
+  addSignalement: (signalement: Omit<Signalement, 'id'>) => Promise<string>;
+  updateSignalement: (id: string, signalement: Partial<Signalement>) => Promise<void>;
+  deleteSignalement: (id: string) => Promise<void>;
 
   addCompte: (compte: Omit<UserAccount, 'id'>) => Promise<string>;
   updateCompte: (id: string, compte: Partial<UserAccount>) => Promise<void>;
@@ -104,6 +110,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const [demandesDirecteur, setDemandesDirecteur] = useState<DemandeDirecteur[]>([]);
   const [messages, setMessages] = useState<DiscussionMessage[]>([]);
   const [avis, setAvis] = useState<Avis[]>([]);
+  const [signalements, setSignalements] = useState<Signalement[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const autoInvoiceRanRef = React.useRef(false); // évite de relancer la génération auto plusieurs fois par session
@@ -135,6 +142,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setDemandesDirecteur([]);
       setMessages([]);
       setAvis([]);
+      setSignalements([]);
       setNotifications([]);
       setLoading(false);
       return;
@@ -182,14 +190,16 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         getCollectionData<Repas>('repas'),
         getCollectionData<DiscussionMessage>('discussion_messages'),
         getCollectionData<Avis>('avis'),
+        getCollectionData<Signalement>('signalements'),
         getCollectionData<AppNotification>('notifications'),
       ])
-        .then(([dbClasses, dbActivites, dbRepas, dbMessages, dbAvis, dbNotifications]) => {
+        .then(([dbClasses, dbActivites, dbRepas, dbMessages, dbAvis, dbSignalements, dbNotifications]) => {
           setClasses(dbClasses);
           setActivites(dbActivites);
           setRepas(dbRepas);
           setMessages(dbMessages);
           setAvis(dbAvis);
+          setSignalements(dbSignalements);
           setNotifications(dbNotifications);
         })
         .catch(err => {
@@ -678,6 +688,46 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  // --- SIGNALEMENTS, BUGS ET SUGGESTIONS ---
+  const addSignalement = async (signalementData: Omit<Signalement, 'id'>) => {
+    const tempId = 'signalement_' + Date.now();
+    const optimistic = { ...signalementData, id: tempId } as Signalement;
+    setSignalements(prev => [optimistic, ...prev]);
+    try {
+      const freshId = await addCollectionDocument('signalements', signalementData);
+      setSignalements(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      return freshId;
+    } catch (err) {
+      setSignalements(prev => prev.filter(item => item.id !== tempId));
+      notifyWriteError('ajout');
+      throw err;
+    }
+  };
+
+  const updateSignalement = async (id: string, data: Partial<Signalement>) => {
+    const previous = signalements.find(item => item.id === id);
+    setSignalements(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    try {
+      await updateCollectionDocument<Signalement>('signalements', id, data);
+    } catch (err) {
+      if (previous) setSignalements(prev => prev.map(item => item.id === id ? previous : item));
+      notifyWriteError('modification');
+      throw err;
+    }
+  };
+
+  const deleteSignalement = async (id: string) => {
+    const previous = signalements.find(item => item.id === id);
+    setSignalements(prev => prev.filter(item => item.id !== id));
+    try {
+      await deleteCollectionDocument('signalements', id);
+    } catch (err) {
+      if (previous) setSignalements(prev => [...prev, previous]);
+      notifyWriteError('suppression');
+      throw err;
+    }
+  };
+
   // --- NOTIFICATIONS (annonces admin -> directeurs) ---
   const addNotification = async (notif: Omit<AppNotification, 'id'>) => {
     const tempId = 'notif_' + Date.now();
@@ -792,6 +842,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       demandesDirecteur: scopedDemandesDirecteur,
       messages,
       avis,
+      signalements,
       notifications,
       loading,
       refreshAll,
@@ -800,6 +851,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       deleteMessage,
       addAvis,
       deleteAvis,
+      addSignalement,
+      updateSignalement,
+      deleteSignalement,
       addNotification,
       markNotificationRead,
       deleteNotification,

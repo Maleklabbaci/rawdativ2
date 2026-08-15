@@ -57,7 +57,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
       return language === 'ar' ? 'الإشعارات' : 'Notifications';
     }
     if (key === 'communication') {
-      return language === 'ar' ? 'الرسائل والتقييمات' : 'Messages & Avis';
+      return language === 'ar' ? 'الرسائل والتقييمات والملاحظات' : 'Messages, Avis & Retours';
     }
     return t(originalLabel);
   };
