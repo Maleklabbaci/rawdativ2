@@ -9,12 +9,24 @@ interface CrecheInfo {
   tuitionFeeRate: number;
 }
 
+interface DirectorSignupDetails {
+  nom: string;
+  prenom: string;
+  email: string;
+  motDePasse: string;
+  nomCreche: string;
+  telephone: string;
+  adresse: string;
+  siteWeb?: string;
+}
+
 interface AuthContextType {
   isAuthenticated: boolean;
   user: UserAccount | null;
   loading: boolean;
   creche: CrecheInfo;
   loginWithCredentials: (email: string, motDePasse: string) => Promise<UserAccount | null>;
+  createDirectorAccount: (details: DirectorSignupDetails) => Promise<{ error: string | null; requiresEmailConfirmation: boolean }>;
   signInWithGoogle: () => Promise<{ error: string | null }>;
   requestEmailOtp: (email: string) => Promise<{ error: string | null }>;
   verifyEmailOtp: (email: string, token: string) => Promise<{ error: string | null }>;
@@ -122,6 +134,43 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return profile;
   };
 
+  const createDirectorAccount = async (details: DirectorSignupDetails): Promise<{ error: string | null; requiresEmailConfirmation: boolean }> => {
+    const email = details.email.toLowerCase().trim();
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password: details.motDePasse,
+      options: {
+        data: {
+          role: 'directeur',
+          nom: details.nom.trim(),
+          prenom: details.prenom.trim(),
+          nomCreche: details.nomCreche.trim(),
+          telephone: details.telephone.trim(),
+          adresse: details.adresse.trim(),
+          siteWeb: details.siteWeb?.trim() || '',
+        },
+        emailRedirectTo: window.location.origin,
+      },
+    });
+
+    if (error || !data.user) {
+      return { error: error?.message || 'La création du compte directeur a échoué.', requiresEmailConfirmation: false };
+    }
+
+    // Lorsque la confirmation e-mail est désactivée, la session est créée immédiatement.
+    // Sinon, le trigger Supabase crée le profil et la connexion se fera après confirmation.
+    if (data.session) {
+      const profile = await loadProfile(data.user.id);
+      setUser(profile);
+      await loadCrecheSettings(profile);
+      if (!profile) {
+        return { error: 'Le compte Auth est créé, mais le profil directeur est encore en préparation.', requiresEmailConfirmation: false };
+      }
+    }
+
+    return { error: null, requiresEmailConfirmation: !data.session };
+  };
+
   const signInWithGoogle = async (): Promise<{ error: string | null }> => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -197,6 +246,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       loading,
       creche,
       loginWithCredentials,
+      createDirectorAccount,
       signInWithGoogle,
       requestEmailOtp,
       verifyEmailOtp,

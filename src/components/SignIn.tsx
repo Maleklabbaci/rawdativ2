@@ -7,12 +7,15 @@ import {
   Baby,
   Building,
   Chrome,
+  Globe2,
+  MapPin,
   KeyRound,
   Lock,
   LogIn,
   Mail,
   Phone,
   Sparkles,
+  UserRound,
 } from 'lucide-react';
 
 type AuthMethod = 'password' | 'email' | 'phone';
@@ -22,6 +25,8 @@ function formatAuthError(message: string | null, fallback: string): string {
   const normalized = message.toLowerCase();
   if (normalized.includes('provider is not enabled')) return 'Cette méthode n’est pas encore activée dans Supabase Auth.';
   if (normalized.includes('invalid login credentials')) return 'Identifiants incorrects. Vérifiez votre adresse e-mail et votre mot de passe.';
+  if (normalized.includes('already registered') || normalized.includes('user already registered')) return 'Cette adresse e-mail possède déjà un compte Rawdha+.';
+  if (normalized.includes('password should be at least') || normalized.includes('password must')) return 'Le mot de passe doit respecter les exigences minimales de sécurité.';
   if (normalized.includes('email not confirmed')) return 'Votre adresse e-mail doit d’abord être confirmée.';
   if (normalized.includes('rate limit') || normalized.includes('too many')) return 'Trop de demandes. Patientez quelques instants avant de réessayer.';
   if (normalized.includes('user not found')) return 'Aucun compte Rawdha+ correspondant n’a été trouvé.';
@@ -38,12 +43,23 @@ export default function SignIn() {
     verifyEmailOtp,
     requestPhoneOtp,
     verifyPhoneOtp,
+    createDirectorAccount,
   } = useAuth();
 
+  const [view, setView] = useState<'signin' | 'signup'>('signin');
   const [method, setMethod] = useState<AuthMethod>('password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
+  const [directorNom, setDirectorNom] = useState('');
+  const [directorPrenom, setDirectorPrenom] = useState('');
+  const [directorEmail, setDirectorEmail] = useState('');
+  const [directorPassword, setDirectorPassword] = useState('');
+  const [directorPasswordConfirmation, setDirectorPasswordConfirmation] = useState('');
+  const [directorCreche, setDirectorCreche] = useState('');
+  const [directorPhone, setDirectorPhone] = useState('');
+  const [directorAddress, setDirectorAddress] = useState('');
+  const [directorWebsite, setDirectorWebsite] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -56,6 +72,50 @@ export default function SignIn() {
     setOtp('');
     setError('');
     setSuccess('');
+  };
+
+  const handleCreateDirector = async (event: FormEvent) => {
+    event.preventDefault();
+    setError('');
+    setSuccess('');
+
+    if (!directorNom || !directorPrenom || !directorEmail || !directorPassword || !directorCreche || !directorPhone || !directorAddress) {
+      setError('Veuillez remplir tous les champs obligatoires du directeur et de la crèche.');
+      return;
+    }
+    if (directorPassword.length < 8) {
+      setError('Le mot de passe doit contenir au moins 8 caractères.');
+      return;
+    }
+    if (directorPassword !== directorPasswordConfirmation) {
+      setError('La confirmation du mot de passe ne correspond pas.');
+      return;
+    }
+
+    setLoading(true);
+    const result = await createDirectorAccount({
+      nom: directorNom,
+      prenom: directorPrenom,
+      email: directorEmail,
+      motDePasse: directorPassword,
+      nomCreche: directorCreche,
+      telephone: directorPhone,
+      adresse: directorAddress,
+      siteWeb: directorWebsite,
+    });
+
+    if (result.error) {
+      setError(formatAuthError(result.error, 'Impossible de créer le compte directeur.'));
+    } else if (result.requiresEmailConfirmation) {
+      setView('signin');
+      setMethod('password');
+      setEmail(directorEmail.trim().toLowerCase());
+      setPassword('');
+      setSuccess('Compte créé. Consultez votre e-mail pour confirmer l’adresse avant de vous connecter.');
+    } else {
+      setSuccess('Compte directeur créé avec succès. Votre espace Rawdha+ est prêt.');
+    }
+    setLoading(false);
   };
 
   const handleLogin = async (event: FormEvent) => {
@@ -174,9 +234,13 @@ export default function SignIn() {
               <Building className="w-4 h-4" />
               <span>ESPACE CLIENT ET GESTION</span>
             </div>
-            <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Connectez-vous</h2>
+            <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+              {view === 'signin' ? 'Connectez-vous' : 'Créer votre espace directeur'}
+            </h2>
             <p className="text-slate-500">
-              Accédez à votre espace Rawdha+ avec votre méthode de connexion habituelle.
+              {view === 'signin'
+                ? 'Accédez à votre espace Rawdha+ avec votre méthode de connexion habituelle.'
+                : 'Renseignez les informations de votre crèche. Votre accès de direction sera enregistré dans Rawdha+.'}
             </p>
           </div>
 
@@ -194,6 +258,17 @@ export default function SignIn() {
             </div>
           )}
 
+          <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl">
+            <button type="button" onClick={() => { setView('signin'); setError(''); setSuccess(''); }} className={`py-2.5 rounded-lg text-xs font-bold transition ${view === 'signin' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+              Se connecter
+            </button>
+            <button type="button" onClick={() => { setView('signup'); setError(''); setSuccess(''); }} className={`py-2.5 rounded-lg text-xs font-bold transition ${view === 'signup' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+              Inscription directeur
+            </button>
+          </div>
+
+          {view === 'signin' ? (
+            <>
           <button
             type="button"
             onClick={handleGoogleLogin}
@@ -285,9 +360,81 @@ export default function SignIn() {
               </button>
             </form>
           )}
+            </>
+          ) : (
+            <form onSubmit={handleCreateDirector} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Prénom *</label>
+                  <div className="relative">
+                    <UserRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input value={directorPrenom} onChange={(event) => setDirectorPrenom(event.target.value)} className="w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800" placeholder="Nadia" required />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Nom *</label>
+                  <input value={directorNom} onChange={(event) => setDirectorNom(event.target.value)} className="w-full px-3 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800" placeholder="Benaissa" required />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">E-mail professionnel *</label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input type="email" value={directorEmail} onChange={(event) => setDirectorEmail(event.target.value)} className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800" placeholder="direction@creche.dz" required />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Mot de passe *</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input type="password" minLength={8} value={directorPassword} onChange={(event) => setDirectorPassword(event.target.value)} className="w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800" placeholder="8 caractères minimum" required />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Confirmation *</label>
+                  <input type="password" minLength={8} value={directorPasswordConfirmation} onChange={(event) => setDirectorPasswordConfirmation(event.target.value)} className="w-full px-3 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800" placeholder="Répéter" required />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Nom de la crèche *</label>
+                <div className="relative">
+                  <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input value={directorCreche} onChange={(event) => setDirectorCreche(event.target.value)} className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800" placeholder="Crèche Les Petits Pas" required />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Téléphone *</label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input type="tel" value={directorPhone} onChange={(event) => setDirectorPhone(event.target.value)} className="w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800" placeholder="+213..." required />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Site web</label>
+                  <div className="relative">
+                    <Globe2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input type="url" value={directorWebsite} onChange={(event) => setDirectorWebsite(event.target.value)} className="w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800" placeholder="https://..." />
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Adresse de la crèche *</label>
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-3.5 w-4 h-4 text-slate-400" />
+                  <textarea value={directorAddress} onChange={(event) => setDirectorAddress(event.target.value)} rows={2} className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800 resize-none" placeholder="Adresse complète" required />
+                </div>
+              </div>
+              <p className="text-xs leading-relaxed text-slate-500">Après l’inscription, le compte directeur et les informations de la crèche seront enregistrés dans Supabase. Aucun espace parent n’est créé dans cette version.</p>
+              <button type="submit" disabled={loading} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-indigo-100 transition flex items-center justify-center gap-2 shadow-md disabled:opacity-50">
+                {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><UserRound className="w-5 h-5" /><span>Créer mon accès directeur</span></>}
+              </button>
+            </form>
+          )}
 
           <p className="text-center text-xs text-slate-400 leading-relaxed">
-            Les accès parents doivent être créés ou rattachés par la crèche dans Rawdha+.
+            L’espace parent sera ajouté séparément dans une prochaine version de Rawdha+.
           </p>
         </div>
       </div>
