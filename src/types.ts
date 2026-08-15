@@ -193,6 +193,8 @@ export interface UserAccount {
   motDePasse?: string;
   role: 'admin' | 'directeur' | 'parent';
   abonnementActif: boolean;
+  /** Dernière activité authentifiée de l’utilisateur, stockée en UTC ISO. */
+  lastActivityAt?: string;
   dateFinAbonnement?: string;
   nomCreche?: string;
   enfantId?: string;

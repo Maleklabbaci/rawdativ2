@@ -32,6 +32,23 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+function formatLastActivity(value: string | undefined, language: 'fr' | 'ar'): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return new Intl.DateTimeFormat(language === 'fr' ? 'fr-DZ' : 'ar-DZ', {
+    timeZone: 'Africa/Algiers',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date);
+}
+
 export default function Comptes() {
   const { comptes, enfants, demandesDirecteur, addCompte, updateCompte, deleteCompte, approveDemandeDirecteur, deleteDemandeDirecteur, refreshAll, loading } = useDb();
   const { language, isFrench } = useLanguage();
@@ -733,11 +750,9 @@ export default function Comptes() {
                   const mappedEnfant = c.enfantId ? enfants.find(enf => enf.id === c.enfantId) : null;
                   const enfantsDeLaCreche = enfants.filter(e => e.crecheId === c.id);
                   const nbEnfants = enfantsDeLaCreche.length;
-                  const lastActivityDate = nbEnfants > 0
-                    ? enfantsDeLaCreche.sort((a, b) => new Date(b.dateInscription).getTime() - new Date(a.dateInscription).getTime())[0].dateInscription
-                    : null;
+                  const lastActivityLabel = formatLastActivity(c.lastActivityAt, language);
                   
-                  // Evaluate if subscription has expired relative to current local time (2026-06-18)
+                  // Evaluate if subscription has expired relative to the current local date
                   let isExpired = false;
                   if (c.role !== 'admin' && c.dateFinAbonnement) {
                     const todayStr = new Date().toISOString().split('T')[0];
@@ -817,9 +832,14 @@ export default function Comptes() {
                             {c.role === 'admin' ? (
                               <span className="text-slate-400 italic text-xs">--</span>
                             ) : (
-                              <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
-                                <Clock className="w-3.5 h-3.5 text-indigo-500" />
-                                {lastActivityDate ? new Date(lastActivityDate).toLocaleDateString() : (isFrench ? 'Jamais' : 'غير نشط')}
+                              <div
+                                className="flex items-start gap-2 text-xs font-bold text-slate-600"
+                                title={c.lastActivityAt ? new Date(c.lastActivityAt).toISOString() : undefined}
+                              >
+                                <Clock className="w-3.5 h-3.5 mt-0.5 text-indigo-500 shrink-0" />
+                                <span className="leading-5">
+                                  {lastActivityLabel || (isFrench ? 'Jamais connecté' : 'لم يسجل الدخول بعد')}
+                                </span>
                               </div>
                             )}
                           </td>

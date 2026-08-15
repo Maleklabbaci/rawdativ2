@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { UserAccount } from '../types';
-import { supabase, getCollectionDocument } from '../supabase';
+import { supabase, getCollectionDocument, updateCollectionDocument } from '../supabase';
 
 interface CrecheInfo {
   nom: string;
@@ -55,6 +55,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<UserAccount | null>(null);
   const [loading, setLoading] = useState(true);
   const [creche, setCreche] = useState<CrecheInfo>(DEFAULT_CRECHE);
+  const lastActivityWriteRef = React.useRef(0);
+
+  // Enregistre la dernière activité authentifiée en UTC ISO. La limitation d’une
+  // minute évite de multiplier les écritures tout en gardant une donnée exploitable.
+  const recordLastActivity = useCallback(async (userId: string) => {
+    const now = Date.now();
+    if (now - lastActivityWriteRef.current < 60_000) return;
+    lastActivityWriteRef.current = now;
+    const lastActivityAt = new Date(now).toISOString();
+    try {
+      await updateCollectionDocument<UserAccount>('comptes', userId, { lastActivityAt });
+      setUser((current) => current?.id === userId ? { ...current, lastActivityAt } : current);
+    } catch (error) {
+      // L’activité ne doit jamais bloquer l’ouverture de session si une policy est
+      // temporairement indisponible ; la prochaine activité réessaiera l’écriture.
+      lastActivityWriteRef.current = 0;
+      console.warn('Impossible d’enregistrer la dernière activité:', error);
+    }
+  }, []);
 
   // Charge le profil (table "comptes") associé à la session Auth active.
   const loadProfile = async (userId: string, authUserSnapshot?: AuthUserSnapshot): Promise<UserAccount | null> => {
@@ -114,6 +133,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const profile = await loadProfile(session.user.id, session.user);
         setUser(profile);
         await loadCrecheSettings(profile);
+        if (profile) void recordLastActivity(profile.id);
       }
       setLoading(false);
     });
@@ -124,6 +144,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const profile = await loadProfile(session.user.id, session.user);
         setUser(profile);
         await loadCrecheSettings(profile);
+        if (profile) void recordLastActivity(profile.id);
       } else {
         setUser(null);
         setCreche(DEFAULT_CRECHE);
@@ -131,7 +152,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     });
 
     return () => listener.subscription.unsubscribe();
-  }, [loadCrecheSettings]);
+  }, [loadCrecheSettings, recordLastActivity]);
+
+  // Une activité de session est actualisée au retour dans l’onglet et toutes les
+  // cinq minutes tant que Rawdha+ reste ouvert.
+  useEffect(() => {
+    if (!user?.id) return;
+    const touchActivity = () => {
+      if (document.visibilityState === 'visible') void recordLastActivity(user.id);
+    };
+    window.addEventListener('focus', touchActivity);
+    document.addEventListener('visibilitychange', touchActivity);
+    const interval = window.setInterval(touchActivity, 5 * 60 * 1000);
+    return () => {
+      window.removeEventListener('focus', touchActivity);
+      document.removeEventListener('visibilitychange', touchActivity);
+      window.clearInterval(interval);
+    };
+  }, [user?.id, recordLastActivity]);
 
   const isAuthenticated = !!user;
 
@@ -158,8 +196,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
     setUser(profile);
     await loadCrecheSettings(profile);
+    void recordLastActivity(profile.id);
     return { user: profile, error: null };
-  };
+    };
 
   const logout = async () => {
     await supabase.auth.signOut();
