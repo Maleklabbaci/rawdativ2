@@ -36,7 +36,9 @@ export default function PresencesPage() {
     classes: classesData,
     addPresence,
     updatePresence,
-    deletePresence
+    deletePresence,
+    presenceJournees,
+    savePresenceJournee
   } = useDb();
   
   const { user } = useAuth();
@@ -91,6 +93,10 @@ export default function PresencesPage() {
   // Action rapide de pointage "Présent" : on conserve l’id existant pour éviter
   // les doublons et permettre une vraie modification du pointage du jour.
   const handleMarkPresent = (enfantId: string) => {
+    if (isDayValidated) {
+      showToast(isArabic ? 'هذا اليوم معتمد. افتحه من جديد قبل التعديل.' : 'Cette journée est validée. Rouvrez-la avant de modifier un pointage.', 'error');
+      return;
+    }
     const existing = presences.find(p => p.enfantId === enfantId && p.date === selectedDate);
     if (existing?.statut === 'Présent') {
       setPresenceDetailsForm({
@@ -154,6 +160,10 @@ export default function PresencesPage() {
 
   // Action rapide de pointage "Absent" (Ouvre le modal de saisie de motif)
   const handleMarkAbsentClick = (enfantId: string) => {
+    if (isDayValidated) {
+      showToast(isArabic ? 'هذا اليوم معتمد. افتحه من جديد قبل التعديل.' : 'Cette journée est validée. Rouvrez-la avant de modifier un pointage.', 'error');
+      return;
+    }
     const existing = presences.find(p => p.enfantId === enfantId && p.date === selectedDate);
     setAbsenceForm({
       statut: existing?.statut === 'Absent justifié' ? 'Absent justifié' : 'Absent non justifié',
@@ -191,6 +201,10 @@ export default function PresencesPage() {
 
   // Retirer un pointage (remettre à non-pointé)
   const handleResetPointing = (enfantId: string) => {
+    if (isDayValidated) {
+      showToast(isArabic ? 'هذا اليوم معتمد. افتحه من جديد قبل التعديل.' : 'Cette journée est validée. Rouvrez-la avant de modifier un pointage.', 'error');
+      return;
+    }
     const existing = presences.find(p => p.enfantId === enfantId && p.date === selectedDate);
     if (existing) {
       deletePresence(existing.id);
@@ -209,6 +223,34 @@ export default function PresencesPage() {
   const countAbsents = todayPresences.filter(p => p.statut.startsWith('Absent')).length;
   const countNonPointes = Math.max(enfantsData.length - todayPresences.length, 0);
   const isDayComplete = enfantsData.length > 0 && countNonPointes === 0;
+  const currentPresenceJournee = presenceJournees.find(j => j.date === selectedDate);
+  const isDayValidated = currentPresenceJournee?.statut === 'validee';
+
+  const handleValidateDay = async () => {
+    if (!user?.id || !isDayComplete) {
+      showToast(isArabic ? 'يرجى تسجيل حضور جميع الأطفال أولاً.' : 'Pointez tous les enfants avant de valider la journée.', 'error');
+      return;
+    }
+    await savePresenceJournee({
+      crecheId: user.id,
+      date: selectedDate,
+      statut: 'validee',
+      valideeLe: new Date().toISOString(),
+      valideePar: user.id
+    });
+    showToast(isArabic ? 'تم اعتماد يوم الحضور.' : 'La journée de présence est validée.', 'success');
+  };
+
+  const handleReopenDay = async () => {
+    if (!user?.id) return;
+    await savePresenceJournee({
+      id: currentPresenceJournee?.id,
+      crecheId: user.id,
+      date: selectedDate,
+      statut: 'ouverte'
+    });
+    showToast(isArabic ? 'تم فتح يوم الحضور من جديد.' : 'La journée est de nouveau ouverte à la modification.', 'success');
+  };
 
   // --- HISTORIQUE DES ABSENCES TRIÉ PAR JOUR (Pour l'onglet Historique) ---
   const absencesGroupedByDay = useMemo(() => {
@@ -256,14 +298,36 @@ export default function PresencesPage() {
             />
           </div>
           <div className={`px-3 py-2 rounded-xl text-xs font-black border ${
-            isDayComplete
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-              : 'bg-amber-50 text-amber-700 border-amber-100'
+            isDayValidated
+              ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
+              : isDayComplete
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                : 'bg-amber-50 text-amber-700 border-amber-100'
           }`}>
-            {isDayComplete
-              ? (isArabic ? 'اليوم مكتمل' : 'Pointage complet')
-              : (isArabic ? `${countNonPointes} أطفال لم يسجلوا` : `${countNonPointes} enfant(s) à pointer`)}
+            {isDayValidated
+              ? (isArabic ? 'اليوم معتمد' : 'Journée validée')
+              : isDayComplete
+                ? (isArabic ? 'اليوم مكتمل' : 'Pointage complet')
+                : (isArabic ? `${countNonPointes} أطفال لم يسجلوا` : `${countNonPointes} enfant(s) à pointer`)}
           </div>
+          {isDayValidated ? (
+            <button
+              type="button"
+              onClick={handleReopenDay}
+              className="px-3 py-2 rounded-xl text-xs font-black bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50 transition-colors"
+            >
+              {isArabic ? 'إعادة فتح اليوم' : 'Rouvrir la journée'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleValidateDay}
+              disabled={!isDayComplete}
+              className="px-3 py-2 rounded-xl text-xs font-black bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {isArabic ? 'اعتماد اليوم' : 'Valider la journée'}
+            </button>
+          )}
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Enfant, Presence, Paiement, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification } from '../types';
+import { Enfant, Presence, PresenceJournee, Paiement, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification } from '../types';
 import { 
   getCollectionData, 
   addCollectionDocument, 
@@ -15,6 +15,7 @@ interface DbContextType {
   enfants: Enfant[];
   classes: Classe[];
   presences: Presence[];
+  presenceJournees: PresenceJournee[];
   paiements: Paiement[];
   personnel: Personnel[];
   activites: Activite[];
@@ -51,6 +52,7 @@ interface DbContextType {
   addPresence: (presence: Omit<Presence, 'id'>) => Promise<string>;
   updatePresence: (id: string, presence: Partial<Presence>) => Promise<void>;
   deletePresence: (id: string) => Promise<void>;
+  savePresenceJournee: (journee: Omit<PresenceJournee, 'id'> & { id?: string }) => Promise<string>;
 
   addPaiement: (paiement: Omit<Paiement, 'id'>) => Promise<string>;
   updatePaiement: (id: string, paiement: Partial<Paiement>) => Promise<void>;
@@ -88,6 +90,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const [enfants, setEnfants] = useState<Enfant[]>([]);
   const [classes, setClasses] = useState<Classe[]>([]);
   const [presences, setPresences] = useState<Presence[]>([]);
+  const [presenceJournees, setPresenceJournees] = useState<PresenceJournee[]>([]);
   const [paiements, setPaiements] = useState<Paiement[]>([]);
   const [personnel, setPersonnel] = useState<Personnel[]>([]);
   const [activites, setActivites] = useState<Activite[]>([]);
@@ -113,10 +116,11 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const refreshAll = async () => {
     try {
       // --- VAGUE 1 : critique pour le Dashboard, on attend ---
-      const [dbComptes, dbEnfants, dbPresences, dbPaiements, dbPersonnel] = await Promise.all([
+      const [dbComptes, dbEnfants, dbPresences, dbPresenceJournees, dbPaiements, dbPersonnel] = await Promise.all([
         getCollectionData<UserAccount>('comptes'),
         getCollectionData<Enfant>('enfants'),
         getCollectionData<Presence>('presences'),
+        getCollectionData<PresenceJournee>('presence_journees'),
         getCollectionData<Paiement>('paiements'),
         getCollectionData<Personnel>('personnel'),
       ]);
@@ -135,6 +139,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setComptes(dbComptes);
       setEnfants(dbEnfants);
       setPresences(dbPresences);
+      setPresenceJournees(dbPresenceJournees);
       setPaiements(dbPaiements);
       setPersonnel(dbPersonnel);
 
@@ -183,6 +188,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   // Pour les présences et paiements, on filtre via les ID des enfants valides
   const validEnfantIds = new Set(scopedEnfants.map(e => e.id));
   const scopedPresences = user?.role === 'directeur' ? presences.filter(p => validEnfantIds.has(p.enfantId)) : presences;
+  const scopedPresenceJournees = user?.role === 'directeur' ? presenceJournees.filter(j => j.crecheId === user.id) : presenceJournees;
   const scopedPaiements = user?.role === 'directeur' ? paiements.filter(p => validEnfantIds.has(p.enfantId)) : paiements;
 
   // ✅ FIX: avant, TOUS les comptes (tous les directeurs : nom, email, statut abonnement...) étaient
@@ -300,6 +306,23 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try { await deleteCollectionDocument('presences', id); } catch (err) {
       if (previous) setPresences(prev => [...prev, previous]);
       notifyWriteError('suppression');
+    }
+  };
+
+  const savePresenceJournee = async (journee: Omit<PresenceJournee, 'id'> & { id?: string }) => {
+    const id = journee.id || `presence_day_${journee.crecheId}_${journee.date}`;
+    const record = { ...journee, id } as PresenceJournee;
+    const previous = presenceJournees.find(item => item.id === id);
+    setPresenceJournees(prev => [...prev.filter(item => item.id !== id), record]);
+    try {
+      await setCollectionDocument<PresenceJournee>('presence_journees', id, record);
+      return id;
+    } catch (err) {
+      setPresenceJournees(prev => previous
+        ? [...prev.filter(item => item.id !== id), previous]
+        : prev.filter(item => item.id !== id));
+      notifyWriteError('modification');
+      return id;
     }
   };
 
@@ -642,6 +665,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       enfants: scopedEnfants,
       classes: scopedClasses,
       presences: scopedPresences,
+      presenceJournees: scopedPresenceJournees,
       paiements: scopedPaiements,
       personnel: scopedPersonnel,
       activites: scopedActivites,
@@ -671,6 +695,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       addPresence,
       updatePresence,
       deletePresence,
+      savePresenceJournee,
       addPaiement,
       updatePaiement,
       deletePaiement,

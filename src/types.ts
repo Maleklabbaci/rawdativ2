@@ -68,6 +68,15 @@ export interface Presence {
   humeur?: string;
 }
 
+export interface PresenceJournee {
+  id: string;
+  crecheId: string;
+  date: string;
+  statut: 'ouverte' | 'validee';
+  valideeLe?: string;
+  valideePar?: string;
+}
+
 export interface Paiement {
   id: string;
   enfantId: string;
