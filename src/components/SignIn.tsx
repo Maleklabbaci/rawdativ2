@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { addCollectionDocument, supabase } from '../supabase';
+import { supabase } from '../supabase';
 import {
   AlertCircle,
   Baby,
@@ -89,43 +89,43 @@ export default function SignIn() {
 
     setLoading(true);
     try {
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: directorEmail.trim().toLowerCase(),
-        password: directorPassword,
-        options: {
-          data: {
-            full_name: `${directorPrenom.trim()} ${directorNom.trim()}`,
-            prenom: directorPrenom.trim(),
-            nom: directorNom.trim(),
-            nomCreche: directorCreche.trim(),
-          },
+      const { data: registration, error: registrationError } = await supabase.functions.invoke('register-director-request', {
+        body: {
+          nom: directorNom.trim(),
+          prenom: directorPrenom.trim(),
+          email: directorEmail.trim().toLowerCase(),
+          password: directorPassword,
+          telephone: directorPhone.trim(),
+          nomCreche: directorCreche.trim(),
+          adresse: directorAddress.trim(),
+          siteWeb: directorWebsite.trim(),
+          message: directorMessage.trim(),
         },
       });
-      if (signUpError || !signUpData.user) {
-        throw new Error(signUpError?.message || 'Impossible de créer votre inscription.');
+
+      let serverError = registrationError?.message || '';
+      if (registrationError) {
+        const context = (registrationError as { context?: unknown }).context;
+        if (context instanceof Response) {
+          const details = await context.clone().json().catch(() => null) as { error?: string } | null;
+          serverError = details?.error || serverError;
+        }
+      }
+      if (serverError || registration?.error) {
+        throw new Error(serverError || registration.error);
       }
 
-      await addCollectionDocument('demandes_directeur', {
-        nom: directorNom.trim(),
-        prenom: directorPrenom.trim(),
-        email: directorEmail.trim().toLowerCase(),
-        authUserId: signUpData.user.id,
-        telephone: directorPhone.trim(),
-        nomCreche: directorCreche.trim(),
-        adresse: directorAddress.trim(),
-        siteWeb: directorWebsite.trim(),
-        message: directorMessage.trim(),
-        dateDemande: new Date().toISOString(),
-        statut: 'en_attente',
-      });
-
-      await supabase.auth.signOut();
       resetRequestForm();
       setView('signin');
       setSuccess('Votre demande a bien été envoyée. Après acceptation, connectez-vous directement avec le mot de passe que vous venez de définir.');
     } catch (requestError) {
       console.error('Erreur envoi demande directeur:', requestError);
-      setError('Impossible d’envoyer la demande pour le moment. Vérifiez que le formulaire est bien configuré puis réessayez.');
+      const message = requestError instanceof Error ? requestError.message : '';
+      if (message.toLowerCase().includes('already') || message.toLowerCase().includes('déjà') || message.toLowerCase().includes('existe')) {
+        setError('Cette adresse e-mail possède déjà une demande ou un compte Rawdha+.');
+      } else {
+        setError(message || 'Impossible d’envoyer la demande pour le moment. Réessayez dans quelques instants.');
+      }
     } finally {
       setLoading(false);
     }
