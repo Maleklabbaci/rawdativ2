@@ -27,6 +27,10 @@ create index if not exists demandes_admission_statut_idx
 
 revoke all on public.inscription_liens, public.demandes_admission from anon;
 revoke all on public.inscription_liens, public.demandes_admission from authenticated;
+-- Les policies RLS ci-dessous filtrent les lignes, mais le rôle authentifié doit
+-- également disposer du privilège SQL SELECT pour que l’interface directeur
+-- puisse charger les demandes et le QR permanent.
+grant select on public.inscription_liens, public.demandes_admission to authenticated;
 
 drop policy if exists "inscription_liens_select" on public.inscription_liens;
 create policy "inscription_liens_select" on public.inscription_liens
