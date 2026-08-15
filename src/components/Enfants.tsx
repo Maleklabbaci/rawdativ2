@@ -68,8 +68,10 @@ export default function Enfants() {
     allergie: '',
     regimeAlimentaire: '',
     bloodGroup: 'O+',
-    weightKg: '12',
-    pediatricianName: 'Dr. Belkacem',
+    weightKg: '',
+    pediatricianName: '',
+    vaccinations: '',
+    notesMedicales: '',
     parentNom: '',
     parentPrenom: '',
     parentTelephone: '',
@@ -165,6 +167,11 @@ export default function Enfants() {
         groupeAge: formData.groupeAge,
         allergie: formData.allergie || undefined,
         regimeAlimentaire: formData.regimeAlimentaire || undefined,
+        groupeSanguin: formData.bloodGroup || undefined,
+        poidsKg: formData.weightKg ? Number(formData.weightKg) : undefined,
+        medecinTraitant: formData.pediatricianName || undefined,
+        vaccinations: formData.vaccinations || undefined,
+        notesMedicales: formData.notesMedicales || undefined,
         contactsUrgence: [
           {
             id: existing?.contactsUrgence[0]?.id || `${Date.now()}-contact`,
@@ -209,6 +216,11 @@ export default function Enfants() {
         statut: 'Actif',
         allergie: formData.allergie || undefined,
         regimeAlimentaire: formData.regimeAlimentaire || undefined,
+        groupeSanguin: formData.bloodGroup || undefined,
+        poidsKg: formData.weightKg ? Number(formData.weightKg) : undefined,
+        medecinTraitant: formData.pediatricianName || undefined,
+        vaccinations: formData.vaccinations || undefined,
+        notesMedicales: formData.notesMedicales || undefined,
         contactsUrgence: [
           {
             id: `${Date.now()}-contact`,
@@ -468,9 +480,11 @@ export default function Enfants() {
                                 dateNaissance: enfant.dateNaissance,
                                 genre: enfant.genre,
                                 groupeAge: enfant.groupeAge,
-                                bloodGroup: 'O+',
-                                weightKg: '12',
-                                pediatricianName: 'Dr. Belkacem',
+                                bloodGroup: enfant.groupeSanguin || 'O+',
+                                weightKg: enfant.poidsKg ? String(enfant.poidsKg) : '',
+                                pediatricianName: enfant.medecinTraitant || '',
+                                vaccinations: enfant.vaccinations || '',
+                                notesMedicales: enfant.notesMedicales || '',
                                 parentNom: enfant.parents[0]?.nom || '',
                                 parentPrenom: enfant.parents[0]?.prenom || '',
                                 parentLien: enfant.parents[0]?.lien || 'Mère',
@@ -897,6 +911,60 @@ export default function Enfants() {
                           ? 'كل شهر، في هذا اليوم، يتم إنشاء فاتورة تلقائياً وتبقى الإشعارات ظاهرة حتى يتم الدفع.'
                           : 'Chaque mois, à ce jour, une facture est générée automatiquement et une notification reste active jusqu\'au règlement.'}
                       </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                        {isArabic ? 'الطبيب المعالج' : 'Médecin traitant'}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder={isArabic ? 'مثال: د. بن علي' : 'Ex : Dr. Benali'}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
+                        value={formData.pediatricianName}
+                        onChange={e => setFormData({...formData, pediatricianName: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                        {isArabic ? 'الوزن الحالي (كغ)' : 'Poids actuel (kg)'}
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        placeholder="Ex : 12,5"
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
+                        value={formData.weightKg}
+                        onChange={e => setFormData({...formData, weightKg: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                        {isArabic ? 'حالة اللقاحات' : 'Vaccinations'}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder={isArabic ? 'مثال: محدثة — آخر جرعة: 05/2026' : 'Ex : À jour — dernier rappel : 05/2026'}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
+                        value={formData.vaccinations}
+                        onChange={e => setFormData({...formData, vaccinations: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                        {isArabic ? 'ملاحظات طبية' : 'Notes médicales'}
+                      </label>
+                      <textarea
+                        rows={2}
+                        placeholder={isArabic ? 'تعليمات أو معلومات مهمة للفريق...' : 'Instructions ou informations importantes pour l’équipe...'}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800 resize-none"
+                        value={formData.notesMedicales}
+                        onChange={e => setFormData({...formData, notesMedicales: e.target.value})}
+                      />
                     </div>
                   </div>
                 </div>

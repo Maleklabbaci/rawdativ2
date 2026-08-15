@@ -28,6 +28,11 @@ export interface Enfant {
   statut: 'Actif' | 'Inactif';
   allergie?: string;
   regimeAlimentaire?: string;
+  groupeSanguin?: string;
+  poidsKg?: number;
+  medecinTraitant?: string;
+  vaccinations?: string;
+  notesMedicales?: string;
   contactsUrgence: ContactUrgence[];
   parents: Parent[];
   documentsRequis: {

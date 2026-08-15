@@ -216,7 +216,7 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
 
                       <div className="flex justify-between items-center py-1 border-b border-rose-100/20">
                         <span>{isArabic ? 'فصيلة الدم:' : 'Groupe Sanguin:'}</span>
-                        <span className="bg-rose-500 text-white font-black px-2 py-0.5 rounded text-[10px]">O+</span>
+                        <span className="bg-rose-500 text-white font-black px-2 py-0.5 rounded text-[10px]">{enfant.groupeSanguin || 'Non renseigné'}</span>
                       </div>
 
                       <div>
@@ -235,6 +235,23 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                         <div className="pt-2">
                           <span className="block text-slate-400 mb-1">{isArabic ? 'حمية غذائية مخصوصة:' : 'Régime Alimentaire Spécial:'}</span>
                           <span className="font-extrabold text-slate-800 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-200/50 text-[11px] block">{enfant.regimeAlimentaire}</span>
+                        </div>
+                      )}
+
+                      {(enfant.medecinTraitant || enfant.poidsKg || enfant.vaccinations || enfant.notesMedicales) && (
+                        <div className="pt-2 space-y-2">
+                          {enfant.medecinTraitant && (
+                            <div className="flex justify-between gap-3"><span className="text-slate-400">Médecin traitant :</span><span className="text-slate-800 font-bold text-right">{enfant.medecinTraitant}</span></div>
+                          )}
+                          {enfant.poidsKg && (
+                            <div className="flex justify-between gap-3"><span className="text-slate-400">Poids :</span><span className="text-slate-800 font-bold">{enfant.poidsKg} kg</span></div>
+                          )}
+                          {enfant.vaccinations && (
+                            <div><span className="block text-slate-400 mb-1">Vaccinations :</span><span className="block text-slate-800 font-bold bg-emerald-50 px-2 py-1.5 rounded-lg border border-emerald-100/50">{enfant.vaccinations}</span></div>
+                          )}
+                          {enfant.notesMedicales && (
+                            <div><span className="block text-slate-400 mb-1">Notes médicales :</span><span className="block text-slate-800 font-semibold bg-amber-50 px-2 py-1.5 rounded-lg border border-amber-100/50">{enfant.notesMedicales}</span></div>
+                          )}
                         </div>
                       )}
                     </div>
