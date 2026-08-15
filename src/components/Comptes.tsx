@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useDb } from '../contexts/DbContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
+import { setCollectionDocument } from '../supabase';
 import { 
   Users, 
   UserPlus, 
@@ -50,6 +51,10 @@ export default function Comptes() {
   const [email, setEmail] = useState('');
   const [motDePasse, setMotDePasse] = useState('');
   const [nomCreche, setNomCreche] = useState('');
+  const [telephoneCreche, setTelephoneCreche] = useState('');
+  const [adresseCreche, setAdresseCreche] = useState('');
+  const [tarifCreche, setTarifCreche] = useState('4500');
+  const [siteWebCreche, setSiteWebCreche] = useState('');
   const [dateFinAbonnement, setDateFinAbonnement] = useState(getDefaultDate());
   const [abonnementActif, setAbonnementActif] = useState(true);
   const [enfantId, setEnfantId] = useState('');
@@ -120,7 +125,7 @@ export default function Comptes() {
       
       const roleToSave = isAdmin ? 'directeur' : 'parent';
 
-      await addCompte({
+      const nouveauId = await addCompte({
         nom,
         prenom,
         email: email.trim().toLowerCase(),
@@ -131,6 +136,22 @@ export default function Comptes() {
         ...(roleToSave === 'parent' && enfantId ? { enfantId } : {})
       });
 
+      // ✅ Si admin a rempli les infos crèche (tel/adresse/tarif/site web), on les
+      // enregistre tout de suite -> le directeur n'aura pas besoin de repasser par
+      // l'onboarding (le doc "parametres/creche_{id}" existera déjà à son 1er login).
+      if (roleToSave === 'directeur' && nouveauId) {
+        await setCollectionDocument('parametres', `creche_${nouveauId}`, {
+          id: `creche_${nouveauId}`,
+          crecheName: nomCreche,
+          principalEmail: email.trim().toLowerCase(),
+          phoneNumbers: telephoneCreche,
+          addressLine: adresseCreche,
+          tuitionFeeRate: tarifCreche,
+          siteWeb: siteWebCreche,
+          logoUrl: '',
+        });
+      }
+
       setFormSuccess(isFrench ? 'Compte créé avec succès!' : 'تم إنشاء الحساب بنجاح!');
       
       // Reset form
@@ -139,6 +160,10 @@ export default function Comptes() {
       setEmail('');
       setMotDePasse('');
       setNomCreche('');
+      setTelephoneCreche('');
+      setAdresseCreche('');
+      setTarifCreche('4500');
+      setSiteWebCreche('');
       setDateFinAbonnement(getDefaultDate());
       setAbonnementActif(true);
       setEnfantId('');
@@ -377,7 +402,56 @@ export default function Comptes() {
                       </div>
                     </div>
 
-                    {/* Subscription End Datepicker */}
+                    {/* ✅ Infos crèche optionnelles — si remplies ici, le directeur n'aura
+                        pas besoin de repasser par l'écran d'onboarding à son 1er login. */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                          {isFrench ? 'Téléphone crèche' : 'هاتف الحضانة'}
+                        </label>
+                        <input
+                          type="text"
+                          value={telephoneCreche}
+                          onChange={(e) => setTelephoneCreche(e.target.value)}
+                          className="w-full px-3 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition text-sm"
+                          placeholder="+213 ..."
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                          {isFrench ? 'Tarif mensuel (DA)' : 'الرسوم الشهرية'}
+                        </label>
+                        <input
+                          type="number"
+                          value={tarifCreche}
+                          onChange={(e) => setTarifCreche(e.target.value)}
+                          className="w-full px-3 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition text-sm"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                        {isFrench ? 'Adresse crèche' : 'عنوان الحضانة'}
+                      </label>
+                      <input
+                        type="text"
+                        value={adresseCreche}
+                        onChange={(e) => setAdresseCreche(e.target.value)}
+                        className="w-full px-3 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                        {isFrench ? 'Site web (si dispo)' : 'الموقع الإلكتروني'}
+                      </label>
+                      <input
+                        type="text"
+                        value={siteWebCreche}
+                        onChange={(e) => setSiteWebCreche(e.target.value)}
+                        className="w-full px-3 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition text-sm"
+                        placeholder="https://..."
+                      />
+                    </div>
                     <div>
                       <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
                         {isFrench ? 'Fin de la période (essai gratuit 7j par défaut) *' : 'نهاية الفترة (تجربة مجانية 7 أيام افتراضياً) *'}

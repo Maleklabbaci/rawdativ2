@@ -60,6 +60,10 @@ declare
 begin
   foreach t in array array['enfants','classes','personnel','activites','repas'] loop
     execute format('drop policy if exists %I on %I', 'allow all ' || t, t);
+    execute format('drop policy if exists %I on %I', t || '_select', t);
+    execute format('drop policy if exists %I on %I', t || '_insert', t);
+    execute format('drop policy if exists %I on %I', t || '_update', t);
+    execute format('drop policy if exists %I on %I', t || '_delete', t);
     execute format($f$
       create policy "%1$s_select" on %1$s for select
         using (rawdha_is_admin() or (data->>'crecheId') = auth.uid()::text)
@@ -87,16 +91,19 @@ end $$;
 -- ----------------------------------------------------------------------------
 
 drop policy if exists "allow all presences" on presences;
+drop policy if exists "presences_select" on presences;
 create policy "presences_select" on presences for select
   using (
     rawdha_is_admin()
     or exists (select 1 from enfants e where e.id = (presences.data->>'enfantId') and (e.data->>'crecheId') = auth.uid()::text)
   );
+drop policy if exists "presences_insert" on presences;
 create policy "presences_insert" on presences for insert
   with check (
     rawdha_is_admin()
     or exists (select 1 from enfants e where e.id = (presences.data->>'enfantId') and (e.data->>'crecheId') = auth.uid()::text)
   );
+drop policy if exists "presences_update" on presences;
 create policy "presences_update" on presences for update
   using (
     rawdha_is_admin()
@@ -106,6 +113,7 @@ create policy "presences_update" on presences for update
     rawdha_is_admin()
     or exists (select 1 from enfants e where e.id = (presences.data->>'enfantId') and (e.data->>'crecheId') = auth.uid()::text)
   );
+drop policy if exists "presences_delete" on presences;
 create policy "presences_delete" on presences for delete
   using (
     rawdha_is_admin()
@@ -113,16 +121,19 @@ create policy "presences_delete" on presences for delete
   );
 
 drop policy if exists "allow all paiements" on paiements;
+drop policy if exists "paiements_select" on paiements;
 create policy "paiements_select" on paiements for select
   using (
     rawdha_is_admin()
     or exists (select 1 from enfants e where e.id = (paiements.data->>'enfantId') and (e.data->>'crecheId') = auth.uid()::text)
   );
+drop policy if exists "paiements_insert" on paiements;
 create policy "paiements_insert" on paiements for insert
   with check (
     rawdha_is_admin()
     or exists (select 1 from enfants e where e.id = (paiements.data->>'enfantId') and (e.data->>'crecheId') = auth.uid()::text)
   );
+drop policy if exists "paiements_update" on paiements;
 create policy "paiements_update" on paiements for update
   using (
     rawdha_is_admin()
@@ -132,6 +143,7 @@ create policy "paiements_update" on paiements for update
     rawdha_is_admin()
     or exists (select 1 from enfants e where e.id = (paiements.data->>'enfantId') and (e.data->>'crecheId') = auth.uid()::text)
   );
+drop policy if exists "paiements_delete" on paiements;
 create policy "paiements_delete" on paiements for delete
   using (
     rawdha_is_admin()
@@ -149,8 +161,10 @@ create policy "paiements_delete" on paiements for delete
 -- ----------------------------------------------------------------------------
 
 drop policy if exists "allow all comptes" on comptes;
+drop policy if exists "comptes_select" on comptes;
 create policy "comptes_select" on comptes for select
   using (rawdha_is_admin() or id = auth.uid()::text);
+drop policy if exists "comptes_update" on comptes;
 create policy "comptes_update" on comptes for update
   using (rawdha_is_admin() or id = auth.uid()::text)
   with check (rawdha_is_admin() or id = auth.uid()::text);
@@ -162,13 +176,17 @@ create policy "comptes_update" on comptes for update
 -- ----------------------------------------------------------------------------
 
 drop policy if exists "allow all discussion_messages" on discussion_messages;
+drop policy if exists "messages_select" on discussion_messages;
 create policy "messages_select" on discussion_messages for select
   using (rawdha_is_admin() or (data->>'parentId') = auth.uid()::text);
+drop policy if exists "messages_insert" on discussion_messages;
 create policy "messages_insert" on discussion_messages for insert
   with check (rawdha_is_admin() or (data->>'parentId') = auth.uid()::text);
+drop policy if exists "messages_update" on discussion_messages;
 create policy "messages_update" on discussion_messages for update
   using (rawdha_is_admin() or (data->>'parentId') = auth.uid()::text)
   with check (rawdha_is_admin() or (data->>'parentId') = auth.uid()::text);
+drop policy if exists "messages_delete" on discussion_messages;
 create policy "messages_delete" on discussion_messages for delete
   using (rawdha_is_admin() or (data->>'parentId') = auth.uid()::text);
 
@@ -179,13 +197,17 @@ create policy "messages_delete" on discussion_messages for delete
 -- ----------------------------------------------------------------------------
 
 drop policy if exists "allow all parametres" on parametres;
+drop policy if exists "parametres_select" on parametres;
 create policy "parametres_select" on parametres for select
   using (rawdha_is_admin() or id = 'creche_' || auth.uid()::text);
+drop policy if exists "parametres_insert" on parametres;
 create policy "parametres_insert" on parametres for insert
   with check (rawdha_is_admin() or id = 'creche_' || auth.uid()::text);
+drop policy if exists "parametres_update" on parametres;
 create policy "parametres_update" on parametres for update
   using (rawdha_is_admin() or id = 'creche_' || auth.uid()::text)
   with check (rawdha_is_admin() or id = 'creche_' || auth.uid()::text);
+drop policy if exists "parametres_delete" on parametres;
 create policy "parametres_delete" on parametres for delete
   using (rawdha_is_admin() or id = 'creche_' || auth.uid()::text);
 
@@ -196,8 +218,10 @@ create policy "parametres_delete" on parametres for delete
 -- ----------------------------------------------------------------------------
 
 drop policy if exists "allow all avis" on avis;
+drop policy if exists "avis_select" on avis;
 create policy "avis_select" on avis for select
   using (rawdha_is_admin() or (data->>'userId') = auth.uid()::text);
+drop policy if exists "avis_insert" on avis;
 create policy "avis_insert" on avis for insert
   with check (rawdha_is_admin() or (data->>'userId') = auth.uid()::text);
 
@@ -219,14 +243,17 @@ create policy "avis_insert" on avis for insert
 
 alter table notifications enable row level security;
 drop policy if exists "allow all notifications" on notifications;
+drop policy if exists "notifications_select" on notifications;
 create policy "notifications_select" on notifications for select
   using (
     rawdha_is_admin()
     or (data->>'recipientRole') = 'all_directeurs'
     or (data->>'recipientRole') = auth.uid()::text
   );
+drop policy if exists "notifications_insert" on notifications;
 create policy "notifications_insert" on notifications for insert
   with check (rawdha_is_admin());
+drop policy if exists "notifications_update" on notifications;
 create policy "notifications_update" on notifications for update
   using (
     rawdha_is_admin()
@@ -234,6 +261,7 @@ create policy "notifications_update" on notifications for update
     or (data->>'recipientRole') = auth.uid()::text
   )
   with check (true); -- un directeur doit pouvoir mettre à jour "readBy" pour marquer comme lue
+drop policy if exists "notifications_delete" on notifications;
 create policy "notifications_delete" on notifications for delete
   using (rawdha_is_admin());
 

@@ -31,10 +31,24 @@ export default function Notifications() {
   const [sending, setSending] = useState(false);
   const [success, setSuccess] = useState(false);
 
+  // ✅ Destinataire : tous les directeurs, ou un seul en particulier
+  const [recipientId, setRecipientId] = useState('all_directeurs');
+
+  // ✅ Bouton d'action optionnel dans le popup
+  const [ctaLabel, setCtaLabel] = useState('');
+  const [ctaType, setCtaType] = useState<'link' | 'page'>('link');
+  const [ctaUrl, setCtaUrl] = useState('');
+  const [ctaPage, setCtaPage] = useState('paiements');
+
+  // ✅ Répétition forcée (pour insister sur une annonce importante)
+  const [repeatEnabled, setRepeatEnabled] = useState(false);
+  const [repeatCount, setRepeatCount] = useState(3);
+  const [repeatIntervalSeconds, setRepeatIntervalSeconds] = useState(10);
+
   const directeurs = comptes.filter(c => c.role === 'directeur');
 
   const mesAnnonces = [...notifications]
-    .filter(n => n.recipientRole === 'all_directeurs')
+    .filter(n => n.recipientRole === 'all_directeurs' || directeurs.some(d => d.id === n.recipientRole))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const applyPreset = (preset: typeof PRESET_COLORS[0]) => {
@@ -50,7 +64,7 @@ export default function Notifications() {
       await addNotification({
         title: title.trim(),
         message: message.trim(),
-        recipientRole: 'all_directeurs',
+        recipientRole: recipientId,
         senderName: user?.prenom ? `${user.prenom} ${user.nom}` : 'Admin',
         createdAt: new Date().toISOString(),
         readBy: [],
@@ -59,9 +73,18 @@ export default function Notifications() {
         buttonColor,
         icon,
         showAsPopup,
+        ...(ctaLabel.trim() ? {
+          ctaLabel: ctaLabel.trim(),
+          ctaType,
+          ...(ctaType === 'link' ? { ctaUrl: ctaUrl.trim() } : { ctaPage }),
+        } : {}),
+        ...(repeatEnabled ? { repeatCount, repeatIntervalSeconds } : {}),
       });
       setTitle('');
       setMessage('');
+      setCtaLabel('');
+      setCtaUrl('');
+      setRepeatEnabled(false);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 2500);
     } catch (err) {
@@ -220,13 +243,124 @@ export default function Notifications() {
             </label>
           </div>
 
+          {/* ✅ Destinataire */}
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+              {isFrench ? 'Destinataire' : 'المستلم'}
+            </label>
+            <select
+              value={recipientId}
+              onChange={e => setRecipientId(e.target.value)}
+              className="w-full px-3 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition text-sm"
+            >
+              <option value="all_directeurs">
+                {isFrench ? `Tous les directeurs (${directeurs.length})` : `جميع المديرين (${directeurs.length})`}
+              </option>
+              {directeurs.map(d => (
+                <option key={d.id} value={d.id}>
+                  {d.prenom} {d.nom} — {d.nomCreche || d.email}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* ✅ Bouton d'action optionnel dans le popup */}
+          <div className="border border-slate-100 rounded-xl p-4 space-y-3">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+              {isFrench ? "Bouton d'action (optionnel)" : 'زر إجراء (اختياري)'}
+            </label>
+            <input
+              type="text"
+              value={ctaLabel}
+              onChange={e => setCtaLabel(e.target.value)}
+              placeholder={isFrench ? 'Ex: Payer maintenant, Voir mes factures...' : 'مثال: ادفع الآن'}
+              className="w-full px-3 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition text-sm"
+            />
+            {ctaLabel.trim() && (
+              <>
+                <div className="flex gap-3">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer">
+                    <input type="radio" checked={ctaType === 'link'} onChange={() => setCtaType('link')} className="accent-indigo-600" />
+                    {isFrench ? 'Lien externe (WhatsApp, site...)' : 'رابط خارجي'}
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer">
+                    <input type="radio" checked={ctaType === 'page'} onChange={() => setCtaType('page')} className="accent-indigo-600" />
+                    {isFrench ? 'Page de l\'app' : 'صفحة في التطبيق'}
+                  </label>
+                </div>
+                {ctaType === 'link' ? (
+                  <input
+                    type="text"
+                    value={ctaUrl}
+                    onChange={e => setCtaUrl(e.target.value)}
+                    placeholder="https://wa.me/213..."
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition text-sm"
+                  />
+                ) : (
+                  <select
+                    value={ctaPage}
+                    onChange={e => setCtaPage(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition text-sm"
+                  >
+                    <option value="paiements">{isFrench ? 'Paiements' : 'المدفوعات'}</option>
+                    <option value="enfants">{isFrench ? 'Enfants' : 'الأطفال'}</option>
+                    <option value="parametres">{isFrench ? 'Paramètres' : 'الإعدادات'}</option>
+                  </select>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* ✅ Répétition forcée */}
+          <div className="border border-slate-100 rounded-xl p-4 space-y-3">
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={repeatEnabled}
+                onChange={e => setRepeatEnabled(e.target.checked)}
+                className="w-4 h-4 accent-indigo-600 cursor-pointer"
+              />
+              <span className="text-xs font-semibold text-slate-600">
+                {isFrench ? "Forcer le popup à réapparaître (annonce importante)" : 'إجبار النافذة على الظهور مجدداً'}
+              </span>
+            </label>
+            {repeatEnabled && (
+              <div className="flex gap-3 items-center pl-6">
+                <label className="text-xs text-slate-500">
+                  {isFrench ? 'Répéter' : 'كرر'}
+                  <select
+                    value={repeatCount}
+                    onChange={e => setRepeatCount(Number(e.target.value))}
+                    className="mx-2 px-2 py-1.5 border border-slate-200 rounded-lg text-xs"
+                  >
+                    <option value={2}>2</option>
+                    <option value={3}>3</option>
+                    <option value={4}>4</option>
+                    <option value={5}>5</option>
+                  </select>
+                  {isFrench ? 'fois, toutes les' : 'مرات، كل'}
+                  <select
+                    value={repeatIntervalSeconds}
+                    onChange={e => setRepeatIntervalSeconds(Number(e.target.value))}
+                    className="mx-2 px-2 py-1.5 border border-slate-200 rounded-lg text-xs"
+                  >
+                    <option value={5}>5s</option>
+                    <option value={10}>10s</option>
+                    <option value={20}>20s</option>
+                    <option value={30}>30s</option>
+                  </select>
+                </label>
+              </div>
+            )}
+          </div>
+
           <button
             onClick={handleSend}
             disabled={sending || !title.trim() || !message.trim()}
             className="w-full px-5 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 cursor-pointer transition"
           >
             <Send className="w-4 h-4" />
-            {sending ? (isFrench ? 'Envoi...' : 'جارٍ الإرسال...') : (isFrench ? 'Envoyer à tous les directeurs' : 'إرسال لجميع المديرين')}
+            {sending ? (isFrench ? 'Envoi...' : 'جارٍ الإرسال...') : (isFrench ? 'Envoyer' : 'إرسال')}
           </button>
           {success && (
             <p className="text-xs font-semibold text-emerald-600 flex items-center gap-1.5">
@@ -276,7 +410,12 @@ export default function Notifications() {
         ) : (
           <div className="divide-y divide-slate-50">
             {mesAnnonces.map(n => {
-              const readCount = directeurs.filter(d => n.readBy?.includes(d.id)).length;
+              const isTargeted = n.recipientRole !== 'all_directeurs';
+              const targetDir = isTargeted ? directeurs.find(d => d.id === n.recipientRole) : null;
+              const readCount = isTargeted
+                ? (n.readBy?.includes(n.recipientRole) ? 1 : 0)
+                : directeurs.filter(d => n.readBy?.includes(d.id)).length;
+              const totalCount = isTargeted ? 1 : directeurs.length;
               return (
                 <div key={n.id} className="px-5 sm:px-6 py-4 flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -295,8 +434,13 @@ export default function Notifications() {
                         </span>
                         <span className="text-[10px] font-bold text-indigo-500 flex items-center gap-1">
                           <Users className="w-3 h-3" />
-                          {readCount}/{directeurs.length} {isFrench ? 'lue(s)' : 'قرأها'}
+                          {readCount}/{totalCount} {isFrench ? 'lue(s)' : 'قرأها'}
                         </span>
+                        {isTargeted && (
+                          <span className="text-[10px] font-bold text-slate-400">
+                            → {targetDir ? `${targetDir.prenom} ${targetDir.nom}` : n.recipientRole}
+                          </span>
+                        )}
                         {n.showAsPopup !== false && (
                           <span className="text-[9px] font-bold uppercase text-violet-500 bg-violet-50 px-1.5 py-0.5 rounded-full">
                             {isFrench ? 'Popup' : 'نافذة'}

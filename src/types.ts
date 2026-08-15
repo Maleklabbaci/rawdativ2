@@ -85,6 +85,14 @@ export interface AppNotification {
   buttonColor?: string;   // couleur du bouton "Fermer/OK"
   icon?: string;          // emoji affiché en haut du popup (ex: '🎉')
   showAsPopup?: boolean;  // true = s'affiche en popup plein écran, false = juste dans la cloche
+  // --- Bouton d'action optionnel dans le popup ---
+  ctaLabel?: string;                  // texte du bouton (ex: "Payer maintenant"). Vide = pas de bouton.
+  ctaType?: 'link' | 'page';          // 'link' = ouvre une URL externe, 'page' = navigue dans l'app
+  ctaUrl?: string;                    // utilisé si ctaType === 'link'
+  ctaPage?: string;                   // utilisé si ctaType === 'page' (ex: 'paiements')
+  // --- Répétition forcée du popup (pour les annonces importantes) ---
+  repeatCount?: number;               // combien de fois reforcer l'affichage après fermeture (0 = jamais)
+  repeatIntervalSeconds?: number;     // délai entre chaque réaffichage forcé
 }
 
 export interface Personnel {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useDb } from '../contexts/DbContext';
 import { motion, AnimatePresence } from 'motion/react';
@@ -7,26 +7,67 @@ import { motion, AnimatePresence } from 'motion/react';
 // S'affiche par-dessus tout le reste dès qu'il y a une annonce non lue,
 // avec exactement les couleurs/icône choisies par l'admin dans Notifications.tsx.
 // Si plusieurs annonces non lues, elles s'affichent une par une (la plus récente d'abord).
-export default function NotificationPopup() {
+//
+// ✅ Répétition forcée : si l'admin a défini repeatCount > 0, fermer le popup ne le
+// marque PAS comme lu tout de suite — il réapparaît automatiquement après
+// repeatIntervalSeconds, jusqu'à épuisement du compteur. Seule la dernière fermeture
+// marque réellement l'annonce comme lue.
+//
+// onNavigate : callback fourni par App.tsx pour que le bouton CTA (si ctaType === 'page')
+// puisse changer de page dans l'appli.
+export default function NotificationPopup({ onNavigate }: { onNavigate?: (page: string) => void }) {
   const { user } = useAuth();
   const { notifications, markNotificationRead } = useDb();
   const [dismissedThisSession, setDismissedThisSession] = useState<string[]>([]);
+  const [hiddenTemporarily, setHiddenTemporarily] = useState<string[]>([]);
+  const repeatsLeftRef = useRef<Record<string, number>>({});
+  const timersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const popupsAVoir = notifications
     .filter(n =>
       (n.recipientRole === 'all_directeurs' || n.recipientRole === user?.id) &&
       n.showAsPopup !== false &&
       !n.readBy?.includes(user?.id || '') &&
-      !dismissedThisSession.includes(n.id)
+      !dismissedThisSession.includes(n.id) &&
+      !hiddenTemporarily.includes(n.id)
     )
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const current = popupsAVoir[0];
 
+  useEffect(() => () => {
+    Object.values(timersRef.current).forEach(clearTimeout);
+  }, []);
+
   const handleClose = () => {
     if (!current || !user?.id) return;
-    setDismissedThisSession(prev => [...prev, current.id]); // disparaît immédiatement de l'écran
-    markNotificationRead(current.id, user.id); // et se marque comme lue en base
+
+    if (repeatsLeftRef.current[current.id] === undefined) {
+      repeatsLeftRef.current[current.id] = current.repeatCount || 0;
+    }
+
+    if (repeatsLeftRef.current[current.id] > 0) {
+      repeatsLeftRef.current[current.id] -= 1;
+      setHiddenTemporarily(prev => [...prev, current.id]);
+      const delayMs = (current.repeatIntervalSeconds || 10) * 1000;
+      timersRef.current[current.id] = setTimeout(() => {
+        setHiddenTemporarily(prev => prev.filter(id => id !== current.id));
+      }, delayMs);
+    } else {
+      setDismissedThisSession(prev => [...prev, current.id]);
+      markNotificationRead(current.id, user.id);
+    }
+  };
+
+  const handleCta = () => {
+    if (!current || !user?.id) return;
+    if (current.ctaType === 'link' && current.ctaUrl) {
+      window.open(current.ctaUrl, '_blank', 'noopener,noreferrer');
+    } else if (current.ctaType === 'page' && current.ctaPage && onNavigate) {
+      onNavigate(current.ctaPage);
+    }
+    setDismissedThisSession(prev => [...prev, current.id]);
+    markNotificationRead(current.id, user.id);
   };
 
   if (!current) return null;
@@ -34,6 +75,7 @@ export default function NotificationPopup() {
   const bgColor = current.bgColor || '#4f46e5';
   const textColor = current.textColor || '#ffffff';
   const buttonColor = current.buttonColor || '#ffffff';
+  const repeatsLeft = repeatsLeftRef.current[current.id] ?? (current.repeatCount || 0);
 
   return (
     <AnimatePresence>
@@ -56,15 +98,32 @@ export default function NotificationPopup() {
           <p className="text-sm opacity-90 leading-relaxed break-words whitespace-pre-line">
             {current.message}
           </p>
+
+          {current.ctaLabel && (
+            <button
+              onClick={handleCta}
+              className="mt-5 w-full py-3 rounded-xl font-bold text-sm cursor-pointer transition hover:opacity-90"
+              style={{ backgroundColor: buttonColor, color: bgColor }}
+            >
+              {current.ctaLabel}
+            </button>
+          )}
+
           <button
             onClick={handleClose}
-            className="mt-6 w-full py-3 rounded-xl font-bold text-sm cursor-pointer transition hover:opacity-80"
+            className="mt-3 w-full py-3 rounded-xl font-bold text-sm cursor-pointer transition hover:opacity-80"
             style={{ backgroundColor: 'rgba(255,255,255,0.15)', color: buttonColor }}
           >
             Compris
           </button>
-          {popupsAVoir.length > 1 && (
+
+          {repeatsLeft > 0 && (
             <p className="text-[11px] opacity-70 mt-3">
+              Ce message réapparaîtra {repeatsLeft} fois de plus
+            </p>
+          )}
+          {popupsAVoir.length > 1 && (
+            <p className="text-[11px] opacity-70 mt-1">
               +{popupsAVoir.length - 1} autre{popupsAVoir.length - 1 > 1 ? 's' : ''} annonce{popupsAVoir.length - 1 > 1 ? 's' : ''} après celle-ci
             </p>
           )}

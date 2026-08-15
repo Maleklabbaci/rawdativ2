@@ -21,9 +21,11 @@ const Parametres = lazy(() => import('./components/Parametres'));
 const Comptes = lazy(() => import('./components/Comptes'));
 const Notifications = lazy(() => import('./components/Notifications'));
 import NotificationBell from './components/NotificationBell';
+import SubscriptionStatusBadge from './components/SubscriptionStatusBadge';
 import NotificationPopup from './components/NotificationPopup';
 import ChatBubble from './components/ChatBubble';
 import { AlertCircle, Lock, Check } from 'lucide-react';
+import OnboardingCrecheModal, { hasCompletedOnboarding } from './components/OnboardingCrecheModal';
 
 function AppContent() {
   const { isAuthenticated, user, creche, logout } = useAuth();
@@ -33,6 +35,17 @@ function AppContent() {
   const [showCouponInput, setShowCouponInput] = useState(false); // ✅ champ coupon replié par défaut, pour ne pas distraire du CTA principal // ✅ champ code coupon sur l'écran d'abonnement expiré
   const { language, setLanguage, t } = useLanguage();
   const { loading, comptes } = useDb();
+
+  // ✅ Onboarding premier login : on vérifie une fois si le directeur a déjà rempli
+  // ses infos de crèche (existence du doc "parametres/creche_{id}"). null = pas encore vérifié.
+  const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (user?.role === 'directeur') {
+      hasCompletedOnboarding(user.id).then(done => setNeedsOnboarding(!done));
+    } else {
+      setNeedsOnboarding(false);
+    }
+  }, [user?.id, user?.role]);
 
   useEffect(() => {
     if (user?.role === 'admin') {
@@ -323,6 +336,14 @@ if (isSubscriptionExpired) {
                 </div>
               </div>
               <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+                {/* Statut essai/abonnement — uniquement pour les directeurs */}
+                {user?.role === 'directeur' && (
+                  <SubscriptionStatusBadge
+                    dateFinAbonnement={liveUser?.dateFinAbonnement}
+                    abonnementActif={liveUser?.abonnementActif}
+                  />
+                )}
+
                 {/* Cloche de notifications — uniquement pour les directeurs */}
                 {user?.role === 'directeur' && (
                   <NotificationBell onNavigateToPaiements={() => setCurrentPage('paiements')} />
@@ -367,6 +388,9 @@ if (isSubscriptionExpired) {
 
         {/* Page Content */}
 <main className="p-3 sm:p-6 lg:p-10 max-w-[1600px] mx-auto">
+  {needsOnboarding && (
+    <OnboardingCrecheModal onDone={() => setNeedsOnboarding(false)} />
+  )}
   {renderPage()}
         </main>
       </div>
@@ -375,7 +399,7 @@ if (isSubscriptionExpired) {
       <ChatBubble />
 
       {/* Popup d'annonce admin personnalisé — uniquement pour les directeurs */}
-      {user?.role === 'directeur' && <NotificationPopup />}
+      {user?.role === 'directeur' && <NotificationPopup onNavigate={setCurrentPage} />}
     </div>
   );
 }
