@@ -9,6 +9,12 @@ interface CrecheInfo {
   tuitionFeeRate: number;
 }
 
+interface AuthUserSnapshot {
+  id: string;
+  email?: string | null;
+  user_metadata?: Record<string, unknown> | null;
+}
+
 interface DirectorSignupDetails {
   nom: string;
   prenom: string;
@@ -52,18 +58,52 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [creche, setCreche] = useState<CrecheInfo>(DEFAULT_CRECHE);
 
-  // Charge le profil (table "comptes") associé à la session Auth active
-  const loadProfile = async (userId: string): Promise<UserAccount | null> => {
+  // Charge le profil (table "comptes") associé à la session Auth active.
+  // Si le trigger Supabase n’est pas encore installé, on tente de créer un profil
+  // directeur minimal avec la session Auth afin de ne pas bloquer l’onboarding.
+  const loadProfile = async (userId: string, authUserSnapshot?: AuthUserSnapshot): Promise<UserAccount | null> => {
     const { data, error } = await supabase
       .from('comptes')
       .select('id, data')
       .eq('id', userId)
       .maybeSingle();
 
-    if (error || !data) {
+    if (error) {
       console.error('Erreur chargement profil:', error);
       return null;
     }
+
+    if (!data) {
+      const authUser = authUserSnapshot || (await supabase.auth.getUser()).data.user;
+      if (!authUser || authUser.id !== userId) return null;
+
+      const metadata = (authUser.user_metadata || {}) as Record<string, unknown>;
+      const fullName = String(metadata.full_name || metadata.name || '').trim();
+      const nameParts = fullName.split(/\s+/).filter(Boolean);
+      const fallbackProfile: UserAccount = {
+        id: userId,
+        nom: String(metadata.nom || nameParts.slice(1).join(' ') || '').trim(),
+        prenom: String(metadata.prenom || nameParts[0] || '').trim(),
+        email: authUser.email || '',
+        motDePasse: '',
+        role: 'directeur',
+        abonnementActif: true,
+        dateFinAbonnement: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        nomCreche: String(metadata.nomCreche || '').trim(),
+      };
+
+      const { id: _profileId, ...profileData } = fallbackProfile;
+      const { error: createError } = await supabase.from('comptes').upsert({
+        id: userId,
+        data: profileData,
+      });
+      if (createError) {
+        console.error('Impossible de créer le profil directeur de secours:', createError);
+        return null;
+      }
+      return fallbackProfile;
+    }
+
     const profile = { ...(data.data as object), id: data.id } as UserAccount;
     // Rawdha+ ne propose pas encore d’espace parent : seuls admin et directeur
     // peuvent ouvrir une session de gestion dans cette version.
@@ -100,7 +140,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // Vérifie s'il y a déjà une session active (persistée par Supabase automatiquement)
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
-        const profile = await loadProfile(session.user.id);
+        const profile = await loadProfile(session.user.id, session.user);
         setUser(profile);
         await loadCrecheSettings(profile);
       }
@@ -110,7 +150,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // Écoute les changements de session (login/logout dans un autre onglet, expiration, etc.)
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
-        const profile = await loadProfile(session.user.id);
+        const profile = await loadProfile(session.user.id, session.user);
         setUser(profile);
         await loadCrecheSettings(profile);
       } else {
@@ -135,7 +175,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return null;
     }
 
-    const profile = await loadProfile(data.user.id);
+    const profile = await loadProfile(data.user.id, data.user);
     setUser(profile);
     await loadCrecheSettings(profile);
     return profile;
@@ -167,7 +207,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // Lorsque la confirmation e-mail est désactivée, la session est créée immédiatement.
     // Sinon, le trigger Supabase crée le profil et la connexion se fera après confirmation.
     if (data.session) {
-      const profile = await loadProfile(data.user.id);
+      const profile = await loadProfile(data.user.id, data.user);
       setUser(profile);
       await loadCrecheSettings(profile);
       if (!profile) {
@@ -204,7 +244,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       type: 'email',
     });
     if (!error && data.user) {
-      const profile = await loadProfile(data.user.id);
+      const profile = await loadProfile(data.user.id, data.user);
       setUser(profile);
       await loadCrecheSettings(profile);
       if (!profile) return { error: 'Compte authentifié mais profil Rawdha+ introuvable.' };
@@ -228,7 +268,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       type: 'sms',
     });
     if (!error && data.user) {
-      const profile = await loadProfile(data.user.id);
+      const profile = await loadProfile(data.user.id, data.user);
       setUser(profile);
       await loadCrecheSettings(profile);
       if (!profile) return { error: 'Compte authentifié mais profil Rawdha+ introuvable.' };
