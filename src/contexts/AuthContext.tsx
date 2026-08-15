@@ -26,6 +26,21 @@ interface DirectorSignupDetails {
   siteWeb?: string;
 }
 
+function normalizeAuthError(error: unknown): string | null {
+  if (!error) return null;
+  if (typeof error === 'string') return error.trim() || null;
+  if (error instanceof Error) return error.message?.trim() || null;
+  if (typeof error === 'object') {
+    const candidate = error as Record<string, unknown>;
+    const directMessage = [candidate.message, candidate.error_description, candidate.msg]
+      .find((value) => typeof value === 'string' && value.trim());
+    if (typeof directMessage === 'string') return directMessage.trim();
+    const serialized = JSON.stringify(error);
+    return serialized && serialized !== '{}' ? serialized : null;
+  }
+  return String(error);
+}
+
 interface AuthContextType {
   isAuthenticated: boolean;
   user: UserAccount | null;
@@ -201,7 +216,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     });
 
     if (error || !data.user) {
-      return { error: error?.message || 'La création du compte directeur a échoué.', requiresEmailConfirmation: false };
+      return { error: normalizeAuthError(error) || 'La création du compte directeur a échoué.', requiresEmailConfirmation: false };
     }
 
     // Lorsque la confirmation e-mail est désactivée, la session est créée immédiatement.
@@ -223,7 +238,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       provider: 'google',
       options: { redirectTo: window.location.origin },
     });
-    return { error: error?.message || null };
+    return { error: normalizeAuthError(error) };
   };
 
   const requestEmailOtp = async (email: string): Promise<{ error: string | null }> => {
@@ -234,7 +249,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         emailRedirectTo: window.location.origin,
       },
     });
-    return { error: error?.message || null };
+    return { error: normalizeAuthError(error) };
   };
 
   const verifyEmailOtp = async (email: string, token: string): Promise<{ error: string | null }> => {
@@ -249,7 +264,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       await loadCrecheSettings(profile);
       if (!profile) return { error: 'Compte authentifié mais profil Rawdha+ introuvable.' };
     }
-    return { error: error?.message || null };
+    return { error: normalizeAuthError(error) };
   };
 
   const requestPhoneOtp = async (phone: string): Promise<{ error: string | null }> => {
@@ -257,7 +272,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       phone: phone.trim().replace(/\s+/g, ''),
       options: { shouldCreateUser: false },
     });
-    return { error: error?.message || null };
+    return { error: normalizeAuthError(error) };
   };
 
   const verifyPhoneOtp = async (phone: string, token: string): Promise<{ error: string | null }> => {
@@ -273,7 +288,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       await loadCrecheSettings(profile);
       if (!profile) return { error: 'Compte authentifié mais profil Rawdha+ introuvable.' };
     }
-    return { error: error?.message || null };
+    return { error: normalizeAuthError(error) };
   };
 
   const logout = async () => {

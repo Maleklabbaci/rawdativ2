@@ -21,7 +21,7 @@ import {
 type AuthMethod = 'password' | 'email' | 'phone';
 
 function formatAuthError(message: string | null, fallback: string): string {
-  if (!message) return fallback;
+  if (!message || message === '{}' || message === '[object Object]') return fallback;
   const normalized = message.toLowerCase();
   if (normalized.includes('provider is not enabled') || normalized.includes('unsupported provider')) return 'Cette méthode n’est pas encore activée dans Supabase Auth.';
   if (normalized.includes('invalid login credentials')) return 'Identifiants incorrects. Vérifiez votre adresse e-mail et votre mot de passe.';
@@ -161,7 +161,7 @@ export default function SignIn() {
       : await requestPhoneOtp(value);
 
     if (result.error) {
-      setError(formatAuthError(result.error, 'Impossible d’envoyer le code de connexion.'));
+      setError(formatAuthError(result.error, 'Le lien de connexion n’a pas pu être envoyé. Réessayez dans quelques secondes.'));
     } else {
       setOtpSent(true);
       setSuccess(method === 'email'
