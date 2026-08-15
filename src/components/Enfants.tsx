@@ -30,8 +30,6 @@ import {
   Copy,
   Download,
   ExternalLink,
-  Link2,
-  Loader2
 } from 'lucide-react';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -64,7 +62,6 @@ export default function Enfants() {
     addEnfant,
     deleteEnfant,
     updateEnfant,
-    createInscriptionLink,
     inscriptionLinks,
     demandesAdmission,
     decideAdmission,
@@ -86,8 +83,6 @@ export default function Enfants() {
   // خاصية جديدة: تغيير طريقة العرض بين شبكة (Grid) وقائمة (List)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [showAdmissionQr, setShowAdmissionQr] = useState(false);
-  const [creatingAdmissionLink, setCreatingAdmissionLink] = useState(false);
-  const [admissionLabel, setAdmissionLabel] = useState('');
   const [newAdmissionLink, setNewAdmissionLink] = useState<(InscriptionLink & { token: string }) | null>(null);
   const [admissionQrDataUrl, setAdmissionQrDataUrl] = useState('');
   const [admissionLinkCopied, setAdmissionLinkCopied] = useState(false);
@@ -144,27 +139,6 @@ export default function Enfants() {
     }).then(setAdmissionQrDataUrl).catch(error => console.error('Erreur de restauration du QR:', error));
   }, [inscriptionLinks]);
 
-  const generateAdmissionQr = async () => {
-    setCreatingAdmissionLink(true);
-    try {
-      const created = await createInscriptionLink(admissionLabel.trim() || (isArabic ? 'رابط التسجيل' : "Lien d'inscription"));
-      const url = `${window.location.origin}/admission?token=${encodeURIComponent(created.token)}`;
-      setNewAdmissionLink(created);
-      setAdmissionLabel('');
-      setAdmissionLinkCopied(false);
-      setAdmissionQrDataUrl(await QRCode.toDataURL(url, {
-        width: 440,
-        margin: 2,
-        errorCorrectionLevel: 'M',
-        color: { dark: '#172554', light: '#ffffff' },
-      }));
-    } catch (error) {
-      console.error('Erreur de création du QR d’admission depuis Enfants:', error);
-      alert(isArabic ? 'تعذر إنشاء رمز QR.' : 'Impossible de créer le QR d’admission.');
-    } finally {
-      setCreatingAdmissionLink(false);
-    }
-  };
 
   const copyAdmissionLink = async () => {
     if (!admissionLinkUrl) return;
@@ -449,24 +423,20 @@ export default function Enfants() {
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-200">RAWDHA+ • {isArabic ? 'قبول الأطفال' : 'Admission enfant'}</p>
               <h2 className="mt-1 text-xl font-black">{isArabic ? 'رمز QR داخل صفحة الأطفال' : 'Admission par QR, directement dans Enfants'}</h2>
-              <p className="mt-1 max-w-2xl text-xs leading-5 text-indigo-100/75">{isArabic ? 'أنشئ رابط التسجيل وأرسله للأولياء دون مغادرة ملف الأطفال.' : 'Créez le lien d’inscription et envoyez-le aux parents sans quitter le dossier Enfants.'}</p>
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-indigo-100/75">{isArabic ? 'رمز QR دائم يتم إنشاؤه تلقائياً لهذه الروضة. شاركه مع الأولياء لاستقبال طلبات التسجيل.' : 'Un seul QR permanent est créé automatiquement pour cette crèche. Partagez-le aux parents pour recevoir leurs demandes.'}</p>
             </div>
           </div>
           <button type="button" onClick={() => setShowAdmissionQr(value => !value)} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-xs font-black text-indigo-800 shadow-lg transition hover:bg-indigo-50">
             {showAdmissionQr ? <X className="h-4 w-4" /> : <QrCode className="h-4 w-4" />}
-            {showAdmissionQr ? (isArabic ? 'إغلاق' : 'Fermer') : (isArabic ? 'إنشاء QR' : 'Gérer les QR')}
+            {showAdmissionQr ? (isArabic ? 'إغلاق' : 'Fermer') : (isArabic ? 'عرض QR الدائم' : 'Afficher mon QR permanent')}
           </button>
         </div>
 
         {showAdmissionQr && (
           <div className="mt-6 grid gap-5 border-t border-white/10 pt-5 xl:grid-cols-[1fr_auto]">
             <div>
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <input value={admissionLabel} onChange={event => setAdmissionLabel(event.target.value)} placeholder={isArabic ? 'اسم الرابط (اختياري)' : "Nom du lien (facultatif)"} className="min-w-0 flex-1 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-white outline-none placeholder:text-indigo-200 focus:border-white/60" />
-                <button type="button" onClick={generateAdmissionQr} disabled={creatingAdmissionLink} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-black text-emerald-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60">
-                  {creatingAdmissionLink ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
-                  {creatingAdmissionLink ? (isArabic ? 'جاري الإنشاء...' : 'Création...') : (isArabic ? 'إنشاء الرابط' : 'Générer le lien')}
-                </button>
+              <div className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-sm font-bold text-emerald-100">
+                {isArabic ? 'هذا هو رمز الروضة الوحيد والدائم. لا حاجة لإنشاء رمز جديد.' : 'Ce QR est le seul QR permanent de votre crèche. Aucun nouveau code ne doit être généré.'}
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-indigo-100/75">
                 <span className="rounded-full bg-white/10 px-3 py-1.5">{inscriptionLinks.filter(link => link.active).length} {isArabic ? 'روابط نشطة' : 'lien(s) actif(s)'}</span>
@@ -474,7 +444,7 @@ export default function Enfants() {
               </div>
               {newAdmissionLink && admissionLinkUrl && (
                 <div className="mt-4 rounded-2xl bg-white p-4 text-slate-900">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600">{isArabic ? 'تم إنشاء الرابط' : 'Lien créé avec succès'}</p>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600">{isArabic ? 'رمز QR الدائم لروضتك' : 'QR permanent de votre crèche'}</p>
                   <p className="mt-2 break-all rounded-xl bg-slate-50 p-3 text-[11px] font-semibold text-slate-600">{admissionLinkUrl}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button type="button" onClick={copyAdmissionLink} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-100"><Copy className="h-3.5 w-3.5" />{admissionLinkCopied ? (isArabic ? 'تم النسخ' : 'Copié') : (isArabic ? 'نسخ' : 'Copier')}</button>

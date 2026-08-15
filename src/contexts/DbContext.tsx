@@ -57,6 +57,7 @@ interface DbContextType {
   deleteCommunityComment: (id: string) => Promise<void>;
   toggleCommunityReaction: (postId: string) => Promise<void>;
 
+  ensureInscriptionLink: () => Promise<(InscriptionLink & { token: string }) | null>;
   createInscriptionLink: (label?: string, expiresAt?: string | null) => Promise<InscriptionLink & { token: string }>;
   toggleInscriptionLink: (id: string, active: boolean) => Promise<void>;
   decideAdmission: (id: string, statut: 'acceptee' | 'refusee', motif?: string) => Promise<void>;
@@ -259,10 +260,18 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
     const refreshAdmissionData = async () => {
       if (user?.role !== 'directeur') return;
-      const [links, demandes] = await Promise.all([
-        getCollectionData<InscriptionLink>('inscription_liens'),
-        getCollectionData<DemandeAdmission>('demandes_admission'),
-      ]);
+      let links = await getCollectionData<InscriptionLink>('inscription_liens');
+      // Les nouveaux comptes reçoivent leur QR via le trigger SQL. Pour les anciens
+      // comptes, on répare automatiquement une seule fois sans afficher de bouton de génération.
+      if (!links.some(link => link.active && link.token)) {
+        try {
+          const provisioned = await ensureInscriptionLink();
+          if (provisioned) links = [provisioned, ...links.filter(link => link.id !== provisioned.id)];
+        } catch (error) {
+          console.error('Impossible de provisionner automatiquement le QR de la crèche:', error);
+        }
+      }
+      const demandes = await getCollectionData<DemandeAdmission>('demandes_admission');
       setInscriptionLinks(links);
       setDemandesAdmission(demandes);
     };
@@ -902,6 +911,30 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   // --- ADMISSIONS PAR LIEN PRIVÉ ---
+  // Le QR est provisionné automatiquement par la base à la création d'une crèche.
+  // Cette fonction idempotente sert uniquement de filet de sécurité pour les anciens comptes.
+  const ensureInscriptionLink = async () => {
+    const { data, error } = await supabase.rpc('rawdha_create_inscription_link', {
+      p_label: 'QR permanent de la crèche',
+      p_expires_at: null,
+    });
+    if (error || !data?.id || !data?.token) {
+      throw new Error(error?.message || 'Impossible de provisionner le QR permanent');
+    }
+    const ensured = {
+      id: data.id as string,
+      crecheId: user?.id || '',
+      token: data.token as string,
+      label: 'QR permanent de la crèche',
+      nomCreche: data.nomCreche as string | undefined,
+      active: true,
+      createdAt: new Date().toISOString(),
+      expiresAt: null,
+    } satisfies InscriptionLink & { token: string };
+    setInscriptionLinks(prev => [ensured, ...prev.filter(link => link.id !== ensured.id)]);
+    return ensured;
+  };
+
   const createInscriptionLink = async (label?: string, expiresAt?: string | null) => {
     const { data, error } = await supabase.rpc('rawdha_create_inscription_link', {
       p_label: label?.trim() || null,
@@ -1098,6 +1131,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       updateCommunityComment,
       deleteCommunityComment,
       toggleCommunityReaction,
+      ensureInscriptionLink,
       createInscriptionLink,
       toggleInscriptionLink,
       decideAdmission,
