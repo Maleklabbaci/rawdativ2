@@ -232,7 +232,7 @@ export default function SignIn() {
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-indigo-600 font-bold text-sm">
               <Building className="w-4 h-4" />
-              <span>ESPACE CLIENT ET GESTION</span>
+              <span>ESPACE DIRECTEUR ET GESTION</span>
             </div>
             <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
               {view === 'signin' ? 'Connectez-vous' : 'Créer votre espace directeur'}
@@ -332,7 +332,7 @@ export default function SignIn() {
                     value={method === 'email' ? email : phone}
                     onChange={(event) => method === 'email' ? setEmail(event.target.value) : setPhone(event.target.value)}
                     className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all font-medium text-slate-800"
-                    placeholder={method === 'email' ? 'parent@exemple.com' : '+213 5 55 55 55 55'}
+                    placeholder={method === 'email' ? 'direction@rawdha.dz' : '+213 5 55 55 55 55'}
                     required
                   />
                 </div>
