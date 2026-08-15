@@ -162,6 +162,26 @@ export interface Repas {
   menu: string;
 }
 
+export type DemandeDirecteurStatut = 'en_attente' | 'acceptee' | 'refusee';
+
+export interface DemandeDirecteur {
+  id: string;
+  nom: string;
+  prenom: string;
+  email: string;
+  telephone: string;
+  nomCreche: string;
+  adresse: string;
+  siteWeb?: string;
+  message?: string;
+  dateDemande: string;
+  statut: DemandeDirecteurStatut;
+  traiteLe?: string;
+  traitePar?: string;
+  compteId?: string;
+  motifRefus?: string;
+}
+
 export interface UserAccount {
   id: string;
   nom: string;

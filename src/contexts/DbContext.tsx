@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Enfant, Presence, PresenceJournee, Paiement, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification } from '../types';
+import { Enfant, Presence, PresenceJournee, Paiement, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur } from '../types';
 import { 
   getCollectionData, 
   addCollectionDocument, 
@@ -21,6 +21,7 @@ interface DbContextType {
   activites: Activite[];
   repas: Repas[];
   comptes: UserAccount[];
+  demandesDirecteur: DemandeDirecteur[];
   messages: DiscussionMessage[];
   avis: Avis[];
   notifications: AppNotification[];
@@ -40,6 +41,9 @@ interface DbContextType {
   addCompte: (compte: Omit<UserAccount, 'id'>) => Promise<string>;
   updateCompte: (id: string, compte: Partial<UserAccount>) => Promise<void>;
   deleteCompte: (id: string) => Promise<void>;
+  addDemandeDirecteur: (demande: Omit<DemandeDirecteur, 'id'>) => Promise<string>;
+  updateDemandeDirecteur: (id: string, demande: Partial<DemandeDirecteur>) => Promise<void>;
+  deleteDemandeDirecteur: (id: string) => Promise<void>;
 
   addEnfant: (enfant: Omit<Enfant, 'id'>) => Promise<string>;
   updateEnfant: (id: string, enfant: Partial<Enfant>) => Promise<void>;
@@ -96,6 +100,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const [activites, setActivites] = useState<Activite[]>([]);
   const [repas, setRepas] = useState<Repas[]>([]);
   const [comptes, setComptes] = useState<UserAccount[]>([]);
+  const [demandesDirecteur, setDemandesDirecteur] = useState<DemandeDirecteur[]>([]);
   const [messages, setMessages] = useState<DiscussionMessage[]>([]);
   const [avis, setAvis] = useState<Avis[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -116,13 +121,14 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const refreshAll = async () => {
     try {
       // --- VAGUE 1 : critique pour le Dashboard, on attend ---
-      const [dbComptes, dbEnfants, dbPresences, dbPresenceJournees, dbPaiements, dbPersonnel] = await Promise.all([
+      const [dbComptes, dbEnfants, dbPresences, dbPresenceJournees, dbPaiements, dbPersonnel, dbDemandesDirecteur] = await Promise.all([
         getCollectionData<UserAccount>('comptes'),
         getCollectionData<Enfant>('enfants'),
         getCollectionData<Presence>('presences'),
         getCollectionData<PresenceJournee>('presence_journees'),
         getCollectionData<Paiement>('paiements'),
         getCollectionData<Personnel>('personnel'),
+        user?.role === 'admin' ? getCollectionData<DemandeDirecteur>('demandes_directeur') : Promise.resolve([] as DemandeDirecteur[]),
       ]);
 
       // ✅ FIX: Don't create hardcoded admin - security risk!
@@ -142,6 +148,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setPresenceJournees(dbPresenceJournees);
       setPaiements(dbPaiements);
       setPersonnel(dbPersonnel);
+      setDemandesDirecteur(dbDemandesDirecteur);
 
       // On arrête l'écran de chargement ICI -> le Dashboard s'affiche déjà,
       // pendant que la vague 2 continue en silence derrière.
@@ -195,7 +202,51 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   // chargés en mémoire dans le navigateur de CHAQUE utilisateur connecté, même un simple directeur,
   // alors qu'il n'a besoin de voir que le sien. Seul l'admin a besoin de la liste complète.
   const scopedComptes = user?.role === 'admin' ? comptes : comptes.filter(c => c.id === user?.id);
+  const scopedDemandesDirecteur = user?.role === 'admin' ? demandesDirecteur : [];
 
+
+  // --- DEMANDES DIRECTEUR ---
+  // L’insertion publique est utilisée uniquement par le formulaire de demande.
+  // La lecture et les changements de statut restent protégés par RLS et réservés à l’admin.
+  const addDemandeDirecteur = async (demande: Omit<DemandeDirecteur, 'id'>) => {
+    const tempId = 'demande_' + Date.now();
+    const optimistic = { ...demande, id: tempId } as DemandeDirecteur;
+    if (user?.role === 'admin') setDemandesDirecteur(prev => [optimistic, ...prev]);
+    try {
+      const freshId = await addCollectionDocument('demandes_directeur', demande);
+      if (user?.role === 'admin') {
+        setDemandesDirecteur(prev => prev.map(item => item.id === tempId ? { ...optimistic, id: freshId } : item));
+      }
+      return freshId;
+    } catch (err) {
+      if (user?.role === 'admin') setDemandesDirecteur(prev => prev.filter(item => item.id !== tempId));
+      throw err;
+    }
+  };
+
+  const updateDemandeDirecteur = async (id: string, data: Partial<DemandeDirecteur>) => {
+    const previous = demandesDirecteur.find(item => item.id === id);
+    setDemandesDirecteur(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    try {
+      await updateCollectionDocument<DemandeDirecteur>('demandes_directeur', id, data);
+    } catch (err) {
+      if (previous) setDemandesDirecteur(prev => prev.map(item => item.id === id ? previous : item));
+      notifyWriteError('modification');
+      throw err;
+    }
+  };
+
+  const deleteDemandeDirecteur = async (id: string) => {
+    const previous = demandesDirecteur.find(item => item.id === id);
+    setDemandesDirecteur(prev => prev.filter(item => item.id !== id));
+    try {
+      await deleteCollectionDocument('demandes_directeur', id);
+    } catch (err) {
+      if (previous) setDemandesDirecteur(prev => [...prev, previous]);
+      notifyWriteError('suppression');
+      throw err;
+    }
+  };
 
   // --- ENFANTS ---
   const addEnfant = async (enfant: Omit<Enfant, 'id'>) => {
@@ -671,6 +722,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       activites: scopedActivites,
       repas: scopedRepas,
       comptes: scopedComptes,
+      demandesDirecteur: scopedDemandesDirecteur,
       messages,
       avis,
       notifications,
@@ -686,6 +738,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       addCompte,
       updateCompte,
       deleteCompte,
+      addDemandeDirecteur,
+      updateDemandeDirecteur,
+      deleteDemandeDirecteur,
       addEnfant,
       updateEnfant,
       deleteEnfant,

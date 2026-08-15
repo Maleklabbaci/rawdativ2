@@ -15,17 +15,6 @@ interface AuthUserSnapshot {
   user_metadata?: Record<string, unknown> | null;
 }
 
-interface DirectorSignupDetails {
-  nom: string;
-  prenom: string;
-  email: string;
-  motDePasse: string;
-  nomCreche: string;
-  telephone: string;
-  adresse: string;
-  siteWeb?: string;
-}
-
 function normalizeAuthError(error: unknown): string | null {
   if (!error) return null;
   if (typeof error === 'string') return error.trim() || null;
@@ -47,7 +36,6 @@ interface AuthContextType {
   loading: boolean;
   creche: CrecheInfo;
   loginWithCredentials: (email: string, motDePasse: string) => Promise<{ user: UserAccount | null; error: string | null }>;
-  createDirectorAccount: (details: DirectorSignupDetails) => Promise<{ error: string | null; requiresEmailConfirmation: boolean }>;
   logout: () => void;
   // ✅ À appeler après une sauvegarde réussie dans Paramètres pour que le nom / logo /
   // tarif se mettent à jour PARTOUT dans l'appli (sidebar, header, factures) sans recharger la page.
@@ -200,43 +188,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return { user: profile, error: null };
   };
 
-  const createDirectorAccount = async (details: DirectorSignupDetails): Promise<{ error: string | null; requiresEmailConfirmation: boolean }> => {
-    const email = details.email.toLowerCase().trim();
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password: details.motDePasse,
-      options: {
-        data: {
-          role: 'directeur',
-          nom: details.nom.trim(),
-          prenom: details.prenom.trim(),
-          nomCreche: details.nomCreche.trim(),
-          telephone: details.telephone.trim(),
-          adresse: details.adresse.trim(),
-          siteWeb: details.siteWeb?.trim() || '',
-        },
-        emailRedirectTo: window.location.origin,
-      },
-    });
-
-    if (error || !data.user) {
-      return { error: normalizeAuthError(error) || 'La création du compte directeur a échoué.', requiresEmailConfirmation: false };
-    }
-
-    // Lorsque la confirmation e-mail est désactivée, la session est créée immédiatement.
-    // Sinon, le trigger Supabase crée le profil et la connexion se fera après confirmation.
-    if (data.session) {
-      const profile = await loadProfile(data.user.id, data.user);
-      setUser(profile);
-      await loadCrecheSettings(profile);
-      if (!profile) {
-        return { error: 'Le compte Auth est créé, mais le profil directeur est encore en préparation.', requiresEmailConfirmation: false };
-      }
-    }
-
-    return { error: null, requiresEmailConfirmation: !data.session };
-  };
-
   const logout = async () => {
     await supabase.auth.signOut();
     setUser(null);
@@ -254,7 +205,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       loading,
       creche,
       loginWithCredentials,
-      createDirectorAccount,
       logout,
       refreshCreche,
     }}>

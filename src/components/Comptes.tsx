@@ -3,6 +3,7 @@ import { useDb } from '../contexts/DbContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { setCollectionDocument } from '../supabase';
+import type { DemandeDirecteur } from '../types';
 import { 
   Users, 
   UserPlus, 
@@ -25,12 +26,15 @@ import {
   ToggleRight,
   Calendar,
   Building,
-  Clock
+  Clock,
+  MessageCircle,
+  UserCheck,
+  UserX
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function Comptes() {
-  const { comptes, enfants, addCompte, updateCompte, deleteCompte, refreshAll, loading } = useDb();
+  const { comptes, enfants, demandesDirecteur, addCompte, updateCompte, deleteCompte, updateDemandeDirecteur, refreshAll, loading } = useDb();
   const { language, isFrench } = useLanguage();
   const { user: currentUser } = useAuth();
 
@@ -62,6 +66,11 @@ export default function Comptes() {
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
   const [submitLoading, setSubmitLoading] = useState(false);
+  const [selectedDemande, setSelectedDemande] = useState<DemandeDirecteur | null>(null);
+  const [decisionPassword, setDecisionPassword] = useState('');
+  const [decisionError, setDecisionError] = useState('');
+  const [decisionLoading, setDecisionLoading] = useState(false);
+  const [whatsappUrl, setWhatsappUrl] = useState('');
 
   // Check user role
   const isAdmin = currentUser?.role === 'admin';
@@ -180,6 +189,95 @@ export default function Comptes() {
     }
   };
 
+  const pendingDemandes = demandesDirecteur.filter(demande => demande.statut === 'en_attente').sort((a, b) => new Date(b.dateDemande).getTime() - new Date(a.dateDemande).getTime());
+
+  const formatWhatsappPhone = (phone: string) => {
+    const digits = phone.replace(/[^0-9]/g, '');
+    if (digits.startsWith('0')) return `213${digits.slice(1)}`;
+    if (digits.startsWith('213')) return digits;
+    return digits;
+  };
+
+  const buildAcceptanceWhatsappUrl = (demande: DemandeDirecteur, temporaryPassword: string) => {
+    const phone = formatWhatsappPhone(demande.telephone);
+    const message = `Bonjour ${demande.prenom} ${demande.nom},\\n\\nBonne nouvelle : votre demande d’accès à Rawdha+ pour ${demande.nomCreche} a été acceptée.\\n\\nVos identifiants :\\nE-mail : ${demande.email}\\nMot de passe initial : ${temporaryPassword}\\nLien : https://rawdativ2.vercel.app/\\n\\nPour votre sécurité, veuillez conserver ces informations et contacter Rawdha+ en cas de besoin.`;
+    return phone ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}` : '';
+  };
+
+  const handleAcceptDemande = async (demande: DemandeDirecteur) => {
+    setDecisionError('');
+    if (!decisionPassword || decisionPassword.length < 8) {
+      setDecisionError('Définissez un mot de passe initial d’au moins 8 caractères avant d’accepter.');
+      return;
+    }
+    if (comptes.some(compte => compte.email.toLowerCase() === demande.email.toLowerCase())) {
+      setDecisionError('Cette adresse e-mail possède déjà un compte Rawdha+.');
+      return;
+    }
+
+    try {
+      setDecisionLoading(true);
+      const compteId = await addCompte({
+        nom: demande.nom,
+        prenom: demande.prenom,
+        email: demande.email.toLowerCase(),
+        motDePasse: decisionPassword,
+        role: 'directeur',
+        abonnementActif: true,
+        nomCreche: demande.nomCreche,
+        dateFinAbonnement: getDefaultDate(),
+      });
+
+      await setCollectionDocument('parametres', `creche_${compteId}`, {
+        id: `creche_${compteId}`,
+        crecheName: demande.nomCreche,
+        principalEmail: demande.email.toLowerCase(),
+        phoneNumbers: demande.telephone,
+        addressLine: demande.adresse,
+        tuitionFeeRate: 4500,
+        siteWeb: demande.siteWeb || '',
+        logoUrl: '',
+      });
+
+      await updateDemandeDirecteur(demande.id, {
+        statut: 'acceptee',
+        traiteLe: new Date().toISOString(),
+        traitePar: currentUser?.id,
+        compteId,
+      });
+      setWhatsappUrl(buildAcceptanceWhatsappUrl(demande, decisionPassword));
+      setDecisionPassword('');
+      setSelectedDemande(null);
+      await refreshAll();
+    } catch (err) {
+      console.error('Erreur acceptation demande directeur:', err);
+      setDecisionError(err instanceof Error ? err.message : 'Impossible d’accepter cette demande.');
+    } finally {
+      setDecisionLoading(false);
+    }
+  };
+
+  const handleRefuseDemande = async (demande: DemandeDirecteur) => {
+    const motif = window.prompt('Motif du refus (facultatif) :', '') || '';
+    try {
+      setDecisionLoading(true);
+      await updateDemandeDirecteur(demande.id, {
+        statut: 'refusee',
+        motifRefus: motif,
+        traiteLe: new Date().toISOString(),
+        traitePar: currentUser?.id,
+      });
+      setSelectedDemande(null);
+      setDecisionPassword('');
+      await refreshAll();
+    } catch (err) {
+      console.error('Erreur refus demande directeur:', err);
+      setDecisionError(err instanceof Error ? err.message : 'Impossible de refuser cette demande.');
+    } finally {
+      setDecisionLoading(false);
+    }
+  };
+
   const handleToggleSubscription = async (id: string, currentStatus: boolean) => {
     try {
       await updateCompte(id, { abonnementActif: !currentStatus });
@@ -270,6 +368,109 @@ export default function Comptes() {
           </button>
         </div>
       </div>
+
+      {whatsappUrl && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+        >
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl"><MessageCircle className="w-5 h-5" /></div>
+            <div>
+              <p className="font-extrabold text-emerald-900">Compte créé et prêt à être transmis</p>
+              <p className="text-sm text-emerald-700">Le bouton ouvre WhatsApp avec un message déjà rempli et les identifiants du directeur.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <a href={whatsappUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#25D366] text-white text-sm font-extrabold hover:brightness-95 transition">
+              <MessageCircle className="w-4 h-4" /> Envoyer sur WhatsApp
+            </a>
+            <button type="button" onClick={() => setWhatsappUrl('')} className="px-3 py-2.5 text-sm font-bold text-slate-500 hover:text-slate-800">Fermer</button>
+          </div>
+        </motion.div>
+      )}
+
+      <section className="bg-white border border-indigo-100 rounded-3xl shadow-sm overflow-hidden">
+        <div className="px-6 py-5 bg-gradient-to-r from-indigo-50 via-white to-violet-50 border-b border-indigo-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-sm"><UserCheck className="w-5 h-5" /></div>
+            <div>
+              <h2 className="font-black text-slate-900 text-lg">Demandes de directeurs</h2>
+              <p className="text-sm text-slate-500">Examinez les informations avant de créer un accès.</p>
+            </div>
+          </div>
+          <span className="inline-flex items-center justify-center min-w-9 px-3 py-1.5 rounded-full bg-indigo-100 text-indigo-700 text-sm font-black">{pendingDemandes.length} en attente</span>
+        </div>
+        {pendingDemandes.length === 0 ? (
+          <div className="px-6 py-10 text-center text-slate-400">
+            <Clock className="w-9 h-9 mx-auto mb-2 text-slate-300" />
+            <p className="font-bold text-slate-600">Aucune demande en attente</p>
+            <p className="text-sm mt-1">Les nouvelles demandes publiques apparaîtront ici automatiquement.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {pendingDemandes.map((demande) => (
+              <div key={demande.id} className="p-5 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-5 hover:bg-slate-50/70 transition">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-black text-slate-900">{demande.prenom} {demande.nom}</h3>
+                    <span className="px-2 py-1 rounded-lg bg-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-wider">À examiner</span>
+                  </div>
+                  <div className="mt-2 grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm text-slate-600">
+                    <span><strong className="text-slate-800">Crèche :</strong> {demande.nomCreche}</span>
+                    <span><strong className="text-slate-800">Téléphone :</strong> {demande.telephone}</span>
+                    <span><strong className="text-slate-800">E-mail :</strong> {demande.email}</span>
+                    <span><strong className="text-slate-800">Reçue le :</strong> {new Date(demande.dateDemande).toLocaleString('fr-FR')}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-2 truncate max-w-3xl"><strong className="text-slate-700">Adresse :</strong> {demande.adresse}{demande.siteWeb ? ` · ${demande.siteWeb}` : ''}</p>
+                  {demande.message && <p className="text-xs text-indigo-700 mt-2 italic">“{demande.message}”</p>}
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button type="button" onClick={() => { setSelectedDemande(demande); setDecisionPassword(''); setDecisionError(''); }} className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-extrabold hover:bg-indigo-700 transition">
+                    <UserCheck className="w-4 h-4" /> Accepter
+                  </button>
+                  <button type="button" onClick={() => handleRefuseDemande(demande)} disabled={decisionLoading} className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white border border-rose-200 text-rose-700 text-sm font-extrabold hover:bg-rose-50 transition disabled:opacity-50">
+                    <UserX className="w-4 h-4" /> Refuser
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <AnimatePresence>
+        {selectedDemande && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0, scale: 0.96, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-6 space-y-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-widest font-black text-indigo-600">Validation admin</p>
+                  <h3 className="text-xl font-black text-slate-900 mt-1">Activer {selectedDemande.prenom} {selectedDemande.nom}</h3>
+                  <p className="text-sm text-slate-500 mt-1">{selectedDemande.nomCreche} · {selectedDemande.email}</p>
+                </div>
+                <button type="button" onClick={() => setSelectedDemande(null)} className="p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-100"><XCircle className="w-5 h-5" /></button>
+              </div>
+              <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-100 text-sm text-indigo-900 leading-relaxed">
+                Le compte Auth et le profil directeur seront créés immédiatement. Le mot de passe ci-dessous sera transmis uniquement dans le message WhatsApp prérempli.
+              </div>
+              {decisionError && <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm flex items-start gap-2"><AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />{decisionError}</div>}
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-slate-500 mb-2">Mot de passe initial *</label>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input type="text" minLength={8} value={decisionPassword} onChange={(event) => setDecisionPassword(event.target.value)} className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 font-medium text-slate-800" placeholder="8 caractères minimum" />
+                </div>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3 sm:justify-end">
+                <button type="button" onClick={() => handleRefuseDemande(selectedDemande)} disabled={decisionLoading} className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-rose-200 text-rose-700 font-extrabold hover:bg-rose-50 transition disabled:opacity-50"><UserX className="w-4 h-4" /> Refuser la demande</button>
+                <button type="button" onClick={() => handleAcceptDemande(selectedDemande)} disabled={decisionLoading} className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-indigo-600 text-white font-extrabold hover:bg-indigo-700 transition disabled:opacity-50">{decisionLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />} Créer et accepter</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Add New Account Form drawer */}
       <AnimatePresence>

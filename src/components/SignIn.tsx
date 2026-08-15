@@ -1,17 +1,23 @@
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { addCollectionDocument } from '../supabase';
 import {
   AlertCircle,
   Baby,
   Building,
+  CheckCircle2,
+  Clock3,
   Globe2,
-  MapPin,
   KeyRound,
   Lock,
   LogIn,
   Mail,
+  MapPin,
+  MessageSquare,
   Phone,
+  Send,
+  ShieldCheck,
   Sparkles,
   UserRound,
 } from 'lucide-react';
@@ -19,81 +25,80 @@ import {
 function formatAuthError(message: string | null, fallback: string): string {
   if (!message || message === '{}' || message === '[object Object]') return fallback;
   const normalized = message.toLowerCase();
-  if (normalized.includes('provider is not enabled') || normalized.includes('unsupported provider')) return 'Cette méthode n’est pas encore activée dans Supabase Auth.';
   if (normalized.includes('invalid login credentials')) return 'Identifiants incorrects. Vérifiez votre adresse e-mail et votre mot de passe.';
-  if (normalized.includes('already registered') || normalized.includes('user already registered')) return 'Cette adresse e-mail possède déjà un compte Rawdha+.';
-  if (normalized.includes('password should be at least') || normalized.includes('password must')) return 'Le mot de passe doit respecter les exigences minimales de sécurité.';
-  if (normalized.includes('email not confirmed')) return 'Votre adresse e-mail doit d’abord être confirmée.';
-  if (normalized.includes('rate limit') || normalized.includes('too many')) return 'Trop de demandes. Patientez quelques instants avant de réessayer.';
+  if (normalized.includes('email not confirmed')) return 'Votre accès n’est pas encore activé par l’administrateur.';
+  if (normalized.includes('too many') || normalized.includes('rate limit')) return 'Trop de demandes. Patientez quelques instants avant de réessayer.';
   if (normalized.includes('user not found')) return 'Aucun compte Rawdha+ correspondant n’a été trouvé.';
   if (normalized.includes('profile rawdha')) return 'Votre authentification est valide, mais votre compte n’est pas encore rattaché à Rawdha+.';
   return message;
 }
 
+const inputClass = 'w-full px-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all font-medium text-slate-800 bg-white';
+const iconInputClass = `${inputClass} pl-10`;
+
 export default function SignIn() {
   const { isFrench } = useLanguage();
-  const {
-    loginWithCredentials,
-    createDirectorAccount,
-  } = useAuth();
-
-  const [view, setView] = useState<'signin' | 'signup'>('signin');
+  const { loginWithCredentials } = useAuth();
+  const [view, setView] = useState<'signin' | 'request'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [directorNom, setDirectorNom] = useState('');
   const [directorPrenom, setDirectorPrenom] = useState('');
   const [directorEmail, setDirectorEmail] = useState('');
-  const [directorPassword, setDirectorPassword] = useState('');
-  const [directorPasswordConfirmation, setDirectorPasswordConfirmation] = useState('');
   const [directorCreche, setDirectorCreche] = useState('');
   const [directorPhone, setDirectorPhone] = useState('');
   const [directorAddress, setDirectorAddress] = useState('');
   const [directorWebsite, setDirectorWebsite] = useState('');
+  const [directorMessage, setDirectorMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const handleCreateDirector = async (event: FormEvent) => {
+  const resetRequestForm = () => {
+    setDirectorNom('');
+    setDirectorPrenom('');
+    setDirectorEmail('');
+    setDirectorCreche('');
+    setDirectorPhone('');
+    setDirectorAddress('');
+    setDirectorWebsite('');
+    setDirectorMessage('');
+  };
+
+  const handleSubmitRequest = async (event: FormEvent) => {
     event.preventDefault();
     setError('');
     setSuccess('');
 
-    if (!directorNom || !directorPrenom || !directorEmail || !directorPassword || !directorCreche || !directorPhone || !directorAddress) {
+    if (!directorNom.trim() || !directorPrenom.trim() || !directorEmail.trim() || !directorCreche.trim() || !directorPhone.trim() || !directorAddress.trim()) {
       setError('Veuillez remplir tous les champs obligatoires du directeur et de la crèche.');
-      return;
-    }
-    if (directorPassword.length < 8) {
-      setError('Le mot de passe doit contenir au moins 8 caractères.');
-      return;
-    }
-    if (directorPassword !== directorPasswordConfirmation) {
-      setError('La confirmation du mot de passe ne correspond pas.');
       return;
     }
 
     setLoading(true);
-    const result = await createDirectorAccount({
-      nom: directorNom,
-      prenom: directorPrenom,
-      email: directorEmail,
-      motDePasse: directorPassword,
-      nomCreche: directorCreche,
-      telephone: directorPhone,
-      adresse: directorAddress,
-      siteWeb: directorWebsite,
-    });
+    try {
+      await addCollectionDocument('demandes_directeur', {
+        nom: directorNom.trim(),
+        prenom: directorPrenom.trim(),
+        email: directorEmail.trim().toLowerCase(),
+        telephone: directorPhone.trim(),
+        nomCreche: directorCreche.trim(),
+        adresse: directorAddress.trim(),
+        siteWeb: directorWebsite.trim(),
+        message: directorMessage.trim(),
+        dateDemande: new Date().toISOString(),
+        statut: 'en_attente',
+      });
 
-    if (result.error) {
-      setError(formatAuthError(result.error, 'Impossible de créer le compte directeur.'));
-    } else if (result.requiresEmailConfirmation) {
+      resetRequestForm();
       setView('signin');
-      setEmail(directorEmail.trim().toLowerCase());
-      setPassword('');
-      setSuccess('Compte créé. Consultez votre e-mail pour confirmer l’adresse avant de vous connecter.');
-    } else {
-      setSuccess('Compte directeur créé avec succès. Votre espace Rawdha+ est prêt.');
+      setSuccess('Votre demande a bien été envoyée. L’administrateur Rawdha+ va examiner vos informations et vous contactera après décision.');
+    } catch (requestError) {
+      console.error('Erreur envoi demande directeur:', requestError);
+      setError('Impossible d’envoyer la demande pour le moment. Vérifiez que le formulaire est bien configuré puis réessayez.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleLogin = async (event: FormEvent) => {
@@ -116,7 +121,7 @@ export default function SignIn() {
 
   return (
     <div className="min-h-screen bg-[#fcfdff] flex flex-col lg:flex-row font-sans">
-      <div className="lg:w-1/2 bg-gradient-to-tr from-amber-400 via-rose-400 to-indigo-500 relative overflow-hidden flex flex-col justify-between p-8 lg:p-16 text-white select-none">
+      <div className="lg:w-[46%] bg-gradient-to-tr from-amber-400 via-rose-400 to-indigo-600 relative overflow-hidden flex flex-col justify-between p-8 lg:p-16 text-white select-none">
         <div className="absolute -top-12 -left-12 w-64 h-64 bg-white/10 rounded-full blur-2xl" />
         <div className="absolute -bottom-20 -right-20 w-96 h-96 bg-white/15 rounded-full blur-3xl animate-pulse" />
 
@@ -130,42 +135,44 @@ export default function SignIn() {
           </div>
         </div>
 
-        <div className="relative my-auto space-y-4 max-w-md">
+        <div className="relative my-auto space-y-6 max-w-md py-16">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/15 backdrop-blur-md text-xs font-semibold rounded-full border border-white/20">
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>Gestion de Crèche de nouvelle génération</span>
+            <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+            <span>Gestion de crèche de nouvelle génération</span>
           </div>
           <h1 className="text-4xl lg:text-5xl font-extrabold tracking-tight leading-none font-display">
-            L'excellence dans la gestion de votre crèche.
+            L’excellence dans la gestion de votre crèche.
           </h1>
           <p className="text-white/90 text-lg leading-relaxed">
-            Suivi en temps réel des présences, des activités, des repas et de la facturation avec une fluidité exceptionnelle.
+            Présences, enfants, équipe, activités, repas et facturation réunis dans un espace clair et sécurisé.
           </p>
+          <div className="grid gap-3 text-sm text-white/90">
+            <div className="flex items-center gap-3"><ShieldCheck className="w-5 h-5 text-white" /> Accès validé par l’équipe Rawdha+</div>
+            <div className="flex items-center gap-3"><Clock3 className="w-5 h-5 text-white" /> Activation rapide après examen de la demande</div>
+            <div className="flex items-center gap-3"><MessageSquare className="w-5 h-5 text-white" /> Confirmation directe par WhatsApp</div>
+          </div>
         </div>
 
         <div className="relative flex justify-between items-center border-t border-white/20 pt-6">
           <p className="text-sm text-white/70">© 2026 RAWDHA+. Tous droits réservés.</p>
-          <div className="flex gap-4 text-xs font-mono">
-            <span>v1.2.0</span>
-            <span>Propulsé par iVISION</span>
-          </div>
+          <span className="text-xs font-mono text-white/70">v1.3.0</span>
         </div>
       </div>
 
-      <div className="lg:w-1/2 flex items-center justify-center p-8 lg:p-16">
-        <div className="w-full max-w-md space-y-7 animate-slide-up">
+      <div className="lg:w-[54%] flex items-center justify-center p-6 sm:p-8 lg:p-16">
+        <div className="w-full max-w-xl space-y-7 animate-slide-up">
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-indigo-600 font-bold text-sm">
               <Building className="w-4 h-4" />
               <span>ESPACE DIRECTEUR ET GESTION</span>
             </div>
             <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-              {view === 'signin' ? 'Connectez-vous' : 'Créer votre espace directeur'}
+              {view === 'signin' ? 'Connectez-vous' : 'Demander un accès Rawdha+'}
             </h2>
-            <p className="text-slate-500">
+            <p className="text-slate-500 leading-relaxed">
               {view === 'signin'
-                ? 'Accédez à votre espace Rawdha+ avec votre méthode de connexion habituelle.'
-                : 'Renseignez les informations de votre crèche. Votre accès de direction sera enregistré dans Rawdha+.'}
+                ? 'Utilisez les identifiants transmis par l’administrateur après validation de votre demande.'
+                : 'Présentez votre directeur et votre crèche. Aucun compte n’est créé avant la validation de l’administrateur.'}
             </p>
           </div>
 
@@ -178,7 +185,7 @@ export default function SignIn() {
 
           {success && (
             <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 flex items-start gap-2.5 text-sm">
-              <KeyRound className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+              <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
               <p>{success}</p>
             </div>
           )}
@@ -187,8 +194,8 @@ export default function SignIn() {
             <button type="button" onClick={() => { setView('signin'); setError(''); setSuccess(''); }} className={`py-2.5 rounded-lg text-xs font-bold transition ${view === 'signin' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
               Se connecter
             </button>
-            <button type="button" onClick={() => { setView('signup'); setError(''); setSuccess(''); }} className={`py-2.5 rounded-lg text-xs font-bold transition ${view === 'signup' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              Inscription directeur
+            <button type="button" onClick={() => { setView('request'); setError(''); setSuccess(''); }} className={`py-2.5 rounded-lg text-xs font-bold transition ${view === 'request' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+              Demander un accès
             </button>
           </div>
 
@@ -198,76 +205,59 @@ export default function SignIn() {
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Adresse e-mail</label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all font-medium text-slate-800" placeholder="exemple@rawdha.dz" required />
+                  <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} className={iconInputClass} placeholder="direction@creche.dz" required />
                 </div>
               </div>
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Mot de passe</label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all font-medium text-slate-800" placeholder="••••••••" required />
+                  <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className={iconInputClass} placeholder="••••••••" required />
                 </div>
               </div>
-              <p className="text-xs leading-relaxed text-slate-500">Utilisez l’adresse e-mail confirmée du directeur et son mot de passe Rawdha+.</p>
+              <div className="flex items-start gap-3 p-4 rounded-xl bg-indigo-50 border border-indigo-100 text-xs text-indigo-800 leading-relaxed">
+                <KeyRound className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>Les comptes créés par l’administrateur sont activés directement, sans confirmation e-mail.</span>
+              </div>
               <button type="submit" disabled={loading} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-indigo-100 transition flex items-center justify-center gap-2 shadow-md disabled:opacity-50">
                 {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><LogIn className="w-5 h-5" /><span>Se connecter à RAWDHA+</span></>}
               </button>
             </form>
           ) : (
-            <form onSubmit={handleCreateDirector} className="space-y-4">
+            <form onSubmit={handleSubmitRequest} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Prénom *</label>
                   <div className="relative">
                     <UserRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input value={directorPrenom} onChange={(event) => setDirectorPrenom(event.target.value)} className="w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800" placeholder="Nadia" required />
+                    <input value={directorPrenom} onChange={(event) => setDirectorPrenom(event.target.value)} className={iconInputClass} placeholder="Nadia" required />
                   </div>
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Nom *</label>
-                  <input value={directorNom} onChange={(event) => setDirectorNom(event.target.value)} className="w-full px-3 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800" placeholder="Benaissa" required />
+                  <input value={directorNom} onChange={(event) => setDirectorNom(event.target.value)} className={inputClass} placeholder="Benaissa" required />
                 </div>
               </div>
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">E-mail professionnel *</label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input type="email" value={directorEmail} onChange={(event) => setDirectorEmail(event.target.value)} className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800" placeholder="direction@creche.dz" required />
+                  <input type="email" value={directorEmail} onChange={(event) => setDirectorEmail(event.target.value)} className={iconInputClass} placeholder="direction@creche.dz" required />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Mot de passe *</label>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Nom de la crèche *</label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input type="password" minLength={8} value={directorPassword} onChange={(event) => setDirectorPassword(event.target.value)} className="w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800" placeholder="8 caractères minimum" required />
+                    <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input value={directorCreche} onChange={(event) => setDirectorCreche(event.target.value)} className={iconInputClass} placeholder="Les Petits Pas" required />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Confirmation *</label>
-                  <input type="password" minLength={8} value={directorPasswordConfirmation} onChange={(event) => setDirectorPasswordConfirmation(event.target.value)} className="w-full px-3 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800" placeholder="Répéter" required />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Nom de la crèche *</label>
-                <div className="relative">
-                  <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input value={directorCreche} onChange={(event) => setDirectorCreche(event.target.value)} className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800" placeholder="Crèche Les Petits Pas" required />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Téléphone *</label>
                   <div className="relative">
                     <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input type="tel" value={directorPhone} onChange={(event) => setDirectorPhone(event.target.value)} className="w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800" placeholder="+213..." required />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Site web</label>
-                  <div className="relative">
-                    <Globe2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input type="url" value={directorWebsite} onChange={(event) => setDirectorWebsite(event.target.value)} className="w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800" placeholder="https://..." />
+                    <input type="tel" value={directorPhone} onChange={(event) => setDirectorPhone(event.target.value)} className={iconInputClass} placeholder="+213..." required />
                   </div>
                 </div>
               </div>
@@ -275,12 +265,30 @@ export default function SignIn() {
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Adresse de la crèche *</label>
                 <div className="relative">
                   <MapPin className="absolute left-3 top-3.5 w-4 h-4 text-slate-400" />
-                  <textarea value={directorAddress} onChange={(event) => setDirectorAddress(event.target.value)} rows={2} className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-slate-800 resize-none" placeholder="Adresse complète" required />
+                  <textarea value={directorAddress} onChange={(event) => setDirectorAddress(event.target.value)} rows={2} className={`${inputClass} pl-10 resize-none`} placeholder="Adresse complète" required />
                 </div>
               </div>
-              <p className="text-xs leading-relaxed text-slate-500">Après l’inscription, le compte directeur et les informations de la crèche seront enregistrés dans Supabase. Aucun espace parent n’est créé dans cette version.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Site web</label>
+                  <div className="relative">
+                    <Globe2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input type="url" value={directorWebsite} onChange={(event) => setDirectorWebsite(event.target.value)} className={iconInputClass} placeholder="https://..." />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Message</label>
+                  <div className="relative">
+                    <MessageSquare className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input value={directorMessage} onChange={(event) => setDirectorMessage(event.target.value)} className={iconInputClass} placeholder="Votre besoin" />
+                  </div>
+                </div>
+              </div>
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 leading-relaxed">
+                Après envoi, l’administrateur vérifie la demande. S’il l’accepte, il crée votre accès et vous transmet les identifiants directement par WhatsApp.
+              </div>
               <button type="submit" disabled={loading} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-indigo-100 transition flex items-center justify-center gap-2 shadow-md disabled:opacity-50">
-                {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><UserRound className="w-5 h-5" /><span>Créer mon accès directeur</span></>}
+                {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><Send className="w-5 h-5" /><span>Envoyer ma demande</span></>}
               </button>
             </form>
           )}
