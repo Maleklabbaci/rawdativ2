@@ -15,6 +15,11 @@ interface AuthContextType {
   loading: boolean;
   creche: CrecheInfo;
   loginWithCredentials: (email: string, motDePasse: string) => Promise<UserAccount | null>;
+  signInWithGoogle: () => Promise<{ error: string | null }>;
+  requestEmailOtp: (email: string) => Promise<{ error: string | null }>;
+  verifyEmailOtp: (email: string, token: string) => Promise<{ error: string | null }>;
+  requestPhoneOtp: (phone: string) => Promise<{ error: string | null }>;
+  verifyPhoneOtp: (phone: string, token: string) => Promise<{ error: string | null }>;
   logout: () => void;
   // ✅ À appeler après une sauvegarde réussie dans Paramètres pour que le nom / logo /
   // tarif se mettent à jour PARTOUT dans l'appli (sidebar, header, factures) sans recharger la page.
@@ -117,6 +122,64 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return profile;
   };
 
+  const signInWithGoogle = async (): Promise<{ error: string | null }> => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
+    });
+    return { error: error?.message || null };
+  };
+
+  const requestEmailOtp = async (email: string): Promise<{ error: string | null }> => {
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.toLowerCase().trim(),
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: window.location.origin,
+      },
+    });
+    return { error: error?.message || null };
+  };
+
+  const verifyEmailOtp = async (email: string, token: string): Promise<{ error: string | null }> => {
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: email.toLowerCase().trim(),
+      token: token.trim(),
+      type: 'email',
+    });
+    if (!error && data.user) {
+      const profile = await loadProfile(data.user.id);
+      setUser(profile);
+      await loadCrecheSettings(profile);
+      if (!profile) return { error: 'Compte authentifié mais profil Rawdha+ introuvable.' };
+    }
+    return { error: error?.message || null };
+  };
+
+  const requestPhoneOtp = async (phone: string): Promise<{ error: string | null }> => {
+    const { error } = await supabase.auth.signInWithOtp({
+      phone: phone.trim().replace(/\s+/g, ''),
+      options: { shouldCreateUser: false },
+    });
+    return { error: error?.message || null };
+  };
+
+  const verifyPhoneOtp = async (phone: string, token: string): Promise<{ error: string | null }> => {
+    const normalizedPhone = phone.trim().replace(/\s+/g, '');
+    const { data, error } = await supabase.auth.verifyOtp({
+      phone: normalizedPhone,
+      token: token.trim(),
+      type: 'sms',
+    });
+    if (!error && data.user) {
+      const profile = await loadProfile(data.user.id);
+      setUser(profile);
+      await loadCrecheSettings(profile);
+      if (!profile) return { error: 'Compte authentifié mais profil Rawdha+ introuvable.' };
+    }
+    return { error: error?.message || null };
+  };
+
   const logout = async () => {
     await supabase.auth.signOut();
     setUser(null);
@@ -134,6 +197,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       loading,
       creche,
       loginWithCredentials,
+      signInWithGoogle,
+      requestEmailOtp,
+      verifyEmailOtp,
+      requestPhoneOtp,
+      verifyPhoneOtp,
       logout,
       refreshCreche,
     }}>
