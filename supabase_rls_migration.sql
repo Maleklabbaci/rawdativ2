@@ -214,16 +214,20 @@ create policy "parametres_delete" on parametres for delete
 
 -- ----------------------------------------------------------------------------
 -- ÉTAPE 7 — avis
--- Chacun ne voit/crée que SES propres avis (+ admin voit tout).
+-- Tous les utilisateurs authentifiés voient les avis publics et peuvent publier
+-- leur propre avis. Seul l’admin peut supprimer un avis après modération.
 -- ----------------------------------------------------------------------------
 
 drop policy if exists "allow all avis" on avis;
 drop policy if exists "avis_select" on avis;
-create policy "avis_select" on avis for select
-  using (rawdha_is_admin() or (data->>'userId') = auth.uid()::text);
+create policy "avis_select" on avis for select to authenticated
+  using (true);
 drop policy if exists "avis_insert" on avis;
-create policy "avis_insert" on avis for insert
-  with check (rawdha_is_admin() or (data->>'userId') = auth.uid()::text);
+create policy "avis_insert" on avis for insert to authenticated
+  with check ((data->>'userId') = auth.uid()::text or rawdha_is_admin());
+drop policy if exists "avis_delete" on avis;
+create policy "avis_delete" on avis for delete to authenticated
+  using (rawdha_is_admin());
 
 
 -- ----------------------------------------------------------------------------

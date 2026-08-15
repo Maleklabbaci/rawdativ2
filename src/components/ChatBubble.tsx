@@ -74,7 +74,7 @@ export default function ChatBubble() {
     }
   }, [user, avis]);
 
-  if (!user || user.role === 'parent') return null; 
+  if (!user || user.role !== 'directeur') return null;
 
   const currentThreadId = user.role === 'directeur' ? user.id : activeDirectorThread;
   const threadMessages = currentThreadId

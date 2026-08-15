@@ -646,6 +646,18 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const deleteAvis = async (id: string) => {
+    const previous = avis.find(item => item.id === id);
+    setAvis(prev => prev.filter(item => item.id !== id));
+    try {
+      await deleteCollectionDocument('avis', id);
+    } catch (err) {
+      if (previous) setAvis(prev => [...prev, previous]);
+      notifyWriteError('suppression');
+      throw err;
+    }
+  };
+
   // --- NOTIFICATIONS (annonces admin -> directeurs) ---
   const addNotification = async (notif: Omit<AppNotification, 'id'>) => {
     const tempId = 'notif_' + Date.now();
@@ -767,6 +779,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       updateMessage,
       deleteMessage,
       addAvis,
+      deleteAvis,
       addNotification,
       markNotificationRead,
       deleteNotification,

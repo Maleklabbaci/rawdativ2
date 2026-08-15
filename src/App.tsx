@@ -20,6 +20,7 @@ const Repas = lazy(() => import('./components/Repas'));
 const Parametres = lazy(() => import('./components/Parametres'));
 const Comptes = lazy(() => import('./components/Comptes'));
 const Notifications = lazy(() => import('./components/Notifications'));
+const CommunicationAdmin = lazy(() => import('./components/CommunicationAdmin'));
 const Rapports = lazy(() => import('./components/Rapports'));
 import NotificationBell from './components/NotificationBell';
 import SubscriptionStatusBadge from './components/SubscriptionStatusBadge';
@@ -104,7 +105,7 @@ function AppContent() {
 
   useEffect(() => {
     if (user?.role === 'admin') {
-      if (currentPage !== 'comptes' && currentPage !== 'parametres' && currentPage !== 'notifications') {
+      if (currentPage !== 'comptes' && currentPage !== 'parametres' && currentPage !== 'notifications' && currentPage !== 'communication') {
         setCurrentPage('comptes');
       }
     } else {
@@ -322,6 +323,7 @@ if (isSubscriptionExpired) {
         case 'repas': return <Repas />;
         case 'comptes': return <Comptes />;
         case 'notifications': return <Notifications />;
+        case 'communication': return <CommunicationAdmin />;
         case 'rapports': return <Rapports />;
         case 'parametres': return <Parametres />;
         default: return <Dashboard />;
@@ -498,8 +500,8 @@ if (isSubscriptionExpired) {
         language={language as 'fr' | 'ar'}
       />
 
-      {/* Persistent Live Chat Bubble */}
-      <ChatBubble />
+      {/* Le support flottant reste réservé aux directeurs ; l’admin utilise sa page dédiée. */}
+      {user?.role === 'directeur' && <ChatBubble />}
 
       {/* Popup d'annonce admin personnalisé — uniquement pour les directeurs */}
       {user?.role === 'directeur' && <NotificationPopup onNavigate={setCurrentPage} />}

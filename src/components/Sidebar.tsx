@@ -14,6 +14,7 @@ import {
   Crown,
   MapPin,
   Bell,
+  MessageSquareQuote,
   BarChart3,
   X,
   PanelLeftClose,
@@ -30,6 +31,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
     items = [
       { key: 'comptes', label: 'comptes', icon: User, color: 'text-violet-500' },
       { key: 'notifications', label: 'notifications', icon: Bell, color: 'text-pink-500' },
+      { key: 'communication', label: 'communication', icon: MessageSquareQuote, color: 'text-amber-500' },
       { key: 'parametres', label: 'settings', icon: Settings, color: 'text-slate-500' },
     ];
   } else if (user?.role === 'directeur') {
@@ -53,6 +55,9 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
     }
     if (key === 'notifications') {
       return language === 'ar' ? 'الإشعارات' : 'Notifications';
+    }
+    if (key === 'communication') {
+      return language === 'ar' ? 'الرسائل والتقييمات' : 'Messages & Avis';
     }
     return t(originalLabel);
   };
