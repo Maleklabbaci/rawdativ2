@@ -42,6 +42,13 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
   const childPaiements = dbPaiements.filter(p => p.enfantId === enfant.id);
   
   const [activeTab, setActiveTab] = useState<'info' | 'presences' | 'paiements'>('info');
+  const documentsRequis = {
+    certificatMedical: false,
+    carnetVaccination: false,
+    justificatifDomicile: false,
+    photoIdentite: false,
+    ...(enfant.documentsRequis || {}),
+  };
 
   const birthDate = new Date(enfant.dateNaissance).toLocaleDateString(isArabic ? 'ar' : 'fr-FR', {
     day: 'numeric',
@@ -265,10 +272,10 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
 
                     <div className="space-y-3">
                       {[
-                        { label: "Certificat d'Aptitude Médicale", icon: FileCheck, status: enfant.documentsRequis.certificatMedical },
-                        { label: "Carnet de Vaccination Pédiatrique", icon: FileCheck, status: enfant.documentsRequis.carnetVaccination },
-                        { label: "Justificatif d'Adresse Parentale", icon: FileCheck, status: enfant.documentsRequis.justificatifDomicile },
-                        { label: "Fiches Photos d'Identité Admis", icon: FileCheck, status: enfant.documentsRequis.photoIdentite },
+                        { label: "Certificat d'Aptitude Médicale", icon: FileCheck, status: documentsRequis.certificatMedical },
+                        { label: "Carnet de Vaccination Pédiatrique", icon: FileCheck, status: documentsRequis.carnetVaccination },
+                        { label: "Justificatif d'Adresse Parentale", icon: FileCheck, status: documentsRequis.justificatifDomicile },
+                        { label: "Fiches Photos d'Identité Admis", icon: FileCheck, status: documentsRequis.photoIdentite },
                       ].map((doc, idx) => (
                         <div key={idx} className="flex items-center justify-between text-xs font-semibold p-2.5 bg-white border border-slate-100 rounded-xl">
                           <span className="text-slate-700 truncate">{doc.label}</span>

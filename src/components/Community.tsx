@@ -181,13 +181,14 @@ export default function Community() {
               <ShieldCheck className="h-4 w-4" />
               {isAr ? 'مجتمع مهني خاص بالروضات' : 'Communauté professionnelle privée'}
             </div>
-            <h1 className="text-3xl font-black tracking-tight md:text-4xl">
-              {isAr ? 'شبكة روضتي المهنية' : 'Le réseau professionnel Rawdha+'}
-            </h1>
+                          <h1 className="text-3xl font-black tracking-tight md:text-4xl">
+              {isAr ? 'Rawdha Connect' : 'Rawdha Connect'}
+              </h1>
+
             <p className="mt-3 max-w-xl text-sm leading-6 text-indigo-100/80 md:text-base">
               {isAr
                 ? 'تبادلوا الخبرات والأنشطة والمعدات والفرص بين الروضات الموثوقة فقط.'
-                : 'Partagez vos activités, méthodes, équipements et opportunités avec des crèches vérifiées uniquement.'}
+                : 'Le fil social des professionnels de la petite enfance : publiez, réagissez, commentez et échangez entre crèches vérifiées.'}
             </p>
           </div>
           {isDirector && (
@@ -263,7 +264,7 @@ export default function Community() {
 
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-xl font-black text-slate-900">{isAr ? 'آخر المنشورات' : 'Dernières publications'}</h2>
+          <h2 className="text-xl font-black text-slate-900">{isAr ? 'آخر المنشورات' : 'Fil Rawdha Connect'}</h2>
           <p className="mt-1 text-sm text-slate-500">{isAr ? 'مساحة مغلقة بين مهنيي الطفولة.' : 'Un espace fermé entre professionnels de la petite enfance.'}</p>
         </div>
         <div className="flex items-center gap-2 overflow-x-auto pb-1">

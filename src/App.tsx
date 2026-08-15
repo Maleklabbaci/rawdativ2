@@ -1,6 +1,6 @@
 
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { School, LogOut, Menu, CircleHelp, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { School, LogOut, Menu, CircleHelp, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Network } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
@@ -420,6 +420,16 @@ if (isSubscriptionExpired) {
                 )}
 
                 <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage('community')}
+                    title={language === 'ar' ? 'Rawdha Connect' : 'Ouvrir Rawdha Connect'}
+                    aria-label={language === 'ar' ? 'Rawdha Connect' : 'Ouvrir Rawdha Connect'}
+                    className={`hidden sm:flex h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-black transition cursor-pointer ${currentPage === 'community' ? 'border-violet-200 bg-violet-600 text-white shadow-lg shadow-violet-200/50' : 'border-violet-100 bg-gradient-to-r from-violet-50 to-fuchsia-50 text-violet-700 hover:from-violet-100 hover:to-fuchsia-100'}`}
+                  >
+                    <Network className="w-4 h-4" />
+                    <span>Rawdha Connect</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => setShowHelp(true)}

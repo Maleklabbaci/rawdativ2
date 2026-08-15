@@ -25,23 +25,49 @@ import {
   LayoutGrid,
   LogOut,
   MessageCircle,
-  RotateCcw
+  RotateCcw,
+  QrCode,
+  Copy,
+  Download,
+  ExternalLink,
+  Link2,
+  Loader2
 } from 'lucide-react';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
-import { Enfant } from '../types';
+import { Enfant, InscriptionLink } from '../types';
 import EnfantDetails from './EnfantDetails';
 import { useLanguage } from '../contexts/LanguageContext';
 import { motion, AnimatePresence } from 'motion/react';
+import * as QRCode from 'qrcode';
 
 type DocumentKey = 'certificatMedical' | 'carnetVaccination' | 'justificatifDomicile' | 'photoIdentite';
 type DocumentUpload = { nom: string; type: string; taille: number; contenu: string; ajouteLe: string };
+
+const DEFAULT_DOCUMENTS_REQUIS: Record<DocumentKey, boolean> = {
+  certificatMedical: false,
+  carnetVaccination: false,
+  justificatifDomicile: false,
+  photoIdentite: false,
+};
+
+function getDocumentsRequis(enfant: Partial<Enfant>) {
+  return { ...DEFAULT_DOCUMENTS_REQUIS, ...(enfant.documentsRequis || {}) };
+}
 
 export default function Enfants() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
 
-  const { enfants: allEnfants, addEnfant, deleteEnfant, updateEnfant } = useDb();
+  const {
+    enfants: allEnfants,
+    addEnfant,
+    deleteEnfant,
+    updateEnfant,
+    createInscriptionLink,
+    inscriptionLinks,
+    demandesAdmission,
+  } = useDb();
   const { user } = useAuth();
   const isDirecteur = user?.role === 'directeur';
   const enfants = isDirecteur ? allEnfants.filter(e => e.crecheId === user!.id) : allEnfants;
@@ -58,6 +84,12 @@ export default function Enfants() {
   
   // خاصية جديدة: تغيير طريقة العرض بين شبكة (Grid) وقائمة (List)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [showAdmissionQr, setShowAdmissionQr] = useState(false);
+  const [creatingAdmissionLink, setCreatingAdmissionLink] = useState(false);
+  const [admissionLabel, setAdmissionLabel] = useState('');
+  const [newAdmissionLink, setNewAdmissionLink] = useState<(InscriptionLink & { token: string }) | null>(null);
+  const [admissionQrDataUrl, setAdmissionQrDataUrl] = useState('');
+  const [admissionLinkCopied, setAdmissionLinkCopied] = useState(false);
 
   const [formData, setFormData] = useState({
     nom: '',
@@ -86,6 +118,47 @@ export default function Enfants() {
     docFiles: {} as Partial<Record<DocumentKey, DocumentUpload>>,
     jourEcheanceMensuel: '5', // ✅ jour du mois (1-31) pour la facture auto + notification de paiement
   });
+
+  const admissionLinkUrl = newAdmissionLink?.token
+    ? `${window.location.origin}/admission?token=${encodeURIComponent(newAdmissionLink.token)}`
+    : '';
+
+  const generateAdmissionQr = async () => {
+    setCreatingAdmissionLink(true);
+    try {
+      const created = await createInscriptionLink(admissionLabel.trim() || (isArabic ? 'رابط التسجيل' : "Lien d'inscription"));
+      const url = `${window.location.origin}/admission?token=${encodeURIComponent(created.token)}`;
+      setNewAdmissionLink(created);
+      setAdmissionLabel('');
+      setAdmissionLinkCopied(false);
+      setAdmissionQrDataUrl(await QRCode.toDataURL(url, {
+        width: 440,
+        margin: 2,
+        errorCorrectionLevel: 'M',
+        color: { dark: '#172554', light: '#ffffff' },
+      }));
+    } catch (error) {
+      console.error('Erreur de création du QR d’admission depuis Enfants:', error);
+      alert(isArabic ? 'تعذر إنشاء رمز QR.' : 'Impossible de créer le QR d’admission.');
+    } finally {
+      setCreatingAdmissionLink(false);
+    }
+  };
+
+  const copyAdmissionLink = async () => {
+    if (!admissionLinkUrl) return;
+    await navigator.clipboard?.writeText(admissionLinkUrl);
+    setAdmissionLinkCopied(true);
+    window.setTimeout(() => setAdmissionLinkCopied(false), 1800);
+  };
+
+  const downloadAdmissionQr = () => {
+    if (!admissionQrDataUrl) return;
+    const anchor = document.createElement('a');
+    anchor.href = admissionQrDataUrl;
+    anchor.download = 'rawdha-admission-qr.png';
+    anchor.click();
+  };
 
   const filteredEnfants = enfants.filter(enfant => {
     const term = searchTerm.toLowerCase();
@@ -323,6 +396,9 @@ export default function Enfants() {
               bloodGroup: 'O+',
               weightKg: '12',
               pediatricianName: 'Dr. Belkacem',
+              vaccinations: '',
+              notesMedicales: '',
+              docFiles: {},
               parentNom: '',
               parentPrenom: '',
               parentTelephone: '',
@@ -344,6 +420,53 @@ export default function Enfants() {
           <span>{t('children.add')}</span>
         </button>
       </div>
+
+      <section className="overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-950 via-indigo-900 to-violet-800 p-5 text-white shadow-xl shadow-indigo-900/10 sm:p-7">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="rounded-2xl bg-white/10 p-3"><QrCode className="h-6 w-6 text-indigo-200" /></div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-200">RAWDHA+ • {isArabic ? 'قبول الأطفال' : 'Admission enfant'}</p>
+              <h2 className="mt-1 text-xl font-black">{isArabic ? 'رمز QR داخل صفحة الأطفال' : 'Admission par QR, directement dans Enfants'}</h2>
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-indigo-100/75">{isArabic ? 'أنشئ رابط التسجيل وأرسله للأولياء دون مغادرة ملف الأطفال.' : 'Créez le lien d’inscription et envoyez-le aux parents sans quitter le dossier Enfants.'}</p>
+            </div>
+          </div>
+          <button type="button" onClick={() => setShowAdmissionQr(value => !value)} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-xs font-black text-indigo-800 shadow-lg transition hover:bg-indigo-50">
+            {showAdmissionQr ? <X className="h-4 w-4" /> : <QrCode className="h-4 w-4" />}
+            {showAdmissionQr ? (isArabic ? 'إغلاق' : 'Fermer') : (isArabic ? 'إنشاء QR' : 'Gérer les QR')}
+          </button>
+        </div>
+
+        {showAdmissionQr && (
+          <div className="mt-6 grid gap-5 border-t border-white/10 pt-5 xl:grid-cols-[1fr_auto]">
+            <div>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <input value={admissionLabel} onChange={event => setAdmissionLabel(event.target.value)} placeholder={isArabic ? 'اسم الرابط (اختياري)' : "Nom du lien (facultatif)"} className="min-w-0 flex-1 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-white outline-none placeholder:text-indigo-200 focus:border-white/60" />
+                <button type="button" onClick={generateAdmissionQr} disabled={creatingAdmissionLink} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-black text-emerald-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60">
+                  {creatingAdmissionLink ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+                  {creatingAdmissionLink ? (isArabic ? 'جاري الإنشاء...' : 'Création...') : (isArabic ? 'إنشاء الرابط' : 'Générer le lien')}
+                </button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-indigo-100/75">
+                <span className="rounded-full bg-white/10 px-3 py-1.5">{inscriptionLinks.filter(link => link.active).length} {isArabic ? 'روابط نشطة' : 'lien(s) actif(s)'}</span>
+                <span className="rounded-full bg-white/10 px-3 py-1.5">{demandesAdmission.filter(item => item.statut === 'en_attente').length} {isArabic ? 'طلبات معلقة' : 'demande(s) en attente'}</span>
+              </div>
+              {newAdmissionLink && admissionLinkUrl && (
+                <div className="mt-4 rounded-2xl bg-white p-4 text-slate-900">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600">{isArabic ? 'تم إنشاء الرابط' : 'Lien créé avec succès'}</p>
+                  <p className="mt-2 break-all rounded-xl bg-slate-50 p-3 text-[11px] font-semibold text-slate-600">{admissionLinkUrl}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" onClick={copyAdmissionLink} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-100"><Copy className="h-3.5 w-3.5" />{admissionLinkCopied ? (isArabic ? 'تم النسخ' : 'Copié') : (isArabic ? 'نسخ' : 'Copier')}</button>
+                    <button type="button" onClick={downloadAdmissionQr} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 hover:bg-emerald-100"><Download className="h-3.5 w-3.5" />{isArabic ? 'تحميل QR' : 'Télécharger QR'}</button>
+                    <a href={admissionLinkUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200"><ExternalLink className="h-3.5 w-3.5" />{isArabic ? 'فتح الرابط' : 'Ouvrir le lien'}</a>
+                  </div>
+                </div>
+              )}
+            </div>
+            {admissionQrDataUrl && <img src={admissionQrDataUrl} alt={isArabic ? 'رمز قبول QR' : 'QR admission enfant'} className="mx-auto h-40 w-40 rounded-2xl border-4 border-white bg-white p-2 shadow-lg" />}
+          </div>
+        )}
+      </section>
 
       <div className="bg-white p-3 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex flex-col md:flex-row gap-3 items-center">
         <div className="relative flex-1 w-full">
@@ -482,9 +605,11 @@ export default function Enfants() {
                                 groupeAge: enfant.groupeAge,
                                 bloodGroup: enfant.groupeSanguin || 'O+',
                                 weightKg: enfant.poidsKg ? String(enfant.poidsKg) : '',
-                                pediatricianName: enfant.medecinTraitant || '',
-                                vaccinations: enfant.vaccinations || '',
-                                notesMedicales: enfant.notesMedicales || '',
+                                                          pediatricianName: enfant.medecinTraitant || '',
+                          vaccinations: enfant.vaccinations || '',
+                          notesMedicales: enfant.notesMedicales || '',
+                          docFiles: enfant.documentsFichiers || {},
+
                                 parentNom: enfant.parents[0]?.nom || '',
                                 parentPrenom: enfant.parents[0]?.prenom || '',
                                 parentLien: enfant.parents[0]?.lien || 'Mère',
@@ -492,12 +617,12 @@ export default function Enfants() {
                                 parentEmail: enfant.parents[0]?.email || '',
                                 parentProfession: enfant.parents[0]?.profession || '',
                                 parentAdresse: enfant.parents[0]?.adresse || '',
-                                docCertif: enfant.documentsRequis.certificatMedical,
-                                docVaccin: enfant.documentsRequis.carnetVaccination,
-                                docDomicile: enfant.documentsRequis.justificatifDomicile,
+                                docCertif: getDocumentsRequis(enfant).certificatMedical,
+                                docVaccin: getDocumentsRequis(enfant).carnetVaccination,
+                                docDomicile: getDocumentsRequis(enfant).justificatifDomicile,
                                 docFiles: enfant.documentsFichiers || {},
                                 jourEcheanceMensuel: String(enfant.jourEcheanceMensuel || 5),
-                                docPhoto: enfant.documentsRequis.photoIdentite,
+                                docPhoto: getDocumentsRequis(enfant).photoIdentite,
                                 allergie: enfant.allergie || '',
                                 regimeAlimentaire: enfant.regimeAlimentaire || ''
                               });
@@ -603,33 +728,33 @@ export default function Enfants() {
                       <div className="grid grid-cols-4 gap-2 text-center text-[10px] font-bold text-slate-500">
                         <div className="space-y-1">
                           <div className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
-                            enfant.documentsRequis.certificatMedical ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
+                            getDocumentsRequis(enfant).certificatMedical ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
                           }`}>
-                            {enfant.documentsRequis.certificatMedical ? '✓' : '✗'}
+                            {getDocumentsRequis(enfant).certificatMedical ? '✓' : '✗'}
                           </div>
                           <span className="block text-[9px] truncate">Médic</span>
                         </div>
                         <div className="space-y-1">
                           <div className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
-                            enfant.documentsRequis.carnetVaccination ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
+                            getDocumentsRequis(enfant).carnetVaccination ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
                           }`}>
-                            {enfant.documentsRequis.carnetVaccination ? '✓' : '✗'}
+                            {getDocumentsRequis(enfant).carnetVaccination ? '✓' : '✗'}
                           </div>
                           <span className="block text-[9px] truncate">Vaccin</span>
                         </div>
                         <div className="space-y-1">
                           <div className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
-                            enfant.documentsRequis.justificatifDomicile ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
+                            getDocumentsRequis(enfant).justificatifDomicile ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
                           }`}>
-                            {enfant.documentsRequis.justificatifDomicile ? '✓' : '✗'}
+                            {getDocumentsRequis(enfant).justificatifDomicile ? '✓' : '✗'}
                           </div>
                           <span className="block text-[9px] truncate">Domi</span>
                         </div>
                         <div className="space-y-1">
                           <div className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
-                            enfant.documentsRequis.photoIdentite ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
+                            getDocumentsRequis(enfant).photoIdentite ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
                           }`}>
-                            {enfant.documentsRequis.photoIdentite ? '✓' : '✗'}
+                            {getDocumentsRequis(enfant).photoIdentite ? '✓' : '✗'}
                           </div>
                           <span className="block text-[9px] truncate pointer-events-none">Photo</span>
                         </div>
@@ -680,11 +805,11 @@ export default function Enfants() {
                           parentEmail: enfant.parents[0]?.email || '',
                           parentProfession: enfant.parents[0]?.profession || '',
                           parentAdresse: enfant.parents[0]?.adresse || '',
-                          docCertif: enfant.documentsRequis.certificatMedical,
-                          docVaccin: enfant.documentsRequis.carnetVaccination,
-                          docDomicile: enfant.documentsRequis.justificatifDomicile,
+                          docCertif: getDocumentsRequis(enfant).certificatMedical,
+                          docVaccin: getDocumentsRequis(enfant).carnetVaccination,
+                          docDomicile: getDocumentsRequis(enfant).justificatifDomicile,
                           jourEcheanceMensuel: String(enfant.jourEcheanceMensuel || 5),
-                          docPhoto: enfant.documentsRequis.photoIdentite,
+                          docPhoto: getDocumentsRequis(enfant).photoIdentite,
                           allergie: enfant.allergie || '',
                           regimeAlimentaire: enfant.regimeAlimentaire || ''
                         });

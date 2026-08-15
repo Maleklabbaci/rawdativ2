@@ -122,12 +122,13 @@ export default function Dashboard() {
     }
   };
 
-  const documentsManquants = enfantsData.filter(e => 
-    !e.documentsRequis.certificatMedical || 
-    !e.documentsRequis.carnetVaccination ||
-    !e.documentsRequis.justificatifDomicile ||
-    !e.documentsRequis.photoIdentite
-  ).length;
+  const documentsManquants = enfantsData.filter(e => {
+    const documents = e.documentsRequis || {};
+    return !documents.certificatMedical ||
+      !documents.carnetVaccination ||
+      !documents.justificatifDomicile ||
+      !documents.photoIdentite;
+  }).length;
 
   const statsCards = [
     {
