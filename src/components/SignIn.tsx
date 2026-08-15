@@ -20,10 +20,17 @@ import {
 
 type AuthMethod = 'password' | 'email' | 'phone';
 
+// Les providers externes restent masqués tant que leurs identifiants ne sont pas
+// configurés dans Supabase et dans l’environnement Vercel. Le mot de passe et
+// l’e-mail sont les parcours directeurs de base.
+const googleProviderConfigured = import.meta.env.VITE_AUTH_GOOGLE_ENABLED === 'true';
+const emailOtpProviderConfigured = import.meta.env.VITE_AUTH_EMAIL_OTP_ENABLED !== 'false';
+const phoneProviderConfigured = import.meta.env.VITE_AUTH_PHONE_ENABLED === 'true';
+
 function formatAuthError(message: string | null, fallback: string): string {
   if (!message) return fallback;
   const normalized = message.toLowerCase();
-  if (normalized.includes('provider is not enabled')) return 'Cette méthode n’est pas encore activée dans Supabase Auth.';
+  if (normalized.includes('provider is not enabled') || normalized.includes('unsupported provider')) return 'Cette méthode n’est pas encore activée dans Supabase Auth.';
   if (normalized.includes('invalid login credentials')) return 'Identifiants incorrects. Vérifiez votre adresse e-mail et votre mot de passe.';
   if (normalized.includes('already registered') || normalized.includes('user already registered')) return 'Cette adresse e-mail possède déjà un compte Rawdha+.';
   if (normalized.includes('password should be at least') || normalized.includes('password must')) return 'Le mot de passe doit respecter les exigences minimales de sécurité.';
@@ -65,6 +72,9 @@ export default function SignIn() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [googleUnavailable, setGoogleUnavailable] = useState(!googleProviderConfigured);
+  const [emailOtpUnavailable, setEmailOtpUnavailable] = useState(!emailOtpProviderConfigured);
+  const [phoneUnavailable, setPhoneUnavailable] = useState(!phoneProviderConfigured);
 
   const changeMethod = (nextMethod: AuthMethod) => {
     setMethod(nextMethod);
@@ -140,6 +150,9 @@ export default function SignIn() {
     setError('');
     const result = await signInWithGoogle();
     if (result.error) {
+      if (result.error.toLowerCase().includes('unsupported provider') || result.error.toLowerCase().includes('provider is not enabled')) {
+        setGoogleUnavailable(true);
+      }
       setError(formatAuthError(result.error, 'La connexion avec Google n’a pas pu être lancée.'));
       setLoading(false);
     }
@@ -161,6 +174,12 @@ export default function SignIn() {
       : await requestPhoneOtp(value);
 
     if (result.error) {
+      const normalizedError = result.error.toLowerCase();
+      if (normalizedError.includes('unsupported provider') || normalizedError.includes('provider is not enabled')) {
+        if (method === 'email') setEmailOtpUnavailable(true);
+        if (method === 'phone') setPhoneUnavailable(true);
+        setMethod('password');
+      }
       setError(formatAuthError(result.error, 'Impossible d’envoyer le code de connexion.'));
     } else {
       setOtpSent(true);
@@ -269,15 +288,22 @@ export default function SignIn() {
 
           {view === 'signin' ? (
             <>
-          <button
-            type="button"
-            onClick={handleGoogleLogin}
-            disabled={loading}
-            className="w-full py-3.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold hover:border-indigo-300 hover:shadow-md transition flex items-center justify-center gap-3 disabled:opacity-50"
-          >
-            <Chrome className="w-5 h-5 text-[#4285F4]" />
-            <span>Continuer avec Google</span>
-          </button>
+          {googleUnavailable ? (
+            <div className="w-full py-3.5 bg-slate-50 border border-slate-200 text-slate-400 rounded-xl font-bold flex items-center justify-center gap-3 text-sm" title="Activez Google dans Supabase Auth pour utiliser cette méthode">
+              <Chrome className="w-5 h-5 text-slate-400" />
+              <span>Google — à activer dans Supabase</span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleGoogleLogin}
+              disabled={loading}
+              className="w-full py-3.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold hover:border-indigo-300 hover:shadow-md transition flex items-center justify-center gap-3 disabled:opacity-50"
+            >
+              <Chrome className="w-5 h-5 text-[#4285F4]" />
+              <span>Continuer avec Google</span>
+            </button>
+          )}
 
           <div className="flex items-center gap-3 text-xs text-slate-400">
             <div className="h-px bg-slate-200 flex-1" />
@@ -289,11 +315,11 @@ export default function SignIn() {
             <button type="button" onClick={() => changeMethod('password')} className={`py-2.5 rounded-lg text-xs font-bold transition ${method === 'password' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
               Mot de passe
             </button>
-            <button type="button" onClick={() => changeMethod('email')} className={`py-2.5 rounded-lg text-xs font-bold transition ${method === 'email' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              Code e-mail
+            <button type="button" onClick={() => !emailOtpUnavailable && changeMethod('email')} disabled={emailOtpUnavailable} className={`py-2.5 rounded-lg text-xs font-bold transition ${method === 'email' && !emailOtpUnavailable ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500'} disabled:cursor-not-allowed`}>
+              {emailOtpUnavailable ? 'E-mail indisponible' : 'Code e-mail'}
             </button>
-            <button type="button" onClick={() => changeMethod('phone')} className={`py-2.5 rounded-lg text-xs font-bold transition ${method === 'phone' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              SMS
+            <button type="button" onClick={() => !phoneUnavailable && changeMethod('phone')} disabled={phoneUnavailable} className={`py-2.5 rounded-lg text-xs font-bold transition ${method === 'phone' && !phoneUnavailable ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500'} disabled:cursor-not-allowed`}>
+              {phoneUnavailable ? 'SMS à activer' : 'SMS'}
             </button>
           </div>
 
