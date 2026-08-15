@@ -201,9 +201,29 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const refreshAdminAccounts = async () => {
+    if (user?.role !== 'admin') return;
+    const freshAccounts = await getCollectionData<UserAccount>('comptes');
+    setComptes(freshAccounts);
+  };
+
   useEffect(() => {
     refreshAll();
-  }, [user?.id]);
+    if (user?.role !== 'admin') return;
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void refreshAdminAccounts();
+    };
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    const interval = window.setInterval(refreshWhenVisible, 10 * 1000);
+
+    return () => {
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.clearInterval(interval);
+    };
+  }, [user?.id, user?.role]);
 
   // --- FILTRE DE SÉCURITÉ GLOBAL ---
   // On s'assure que le directeur ne voit que les données rattachées à son propre ID (crecheId === user.id)
