@@ -64,7 +64,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       console.error('Erreur chargement profil:', error);
       return null;
     }
-    return { ...(data.data as object), id: data.id } as UserAccount;
+    const profile = { ...(data.data as object), id: data.id } as UserAccount;
+    // Rawdha+ ne propose pas encore d’espace parent : seuls admin et directeur
+    // peuvent ouvrir une session de gestion dans cette version.
+    if (profile.role !== 'admin' && profile.role !== 'directeur') {
+      console.warn('Profil authentifié sans rôle de gestion autorisé. Accès refusé.');
+      return null;
+    }
+    return profile;
   };
 
   // ✅ Charge les paramètres de la crèche (nom officiel, logo, tarif) depuis la table
