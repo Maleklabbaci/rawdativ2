@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { addCollectionDocument } from '../supabase';
+import { addCollectionDocument, supabase } from '../supabase';
 import {
   AlertCircle,
   Baby,
@@ -48,6 +48,8 @@ export default function SignIn() {
   const [directorCreche, setDirectorCreche] = useState('');
   const [directorPhone, setDirectorPhone] = useState('');
   const [directorAddress, setDirectorAddress] = useState('');
+  const [directorPassword, setDirectorPassword] = useState('');
+  const [directorPasswordConfirmation, setDirectorPasswordConfirmation] = useState('');
   const [directorWebsite, setDirectorWebsite] = useState('');
   const [directorMessage, setDirectorMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -61,6 +63,8 @@ export default function SignIn() {
     setDirectorCreche('');
     setDirectorPhone('');
     setDirectorAddress('');
+    setDirectorPassword('');
+    setDirectorPasswordConfirmation('');
     setDirectorWebsite('');
     setDirectorMessage('');
   };
@@ -70,17 +74,42 @@ export default function SignIn() {
     setError('');
     setSuccess('');
 
-    if (!directorNom.trim() || !directorPrenom.trim() || !directorEmail.trim() || !directorCreche.trim() || !directorPhone.trim() || !directorAddress.trim()) {
-      setError('Veuillez remplir tous les champs obligatoires du directeur et de la crèche.');
+    if (!directorNom.trim() || !directorPrenom.trim() || !directorEmail.trim() || !directorCreche.trim() || !directorPhone.trim() || !directorAddress.trim() || !directorPassword) {
+      setError('Veuillez remplir tous les champs obligatoires, y compris le mot de passe.');
+      return;
+    }
+    if (directorPassword.length < 8) {
+      setError('Le mot de passe doit contenir au moins 8 caractères.');
+      return;
+    }
+    if (directorPassword !== directorPasswordConfirmation) {
+      setError('Les deux mots de passe ne correspondent pas.');
       return;
     }
 
     setLoading(true);
     try {
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: directorEmail.trim().toLowerCase(),
+        password: directorPassword,
+        options: {
+          data: {
+            full_name: `${directorPrenom.trim()} ${directorNom.trim()}`,
+            prenom: directorPrenom.trim(),
+            nom: directorNom.trim(),
+            nomCreche: directorCreche.trim(),
+          },
+        },
+      });
+      if (signUpError || !signUpData.user) {
+        throw new Error(signUpError?.message || 'Impossible de créer votre inscription.');
+      }
+
       await addCollectionDocument('demandes_directeur', {
         nom: directorNom.trim(),
         prenom: directorPrenom.trim(),
         email: directorEmail.trim().toLowerCase(),
+        authUserId: signUpData.user.id,
         telephone: directorPhone.trim(),
         nomCreche: directorCreche.trim(),
         adresse: directorAddress.trim(),
@@ -90,9 +119,10 @@ export default function SignIn() {
         statut: 'en_attente',
       });
 
+      await supabase.auth.signOut();
       resetRequestForm();
       setView('signin');
-      setSuccess('Votre demande a bien été envoyée. L’administrateur Rawdha+ va examiner vos informations et vous contactera après décision.');
+      setSuccess('Votre demande a bien été envoyée. Après acceptation, connectez-vous directement avec le mot de passe que vous venez de définir.');
     } catch (requestError) {
       console.error('Erreur envoi demande directeur:', requestError);
       setError('Impossible d’envoyer la demande pour le moment. Vérifiez que le formulaire est bien configuré puis réessayez.');
@@ -171,8 +201,8 @@ export default function SignIn() {
             </h2>
             <p className="text-slate-500 leading-relaxed">
               {view === 'signin'
-                ? 'Utilisez les identifiants transmis par l’administrateur après validation de votre demande.'
-                : 'Présentez votre directeur et votre crèche. Aucun compte n’est créé avant la validation de l’administrateur.'}
+                ? 'Utilisez l’adresse e-mail et le mot de passe choisis lors de votre inscription.'
+                : 'Créez vos identifiants dès maintenant. L’administrateur ne fera ensuite que valider ou refuser votre demande.'}
             </p>
           </div>
 
@@ -217,7 +247,7 @@ export default function SignIn() {
               </div>
               <div className="flex items-start gap-3 p-4 rounded-xl bg-indigo-50 border border-indigo-100 text-xs text-indigo-800 leading-relaxed">
                 <KeyRound className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <span>Les comptes créés par l’administrateur sont activés directement, sans confirmation e-mail.</span>
+                <span>Après validation par l’administrateur, votre compte sera activé directement avec le mot de passe choisi à l’inscription.</span>
               </div>
               <button type="submit" disabled={loading} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-indigo-100 transition flex items-center justify-center gap-2 shadow-md disabled:opacity-50">
                 {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><LogIn className="w-5 h-5" /><span>Se connecter à RAWDHA+</span></>}
@@ -270,6 +300,22 @@ export default function SignIn() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Mot de passe *</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input type="password" minLength={8} value={directorPassword} onChange={(event) => setDirectorPassword(event.target.value)} className={iconInputClass} placeholder="8 caractères minimum" required />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Confirmer le mot de passe *</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input type="password" minLength={8} value={directorPasswordConfirmation} onChange={(event) => setDirectorPasswordConfirmation(event.target.value)} className={iconInputClass} placeholder="Répétez le mot de passe" required />
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Site web</label>
                   <div className="relative">
                     <Globe2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -285,7 +331,7 @@ export default function SignIn() {
                 </div>
               </div>
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 leading-relaxed">
-                Après envoi, l’administrateur vérifie la demande. S’il l’accepte, il crée votre accès et vous transmet les identifiants directement par WhatsApp.
+                Votre mot de passe est géré de façon sécurisée par Supabase et n’est jamais envoyé à l’administrateur. Après acceptation, vous pourrez vous connecter immédiatement avec vos identifiants.
               </div>
               <button type="submit" disabled={loading} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-indigo-100 transition flex items-center justify-center gap-2 shadow-md disabled:opacity-50">
                 {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><Send className="w-5 h-5" /><span>Envoyer ma demande</span></>}

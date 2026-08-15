@@ -42,6 +42,7 @@ interface DbContextType {
   updateCompte: (id: string, compte: Partial<UserAccount>) => Promise<void>;
   deleteCompte: (id: string) => Promise<void>;
   addDemandeDirecteur: (demande: Omit<DemandeDirecteur, 'id'>) => Promise<string>;
+  approveDemandeDirecteur: (id: string) => Promise<string>;
   updateDemandeDirecteur: (id: string, demande: Partial<DemandeDirecteur>) => Promise<void>;
   deleteDemandeDirecteur: (id: string) => Promise<void>;
 
@@ -119,6 +120,26 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   // regarder son dashboard, et se glissent dans l'appli dès qu'elles sont prêtes
   // (utile seulement s'il va sur les pages Classes / Activités / Repas / Messagerie).
   const refreshAll = async () => {
+    // Ne lance jamais de requêtes RLS avec le rôle anon pendant l’écran de connexion.
+    // Cela évite les 401 sur toutes les tables avant que Supabase Auth ait une session.
+    if (!user) {
+      setEnfants([]);
+      setClasses([]);
+      setPresences([]);
+      setPresenceJournees([]);
+      setPaiements([]);
+      setPersonnel([]);
+      setActivites([]);
+      setRepas([]);
+      setComptes([]);
+      setDemandesDirecteur([]);
+      setMessages([]);
+      setAvis([]);
+      setNotifications([]);
+      setLoading(false);
+      return;
+    }
+
     try {
       // --- VAGUE 1 : critique pour le Dashboard, on attend ---
       const [dbComptes, dbEnfants, dbPresences, dbPresenceJournees, dbPaiements, dbPersonnel, dbDemandesDirecteur] = await Promise.all([
@@ -222,6 +243,20 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       if (user?.role === 'admin') setDemandesDirecteur(prev => prev.filter(item => item.id !== tempId));
       throw err;
     }
+  };
+
+  const approveDemandeDirecteur = async (id: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const { data, error } = await supabase.functions.invoke('approve-director-request', {
+      body: { demandeId: id },
+      headers: { Authorization: `Bearer ${session?.access_token || ''}` },
+    });
+    if (error || data?.error) {
+      notifyWriteError('modification');
+      throw new Error(data?.error || error?.message || 'Erreur activation compte');
+    }
+    await refreshAll();
+    return data.id as string;
   };
 
   const updateDemandeDirecteur = async (id: string, data: Partial<DemandeDirecteur>) => {
@@ -738,8 +773,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       addCompte,
       updateCompte,
       deleteCompte,
-      addDemandeDirecteur,
-      updateDemandeDirecteur,
+    addDemandeDirecteur,
+    approveDemandeDirecteur,
+    updateDemandeDirecteur,
       deleteDemandeDirecteur,
       addEnfant,
       updateEnfant,

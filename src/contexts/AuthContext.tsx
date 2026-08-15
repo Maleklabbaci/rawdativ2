@@ -57,8 +57,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [creche, setCreche] = useState<CrecheInfo>(DEFAULT_CRECHE);
 
   // Charge le profil (table "comptes") associé à la session Auth active.
-  // Si le trigger Supabase n’est pas encore installé, on tente de créer un profil
-  // directeur minimal avec la session Auth afin de ne pas bloquer l’onboarding.
   const loadProfile = async (userId: string, authUserSnapshot?: AuthUserSnapshot): Promise<UserAccount | null> => {
     const { data, error } = await supabase
       .from('comptes')
@@ -72,34 +70,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     if (!data) {
-      const authUser = authUserSnapshot || (await supabase.auth.getUser()).data.user;
-      if (!authUser || authUser.id !== userId) return null;
-
-      const metadata = (authUser.user_metadata || {}) as Record<string, unknown>;
-      const fullName = String(metadata.full_name || metadata.name || '').trim();
-      const nameParts = fullName.split(/\s+/).filter(Boolean);
-      const fallbackProfile: UserAccount = {
-        id: userId,
-        nom: String(metadata.nom || nameParts.slice(1).join(' ') || '').trim(),
-        prenom: String(metadata.prenom || nameParts[0] || '').trim(),
-        email: authUser.email || '',
-        motDePasse: '',
-        role: 'directeur',
-        abonnementActif: true,
-        dateFinAbonnement: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-        nomCreche: String(metadata.nomCreche || '').trim(),
-      };
-
-      const { id: _profileId, ...profileData } = fallbackProfile;
-      const { error: createError } = await supabase.from('comptes').upsert({
-        id: userId,
-        data: profileData,
-      });
-      if (createError) {
-        console.error('Impossible de créer le profil directeur de secours:', createError);
-        return null;
-      }
-      return fallbackProfile;
+      // Un signup public possède déjà un utilisateur Auth, mais pas encore de profil
+      // Rawdha+ : il doit rester bloqué jusqu’à l’acceptation par l’administrateur.
+      return null;
     }
 
     const profile = { ...(data.data as object), id: data.id } as UserAccount;

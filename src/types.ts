@@ -169,6 +169,8 @@ export interface DemandeDirecteur {
   nom: string;
   prenom: string;
   email: string;
+  /** Utilisateur Supabase Auth créé lors du signup, sans mot de passe en base. */
+  authUserId?: string;
   telephone: string;
   nomCreche: string;
   adresse: string;
@@ -187,7 +189,8 @@ export interface UserAccount {
   nom: string;
   prenom: string;
   email: string;
-  motDePasse: string;
+  /** Jamais renseigné pour les profils Auth ; conservé seulement pour compatibilité des anciens formulaires. */
+  motDePasse?: string;
   role: 'admin' | 'directeur' | 'parent';
   abonnementActif: boolean;
   dateFinAbonnement?: string;
