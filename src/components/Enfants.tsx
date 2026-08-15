@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { 
   Baby, 
   Search, 
@@ -67,6 +67,7 @@ export default function Enfants() {
     createInscriptionLink,
     inscriptionLinks,
     demandesAdmission,
+    decideAdmission,
   } = useDb();
   const { user } = useAuth();
   const isDirecteur = user?.role === 'directeur';
@@ -90,6 +91,7 @@ export default function Enfants() {
   const [newAdmissionLink, setNewAdmissionLink] = useState<(InscriptionLink & { token: string }) | null>(null);
   const [admissionQrDataUrl, setAdmissionQrDataUrl] = useState('');
   const [admissionLinkCopied, setAdmissionLinkCopied] = useState(false);
+  const [admissionActionId, setAdmissionActionId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     nom: '',
@@ -122,6 +124,25 @@ export default function Enfants() {
   const admissionLinkUrl = newAdmissionLink?.token
     ? `${window.location.origin}/admission?token=${encodeURIComponent(newAdmissionLink.token)}`
     : '';
+
+  // Le token est conservé dans le lien permanent et le QR est reconstruit après chaque chargement.
+  useEffect(() => {
+    const persistedLink = inscriptionLinks.find(link => link.active && Boolean(link.token));
+    if (!persistedLink?.token) {
+      setNewAdmissionLink(null);
+      setAdmissionQrDataUrl('');
+      return;
+    }
+    const linkWithToken = persistedLink as InscriptionLink & { token: string };
+    setNewAdmissionLink(linkWithToken);
+    const url = `${window.location.origin}/admission?token=${encodeURIComponent(linkWithToken.token)}`;
+    QRCode.toDataURL(url, {
+      width: 440,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#172554', light: '#ffffff' },
+    }).then(setAdmissionQrDataUrl).catch(error => console.error('Erreur de restauration du QR:', error));
+  }, [inscriptionLinks]);
 
   const generateAdmissionQr = async () => {
     setCreatingAdmissionLink(true);
@@ -463,6 +484,31 @@ export default function Enfants() {
                 </div>
               )}
             </div>
+            {demandesAdmission.some(item => item.statut === 'en_attente') && (
+              <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-black text-white">{isArabic ? 'طلبات وصلت عبر هذا QR' : 'Demandes reçues via ce QR'}</p>
+                  <span className="rounded-full bg-amber-300/20 px-2.5 py-1 text-[10px] font-black text-amber-100">{demandesAdmission.filter(item => item.statut === 'en_attente').length}</span>
+                </div>
+                <div className="mt-3 grid gap-2">
+                  {demandesAdmission.filter(item => item.statut === 'en_attente').map(demande => (
+                    <div key={demande.id} className="rounded-xl bg-white p-3 text-slate-900">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-black">{demande.prenom} {demande.nom}</p>
+                          <p className="mt-1 text-[11px] text-slate-500">{demande.parentPrenom} {demande.parentNom} · {demande.parentTelephone}</p>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-400">{new Date(demande.dateDemande).toLocaleDateString(isArabic ? 'ar-DZ' : 'fr-DZ')}</span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button type="button" disabled={admissionActionId === demande.id} onClick={async () => { setAdmissionActionId(demande.id); try { await decideAdmission(demande.id, 'acceptee'); } finally { setAdmissionActionId(null); } }} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-black text-white disabled:opacity-60">{isArabic ? 'قبول وإضافة' : 'Accepter et ajouter'}</button>
+                        <button type="button" disabled={admissionActionId === demande.id} onClick={async () => { setAdmissionActionId(demande.id); try { await decideAdmission(demande.id, 'refusee'); } finally { setAdmissionActionId(null); } }} className="rounded-lg bg-rose-50 px-3 py-1.5 text-[11px] font-black text-rose-700 disabled:opacity-60">{isArabic ? 'رفض' : 'Refuser'}</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {admissionQrDataUrl && <img src={admissionQrDataUrl} alt={isArabic ? 'رمز قبول QR' : 'QR admission enfant'} className="mx-auto h-40 w-40 rounded-2xl border-4 border-white bg-white p-2 shadow-lg" />}
           </div>
         )}

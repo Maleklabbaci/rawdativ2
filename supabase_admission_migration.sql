@@ -74,8 +74,9 @@ set search_path = public, extensions
 as $$
 declare
   v_user_id text := auth.uid()::text;
-  v_link_id text := 'lien_' || extensions.gen_random_uuid()::text;
-  v_token text := replace(extensions.gen_random_uuid()::text || extensions.gen_random_uuid()::text, '-', '');
+  v_link_id text;
+  v_token text;
+  v_existing jsonb;
   v_settings jsonb;
   v_name text;
 begin
@@ -90,26 +91,63 @@ begin
 
   v_name := coalesce(v_settings->>'crecheName', 'Rawdha+');
 
-  insert into public.inscription_liens (id, data)
-  values (
-    v_link_id,
-    jsonb_build_object(
+  -- Une seule adresse QR active et permanente par crèche. Les clics suivants
+  -- récupèrent le même token au lieu de créer plusieurs liens.
+  select l.data into v_existing
+  from public.inscription_liens l
+  where l.data->>'crecheId' = v_user_id
+    and coalesce((l.data->>'active')::boolean, false)
+  order by l.created_at asc
+  limit 1;
+
+  if v_existing is not null and nullif(v_existing->>'token', '') is not null then
+    return jsonb_build_object(
+      'id', v_existing->>'id',
+      'token', v_existing->>'token',
+      'nomCreche', v_name,
+      'expiresAt', null
+    );
+  end if;
+
+  v_link_id := coalesce(v_existing->>'id', 'lien_' || extensions.gen_random_uuid()::text);
+  v_token := replace(extensions.gen_random_uuid()::text || extensions.gen_random_uuid()::text, '-', '');
+
+  if v_existing is not null then
+    update public.inscription_liens
+    set data = v_existing || jsonb_build_object(
       'id', v_link_id,
       'crecheId', v_user_id,
+      'token', v_token,
       'tokenHash', encode(extensions.digest(v_token, 'sha256'), 'hex'),
-      'label', nullif(left(coalesce(p_label, ''), 120), ''),
+      'label', coalesce(nullif(left(coalesce(p_label, ''), 120), ''), v_existing->>'label'),
       'nomCreche', v_name,
       'active', true,
-      'createdAt', now() at time zone 'utc',
-      'expiresAt', p_expires_at
+      'expiresAt', null
     )
-  );
+    where id = v_link_id;
+  else
+    insert into public.inscription_liens (id, data)
+    values (
+      v_link_id,
+      jsonb_build_object(
+        'id', v_link_id,
+        'crecheId', v_user_id,
+        'token', v_token,
+        'tokenHash', encode(extensions.digest(v_token, 'sha256'), 'hex'),
+        'label', nullif(left(coalesce(p_label, ''), 120), ''),
+        'nomCreche', v_name,
+        'active', true,
+        'createdAt', now() at time zone 'utc',
+        'expiresAt', null
+      )
+    );
+  end if;
 
   return jsonb_build_object(
     'id', v_link_id,
     'token', v_token,
     'nomCreche', v_name,
-    'expiresAt', p_expires_at
+    'expiresAt', null
   );
 end;
 $$;

@@ -256,14 +256,28 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     refreshAll();
-    if (user?.role !== 'admin') return;
+
+    const refreshAdmissionData = async () => {
+      if (user?.role !== 'directeur') return;
+      const [links, demandes] = await Promise.all([
+        getCollectionData<InscriptionLink>('inscription_liens'),
+        getCollectionData<DemandeAdmission>('demandes_admission'),
+      ]);
+      setInscriptionLinks(links);
+      setDemandesAdmission(demandes);
+    };
 
     const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') void refreshAdminAccounts();
+      if (document.visibilityState !== 'visible') return;
+      if (user?.role === 'admin') void refreshAdminAccounts();
+      if (user?.role === 'directeur') void refreshAdmissionData();
     };
+
     window.addEventListener('focus', refreshWhenVisible);
     document.addEventListener('visibilitychange', refreshWhenVisible);
-    const interval = window.setInterval(refreshWhenVisible, 10 * 1000);
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible' && user?.role === 'directeur') void refreshAdmissionData();
+    }, 8 * 1000);
 
     return () => {
       window.removeEventListener('focus', refreshWhenVisible);
@@ -907,7 +921,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       createdAt: new Date().toISOString(),
       expiresAt: (data.expiresAt as string | null | undefined) || null,
     } satisfies InscriptionLink & { token: string };
-    setInscriptionLinks(prev => [created, ...prev]);
+    setInscriptionLinks(prev => [created, ...prev.filter(link => link.id !== created.id)]);
     return created;
   };
 
