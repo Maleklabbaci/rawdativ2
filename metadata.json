@@ -1,0 +1,8 @@
+{
+  "name": "RAWDHA+ - Gestion de Crèche",
+  "description": "Système de gestion complet pour crèches, garderies et jardins d'enfants en Algérie. Prise en charge du français et de l'arabe.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

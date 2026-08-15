@@ -1,0 +1,77 @@
+{
+  "collections": {
+    "enfants": {
+      "fields": {
+        "id": { "type": "string" },
+        "nom": { "type": "string" },
+        "prenom": { "type": "string" },
+        "dateNaissance": { "type": "string" },
+        "genre": { "type": "string" },
+        "groupeAge": { "type": "string" },
+        "dateInscription": { "type": "string" },
+        "statut": { "type": "string" },
+        "allergie": { "type": "string" },
+        "regimeAlimentaire": { "type": "string" },
+        "contactsUrgence": { "type": "array" },
+        "parents": { "type": "array" },
+        "documentsRequis": { "type": "map" }
+      }
+    },
+    "presences": {
+      "fields": {
+        "id": { "type": "string" },
+        "enfantId": { "type": "string" },
+        "date": { "type": "string" },
+        "statut": { "type": "string" }
+      }
+    },
+    "paiements": {
+      "fields": {
+        "id": { "type": "string" },
+        "enfantId": { "type": "string" },
+        "montant": { "type": "number" },
+        "statut": { "type": "string" },
+        "moisConcerne": { "type": "string" }
+      }
+    },
+    "personnel": {
+      "fields": {
+        "id": { "type": "string" },
+        "nom": { "type": "string" },
+        "prenom": { "type": "string" },
+        "poste": { "type": "string" },
+        "statut": { "type": "string" }
+      }
+    },
+    "classes": {
+      "fields": {
+        "id": { "type": "string" },
+        "nom": { "type": "string" },
+        "niveau": { "type": "string" },
+        "capacite": { "type": "number" }
+      }
+    },
+    "activites": {
+      "fields": {
+        "id": { "type": "string" },
+        "titre": { "type": "string" },
+        "date": { "type": "string" },
+        "groupe": { "type": "string" }
+      }
+    },
+    "repas": {
+      "fields": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "date": { "type": "string" },
+        "menu": { "type": "string" }
+      }
+    },
+    "creche": {
+      "fields": {
+        "nom": { "type": "string" },
+        "adresse": { "type": "string" }
+      }
+    }
+  }
+}
