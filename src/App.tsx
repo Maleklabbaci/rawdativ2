@@ -1,6 +1,6 @@
 
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { School, LogOut, Menu } from 'lucide-react';
+import { School, LogOut, Menu, CircleHelp, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
@@ -28,11 +28,16 @@ import ChatBubble from './components/ChatBubble';
 import { AlertCircle, Lock, Check } from 'lucide-react';
 import OnboardingCrecheModal, { hasCompletedOnboarding } from './components/OnboardingCrecheModal';
 import WelcomeDirectorModal from './components/WelcomeDirectorModal';
+import LanguageChoiceModal from './components/LanguageChoiceModal';
+import HelpCenterModal from './components/HelpCenterModal';
 
 function AppContent() {
   const { isAuthenticated, user, creche, logout } = useAuth();
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isBrowserFullscreen, setIsBrowserFullscreen] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [couponCode, setCouponCode] = useState('');
   const [showCouponInput, setShowCouponInput] = useState(false); // ✅ champ coupon replié par défaut, pour ne pas distraire du CTA principal // ✅ champ code coupon sur l'écran d'abonnement expiré
   const { language, setLanguage, t } = useLanguage();
@@ -42,15 +47,27 @@ function AppContent() {
   // ses infos de crèche (existence du doc "parametres/creche_{id}"). null = pas encore vérifié.
   const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [showLanguageChoice, setShowLanguageChoice] = useState(false);
 
   useEffect(() => {
     if (user?.role === 'directeur') {
       const welcomeKey = `rawdha_welcome_seen_${user.id}`;
+      const languageKey = `rawdha_language_selected_${user.id}`;
       setShowWelcome(localStorage.getItem(welcomeKey) !== '1');
+      setShowLanguageChoice(localStorage.getItem(languageKey) !== '1');
     } else {
       setShowWelcome(false);
+      setShowLanguageChoice(false);
     }
   }, [user?.id, user?.role]);
+
+  const chooseInitialLanguage = (selectedLanguage: 'fr' | 'ar') => {
+    setLanguage(selectedLanguage);
+    if (user?.id) {
+      localStorage.setItem(`rawdha_language_selected_${user.id}`, '1');
+    }
+    setShowLanguageChoice(false);
+  };
 
   const closeWelcome = () => {
     if (user?.id) {
@@ -66,6 +83,24 @@ function AppContent() {
       setNeedsOnboarding(false);
     }
   }, [user?.id, user?.role]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => setIsBrowserFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleBrowserFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch (error) {
+      console.warn('Le mode plein écran n’est pas disponible dans ce navigateur.', error);
+    }
+  };
 
   useEffect(() => {
     if (user?.role === 'admin') {
@@ -306,7 +341,9 @@ if (isSubscriptionExpired) {
         currentPage={currentPage} 
         onPageChange={setCurrentPage} 
         isOpen={isSidebarOpen} 
-        onClose={() => setIsSidebarOpen(false)} 
+        onClose={() => setIsSidebarOpen(false)}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(value => !value)}
       />
 
       {/* Sidebar Backdrop Overlay on mobile */}
@@ -323,7 +360,7 @@ if (isSubscriptionExpired) {
       </AnimatePresence>
 
       {/* Main Content */}
-      <div className="lg:ltr:pl-72 lg:rtl:pr-72 transition-all duration-300">
+      <div className={`transition-all duration-300 ${isSidebarCollapsed ? 'lg:ltr:pl-20 lg:rtl:pr-20' : 'lg:ltr:pl-72 lg:rtl:pr-72'}`}>
         {/* Header */}
         <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 sticky top-0 z-30 shadow-xs">
           <div className="px-4 sm:px-6 lg:px-10 py-3 sm:py-4">
@@ -370,6 +407,33 @@ if (isSubscriptionExpired) {
                   <NotificationBell onNavigateToPaiements={() => setCurrentPage('paiements')} />
                 )}
 
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowHelp(true)}
+                    title={language === 'ar' ? 'شرح المنصة' : 'Comment fonctionne Rawdha+ ?'}
+                    className="flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 transition hover:bg-indigo-100 cursor-pointer"
+                  >
+                    <CircleHelp className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsSidebarCollapsed(value => !value)}
+                    title={language === 'ar' ? (isSidebarCollapsed ? 'فتح القائمة' : 'طي القائمة') : (isSidebarCollapsed ? 'Ouvrir la barre' : 'Replier la barre')}
+                    className="hidden lg:flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 cursor-pointer"
+                  >
+                    {isSidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleBrowserFullscreen}
+                    title={language === 'ar' ? (isBrowserFullscreen ? 'الخروج من ملء الشاشة' : 'ملء الشاشة') : (isBrowserFullscreen ? 'Quitter le plein écran' : 'Plein écran')}
+                    className="hidden sm:flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 cursor-pointer"
+                  >
+                    {isBrowserFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                  </button>
+                </div>
+
                 {/* Language Selector */}
                 <div className="flex gap-1 p-1 bg-slate-100/80 rounded-xl border border-slate-200/50">
                   <button
@@ -409,7 +473,10 @@ if (isSubscriptionExpired) {
 
         {/* Page Content */}
 <main className="p-3 sm:p-6 lg:p-10 max-w-[1600px] mx-auto">
-  {showWelcome && user?.role === 'directeur' && (
+  {showLanguageChoice && user?.role === 'directeur' && (
+    <LanguageChoiceModal onChoose={chooseInitialLanguage} />
+  )}
+  {!showLanguageChoice && showWelcome && user?.role === 'directeur' && (
     <WelcomeDirectorModal
       user={user}
       language={language as 'fr' | 'ar'}
@@ -417,12 +484,19 @@ if (isSubscriptionExpired) {
       onDone={closeWelcome}
     />
   )}
-  {!showWelcome && needsOnboarding && (
+  {!showLanguageChoice && !showWelcome && needsOnboarding && (
     <OnboardingCrecheModal onDone={() => setNeedsOnboarding(false)} />
   )}
   {renderPage()}
         </main>
       </div>
+
+      <HelpCenterModal
+        isOpen={showHelp}
+        onClose={() => setShowHelp(false)}
+        currentPage={currentPage}
+        language={language as 'fr' | 'ar'}
+      />
 
       {/* Persistent Live Chat Bubble */}
       <ChatBubble />

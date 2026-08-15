@@ -20,7 +20,8 @@ import { motion, AnimatePresence } from 'motion/react';
 export default function ChatBubble() {
   const { user } = useAuth();
   const { messages, comptes, avis, addMessage, updateMessage, addAvis, refreshAll } = useDb();
-  const { language, isFrench } = useLanguage();
+  const { language } = useLanguage();
+  const isFrench = language !== 'ar';
 
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'avis'>('chat');
@@ -187,7 +188,7 @@ export default function ChatBubble() {
         )}
       </AnimatePresence>
 
-      <div className="fixed bottom-6 right-6 z-40 font-sans" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      <div className={`fixed bottom-6 ${language === 'ar' ? 'left-6' : 'right-6'} z-40 font-sans`} dir={language === 'ar' ? 'rtl' : 'ltr'}>
         <motion.button
           onClick={() => setIsOpen(!isOpen)}
           whileHover={{ scale: 1.05 }}
@@ -196,7 +197,7 @@ export default function ChatBubble() {
         >
           {isOpen ? <X className="w-6 h-6" /> : <Headset className="w-6 h-6" />}
           {unreadCount > 0 && (
-            <span className="absolute -top-2 -right-2 bg-rose-600 text-white text-[11px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-white animate-bounce shadow-md">
+            <span className={`absolute -top-2 ${language === 'ar' ? '-left-2' : '-right-2'} bg-rose-600 text-white text-[11px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-white animate-bounce shadow-md`}>
               {unreadCount}
             </span>
           )}
@@ -209,12 +210,12 @@ export default function ChatBubble() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 30, scale: 0.95 }}
               transition={{ duration: 0.2 }}
-              className="absolute bottom-20 right-0 w-85 sm:w-[400px] h-[550px] bg-white border border-slate-200 rounded-3xl shadow-2xl flex flex-col overflow-hidden"
+              className={`absolute bottom-20 ${language === 'ar' ? 'left-0' : 'right-0'} w-[min(92vw,400px)] h-[550px] bg-white border border-slate-200 rounded-3xl shadow-2xl flex flex-col overflow-hidden`}
             >
               <div className="p-4 bg-gradient-to-r from-slate-800 to-slate-900 text-white flex items-center justify-between shadow-md z-10">
                 <div className="flex items-center gap-3">
                   {user.role === 'admin' && activeDirectorThread && activeTab === 'chat' && (
-                    <button onClick={() => setActiveDirectorThread(null)} className="p-1 hover:bg-white/10 rounded-lg text-white transition mr-1">
+                    <button onClick={() => setActiveDirectorThread(null)} className="p-1 hover:bg-white/10 rounded-lg text-white transition ltr:mr-1 rtl:ml-1">
                       <ChevronLeft className="w-5 h-5" />
                     </button>
                   )}
@@ -285,7 +286,7 @@ export default function ChatBubble() {
                           setActiveDirectorThread(director.id);
                           messages.filter(m => m.parentId === director.id && m.recipientId === 'admin' && !m.isRead).forEach(m => updateMessage(m.id, { isRead: true }));
                         }}
-                        className={`w-full p-3 bg-white border rounded-2xl flex items-center gap-3 transition text-right sm:text-left cursor-pointer shadow-xs ${unreadCount > 0 ? 'border-indigo-400 bg-indigo-50/30' : 'border-slate-200 hover:border-indigo-300'}`}
+                        className={`w-full p-3 bg-white border rounded-2xl flex items-center gap-3 transition cursor-pointer shadow-xs ${unreadCount > 0 ? 'border-indigo-400 bg-indigo-50/30' : 'border-slate-200 hover:border-indigo-300'}`}
                       >
                         <div className="w-10 h-10 bg-indigo-50 text-indigo-700 rounded-xl font-bold flex items-center justify-center flex-shrink-0 text-sm border border-indigo-100 overflow-hidden">
                           {`${director.prenom?.[0] || ''}${director.nom?.[0] || ''}`.toUpperCase()}

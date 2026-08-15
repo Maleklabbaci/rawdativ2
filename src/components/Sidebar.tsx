@@ -15,11 +15,13 @@ import {
   MapPin,
   Bell,
   BarChart3,
-  X
+  X,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
-export default function Sidebar({ currentPage, onPageChange, isOpen, onClose }: any) {
+export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, isCollapsed = false, onToggleCollapse }: any) {
   const { user, creche } = useAuth();
   const { language, t } = useLanguage();
 
@@ -58,7 +60,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose }: 
   return (
     <>
       <aside 
-        className={`w-72 bg-slate-900 text-slate-100 fixed h-screen top-0 shadow-2xl z-40 flex flex-col justify-between overflow-hidden select-none transition-transform duration-300 ${
+        className={`w-72 ${isCollapsed ? 'lg:w-20' : 'lg:w-72'} bg-slate-900 text-slate-100 fixed h-screen top-0 shadow-2xl z-40 flex flex-col justify-between overflow-hidden select-none transition-all duration-300 ${
           language === 'ar'
             ? 'right-0 border-l border-slate-800 ' + (isOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0')
             : 'left-0 border-r border-slate-800 ' + (isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0')
@@ -67,8 +69,8 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose }: 
         <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
         <div className="absolute bottom-16 left-0 w-32 h-32 bg-pink-500/10 rounded-full blur-2xl pointer-events-none" />
 
-        <div className="p-6 border-b border-slate-800">
-          <div className="flex items-center justify-between gap-3.5">
+        <div className={`border-b border-slate-800 transition-all duration-300 ${isCollapsed ? 'p-4 lg:p-3' : 'p-6'}`}>
+          <div className={`flex items-center justify-between gap-3.5 ${isCollapsed ? 'lg:justify-center' : ''}`}>
             <div className="flex items-center gap-3.5 overflow-hidden">
               <div className="p-2.5 bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 rounded-2xl shadow-lg shadow-indigo-500/20 text-white flex-shrink-0 w-11 h-11 flex items-center justify-center overflow-hidden">
                 {creche?.logoUrl ? (
@@ -77,7 +79,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose }: 
                   <Baby className="w-6 h-6" />
                 )}
               </div>
-              <div className="truncate">
+              <div className={`truncate ${isCollapsed ? 'lg:hidden' : ''}`}>
                 <h1 className="text-xl font-black tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent">
                   RAWDHA+
                 </h1>
@@ -87,16 +89,28 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose }: 
               </div>
             </div>
 
-            <button 
-              onClick={onClose}
-              className="lg:hidden p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer flex-shrink-0"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-1">
+              {onToggleCollapse && (
+                <button
+                  type="button"
+                  onClick={onToggleCollapse}
+                  title={language === 'ar' ? (isCollapsed ? 'فتح القائمة' : 'طي القائمة') : (isCollapsed ? 'Ouvrir la barre' : 'Replier la barre')}
+                  className="hidden lg:flex p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                >
+                  {isCollapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="lg:hidden p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer flex-shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </div>
 
-        <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
+        <nav className={`flex-1 py-6 space-y-1.5 overflow-y-auto ${isCollapsed ? 'px-2 lg:px-2' : 'px-4'}`}>
           {items.map((item) => {
             const IconComponent = item.icon;
             const isActive = currentPage === item.key;
@@ -105,7 +119,8 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose }: 
               <button 
                 id={`sidebar-tab-${item.key}`}
                 key={item.key} 
-                className={`relative group w-full flex items-center justify-between p-3.5 rounded-xl transition duration-150 cursor-pointer ${
+                aria-label={getTabLabel(item.key, item.label)}
+                className={`relative group w-full flex items-center justify-between p-3.5 rounded-xl transition duration-150 cursor-pointer ${isCollapsed ? 'lg:justify-center' : ''} ${
                   isActive 
                     ? 'text-white' 
                     : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/40'
@@ -127,10 +142,10 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose }: 
                   <IconComponent className={`w-5 h-5 transition-transform duration-200 group-hover:scale-105 ${
                     isActive ? 'text-white' : item.color
                   }`} />
-                  <span className="text-sm font-semibold tracking-wide">{getTabLabel(item.key, item.label)}</span>
+                  <span className={`text-sm font-semibold tracking-wide ${isCollapsed ? 'lg:hidden' : ''}`}>{getTabLabel(item.key, item.label)}</span>
                 </span>
 
-                {!isActive && (
+                {!isActive && !isCollapsed && (
                   <span className="w-1.5 h-1.5 bg-slate-700 rounded-full opacity-60 group-hover:opacity-100 transition z-10" />
                 )}
               </button>
@@ -138,15 +153,15 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose }: 
           })}
         </nav>
 
-        <div className="p-4 border-t border-slate-800/60 bg-slate-950/40 backdrop-blur-md relative z-10">
-          <div className="flex items-center gap-3 p-2 bg-slate-900/60 rounded-2xl border border-slate-800/50">
+        <div className={`border-t border-slate-800/60 bg-slate-950/40 backdrop-blur-md relative z-10 ${isCollapsed ? 'p-2' : 'p-4'}`}>
+          <div className={`flex items-center gap-3 p-2 bg-slate-900/60 rounded-2xl border border-slate-800/50 ${isCollapsed ? 'lg:justify-center' : ''}`}>
             <div className="w-11 h-11 bg-indigo-500/20 text-indigo-400 rounded-xl flex items-center justify-center font-bold tracking-wider relative flex-shrink-0 border border-indigo-500/25">
               <span>
                 {user ? `${user.prenom[0] || ''}${user.nom[0] || ''}`.toUpperCase() : 'AD'}
               </span>
               <div className="absolute -bottom-1 -right-1 bg-green-500 w-3 h-3 rounded-full border-2 border-slate-900" />
             </div>
-            <div className="flex-1 min-w-0">
+            <div className={`flex-1 min-w-0 ${isCollapsed ? 'lg:hidden' : ''}`}>
               <p className="text-xs font-black text-white truncate flex items-center gap-1">
                 {user ? `${user.prenom} ${user.nom}` : 'Admin'}
                 {user?.role === 'admin' && <Crown className="w-3 h-3 text-amber-400 flex-shrink-0" />}
