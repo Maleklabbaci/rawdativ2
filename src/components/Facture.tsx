@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { Download, X, Printer } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-import { Paiement, Enfant } from '../types';
+import { Paiement, Enfant, Parent } from '../types';
 
 interface FactureProps {
   paiement: Paiement;
@@ -80,7 +80,7 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
     return t('late');
   };
 
-  const parentInfo = enfant?.parents?.[0] || {};
+  const parentInfo: Partial<Parent> = enfant?.parents?.[0] || {};
   const invoiceNumber = `FAC-${paiement?.id?.slice(0, 8).toUpperCase() || 'INCONNU'}`;
   const invoiceDate = new Date().toLocaleDateString(
     language === 'ar' ? 'ar-DZ' : 'fr-FR'

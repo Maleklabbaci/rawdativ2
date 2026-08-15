@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { School, LogOut, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -8,16 +8,18 @@ import { DbProvider, useDb } from './contexts/DbContext';
 import SignIn from './components/SignIn';
 import Dashboard from './components/Dashboard';
 import Sidebar from './components/Sidebar';
-import Enfants from './components/Enfants';
-import Classes from './components/Classes';
-import Presences from './components/Presences';
-import Paiements from './components/Paiements';
-import Personnel from './components/Personnel';
-import Activites from './components/Activites';
-import Repas from './components/Repas';
-import Parametres from './components/Parametres';
-import Comptes from './components/Comptes';
-import Notifications from './components/Notifications';
+// ✅ FIX (bundle size): ces pages ne sont chargées que quand l'utilisateur y navigue
+// réellement, au lieu d'être toutes téléchargées dès le login (chunk unique 962 Ko avant).
+const Enfants = lazy(() => import('./components/Enfants'));
+const Classes = lazy(() => import('./components/Classes'));
+const Presences = lazy(() => import('./components/Presences'));
+const Paiements = lazy(() => import('./components/Paiements'));
+const Personnel = lazy(() => import('./components/Personnel'));
+const Activites = lazy(() => import('./components/Activites'));
+const Repas = lazy(() => import('./components/Repas'));
+const Parametres = lazy(() => import('./components/Parametres'));
+const Comptes = lazy(() => import('./components/Comptes'));
+const Notifications = lazy(() => import('./components/Notifications'));
 import NotificationBell from './components/NotificationBell';
 import NotificationPopup from './components/NotificationPopup';
 import ChatBubble from './components/ChatBubble';
@@ -240,32 +242,27 @@ if (isSubscriptionExpired) {
   }
 
   const renderPage = () => {
-    switch (currentPage) {
-      case 'dashboard':
-        return <Dashboard />;
-      case 'enfants':
-        return <Enfants />;
-      case 'classes':
-        return <Classes />;
-      case 'presences':
-        return <Presences />;
-      case 'paiements':
-        return <Paiements />;
-      case 'personnel':
-        return <Personnel />;
-      case 'activites':
-        return <Activites />;
-      case 'repas':
-        return <Repas />;
-      case 'comptes':
-        return <Comptes />;
-      case 'notifications':
-        return <Notifications />;
-      case 'parametres':
-        return <Parametres />;
-      default:
-        return <Dashboard />;
-    }
+    const page = (() => {
+      switch (currentPage) {
+        case 'dashboard': return <Dashboard />;
+        case 'enfants': return <Enfants />;
+        case 'classes': return <Classes />;
+        case 'presences': return <Presences />;
+        case 'paiements': return <Paiements />;
+        case 'personnel': return <Personnel />;
+        case 'activites': return <Activites />;
+        case 'repas': return <Repas />;
+        case 'comptes': return <Comptes />;
+        case 'notifications': return <Notifications />;
+        case 'parametres': return <Parametres />;
+        default: return <Dashboard />;
+      }
+    })();
+    return (
+      <Suspense fallback={<div className="flex items-center justify-center h-64 text-slate-400">Chargement...</div>}>
+        {page}
+      </Suspense>
+    );
   };
 
   return (

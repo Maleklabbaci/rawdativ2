@@ -9,6 +9,7 @@ import {
   supabase
 } from '../supabase';
 import { useAuth } from './AuthContext';
+import { useToast } from './ToastContext';
 
 interface DbContextType {
   enfants: Enfant[];
@@ -72,6 +73,17 @@ const DbContext = createContext<DbContextType | null>(null);
 
 export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const { user, creche } = useAuth(); // Récupère l'utilisateur connecté + les paramètres de sa crèche (tarif, etc.)
+  const { showToast } = useToast();
+  // ✅ FIX: message générique en cas d'échec d'écriture Supabase, pour ne plus jamais
+  // avaler une erreur en silence (l'utilisateur croyait avoir sauvegardé pour rien).
+  const notifyWriteError = (action: 'ajout' | 'modification' | 'suppression') => {
+    showToast(
+      action === 'ajout' ? "Échec de l'enregistrement, réessayez." :
+      action === 'modification' ? "Échec de la modification, réessayez." :
+      "Échec de la suppression, réessayez.",
+      'error'
+    );
+  };
   
   const [enfants, setEnfants] = useState<Enfant[]>([]);
   const [classes, setClasses] = useState<Classe[]>([]);
@@ -173,6 +185,11 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const scopedPresences = user?.role === 'directeur' ? presences.filter(p => validEnfantIds.has(p.enfantId)) : presences;
   const scopedPaiements = user?.role === 'directeur' ? paiements.filter(p => validEnfantIds.has(p.enfantId)) : paiements;
 
+  // ✅ FIX: avant, TOUS les comptes (tous les directeurs : nom, email, statut abonnement...) étaient
+  // chargés en mémoire dans le navigateur de CHAQUE utilisateur connecté, même un simple directeur,
+  // alors qu'il n'a besoin de voir que le sien. Seul l'admin a besoin de la liste complète.
+  const scopedComptes = user?.role === 'admin' ? comptes : comptes.filter(c => c.id === user?.id);
+
 
   // --- ENFANTS ---
   const addEnfant = async (enfant: Omit<Enfant, 'id'>) => {
@@ -184,18 +201,25 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setEnfants(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
     } catch (err) {
+      setEnfants(prev => prev.filter(item => item.id !== tempId)); // rollback: retire l'ajout optimiste
+      notifyWriteError('ajout');
       return tempId;
     }
   };
 
   const updateEnfant = async (id: string, data: Partial<Enfant>) => {
+    const previous = enfants.find(item => item.id === id);
     setEnfants(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
     try {
       await updateCollectionDocument<Enfant>('enfants', id, data);
-    } catch (err) {}
+    } catch (err) {
+      if (previous) setEnfants(prev => prev.map(item => item.id === id ? previous : item)); // rollback
+      notifyWriteError('modification');
+    }
   };
 
   const deleteEnfant = async (id: string) => {
+    const previous = enfants.find(item => item.id === id);
     setEnfants(prev => prev.filter(item => item.id !== id));
     setPresences(prev => prev.filter(item => item.enfantId !== id));
     setPaiements(prev => prev.filter(item => item.enfantId !== id));
@@ -205,7 +229,10 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       for (const p of relatedPresences) await deleteCollectionDocument('presences', p.id);
       const relatedPaiements = paiements.filter(p => p.enfantId === id);
       for (const p of relatedPaiements) await deleteCollectionDocument('paiements', p.id);
-    } catch (err) {}
+    } catch (err) {
+      if (previous) setEnfants(prev => [...prev, previous]); // rollback: on ne peut pas fiablement restaurer présences/paiements liés, mais on prévient
+      notifyWriteError('suppression');
+    }
   };
 
   // --- CLASSES ---
@@ -217,17 +244,29 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const freshId = await addCollectionDocument('classes', classe);
       setClasses(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
-    } catch (err) { return tempId; }
+    } catch (err) {
+      setClasses(prev => prev.filter(item => item.id !== tempId));
+      notifyWriteError('ajout');
+      return tempId;
+    }
   };
 
   const updateClasse = async (id: string, data: Partial<Classe>) => {
+    const previous = classes.find(item => item.id === id);
     setClasses(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try { await updateCollectionDocument<Classe>('classes', id, data); } catch (err) {}
+    try { await updateCollectionDocument<Classe>('classes', id, data); } catch (err) {
+      if (previous) setClasses(prev => prev.map(item => item.id === id ? previous : item));
+      notifyWriteError('modification');
+    }
   };
 
   const deleteClasse = async (id: string) => {
+    const previous = classes.find(item => item.id === id);
     setClasses(prev => prev.filter(item => item.id !== id));
-    try { await deleteCollectionDocument('classes', id); } catch (err) {}
+    try { await deleteCollectionDocument('classes', id); } catch (err) {
+      if (previous) setClasses(prev => [...prev, previous]);
+      notifyWriteError('suppression');
+    }
   };
 
   // --- PRESENCES ---
@@ -239,17 +278,29 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const freshId = await addCollectionDocument('presences', presence);
       setPresences(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
-    } catch (err) { return tempId; }
+    } catch (err) {
+      setPresences(prev => prev.filter(item => item.id !== tempId));
+      notifyWriteError('ajout');
+      return tempId;
+    }
   };
 
   const updatePresence = async (id: string, data: Partial<Presence>) => {
+    const previous = presences.find(item => item.id === id);
     setPresences(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try { await updateCollectionDocument<Presence>('presences', id, data); } catch (err) {}
+    try { await updateCollectionDocument<Presence>('presences', id, data); } catch (err) {
+      if (previous) setPresences(prev => prev.map(item => item.id === id ? previous : item));
+      notifyWriteError('modification');
+    }
   };
 
   const deletePresence = async (id: string) => {
+    const previous = presences.find(item => item.id === id);
     setPresences(prev => prev.filter(item => item.id !== id));
-    try { await deleteCollectionDocument('presences', id); } catch (err) {}
+    try { await deleteCollectionDocument('presences', id); } catch (err) {
+      if (previous) setPresences(prev => [...prev, previous]);
+      notifyWriteError('suppression');
+    }
   };
 
   // --- PAIEMENTS ---
@@ -261,17 +312,29 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const freshId = await addCollectionDocument('paiements', paiement);
       setPaiements(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
-    } catch (err) { return tempId; }
+    } catch (err) {
+      setPaiements(prev => prev.filter(item => item.id !== tempId));
+      notifyWriteError('ajout');
+      return tempId;
+    }
   };
 
   const updatePaiement = async (id: string, data: Partial<Paiement>) => {
+    const previous = paiements.find(item => item.id === id);
     setPaiements(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try { await updateCollectionDocument<Paiement>('paiements', id, data); } catch (err) {}
+    try { await updateCollectionDocument<Paiement>('paiements', id, data); } catch (err) {
+      if (previous) setPaiements(prev => prev.map(item => item.id === id ? previous : item));
+      notifyWriteError('modification');
+    }
   };
 
   const deletePaiement = async (id: string) => {
+    const previous = paiements.find(item => item.id === id);
     setPaiements(prev => prev.filter(item => item.id !== id));
-    try { await deleteCollectionDocument('paiements', id); } catch (err) {}
+    try { await deleteCollectionDocument('paiements', id); } catch (err) {
+      if (previous) setPaiements(prev => [...prev, previous]);
+      notifyWriteError('suppression');
+    }
   };
 
   // --- PERSONNEL ---
@@ -283,17 +346,29 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const freshId = await addCollectionDocument('personnel', staff);
       setPersonnel(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
-    } catch (err) { return tempId; }
+    } catch (err) {
+      setPersonnel(prev => prev.filter(item => item.id !== tempId));
+      notifyWriteError('ajout');
+      return tempId;
+    }
   };
 
   const updatePersonnel = async (id: string, data: Partial<Personnel>) => {
+    const previous = personnel.find(item => item.id === id);
     setPersonnel(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try { await updateCollectionDocument<Personnel>('personnel', id, data); } catch (err) {}
+    try { await updateCollectionDocument<Personnel>('personnel', id, data); } catch (err) {
+      if (previous) setPersonnel(prev => prev.map(item => item.id === id ? previous : item));
+      notifyWriteError('modification');
+    }
   };
 
   const deletePersonnel = async (id: string) => {
+    const previous = personnel.find(item => item.id === id);
     setPersonnel(prev => prev.filter(item => item.id !== id));
-    try { await deleteCollectionDocument('personnel', id); } catch (err) {}
+    try { await deleteCollectionDocument('personnel', id); } catch (err) {
+      if (previous) setPersonnel(prev => [...prev, previous]);
+      notifyWriteError('suppression');
+    }
   };
 
   // --- ACTIVITES ---
@@ -305,17 +380,29 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const freshId = await addCollectionDocument('activites', activite);
       setActivites(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
-    } catch (err) { return tempId; }
+    } catch (err) {
+      setActivites(prev => prev.filter(item => item.id !== tempId));
+      notifyWriteError('ajout');
+      return tempId;
+    }
   };
 
   const updateActivite = async (id: string, data: Partial<Activite>) => {
+    const previous = activites.find(item => item.id === id);
     setActivites(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try { await updateCollectionDocument<Activite>('activites', id, data); } catch (err) {}
+    try { await updateCollectionDocument<Activite>('activites', id, data); } catch (err) {
+      if (previous) setActivites(prev => prev.map(item => item.id === id ? previous : item));
+      notifyWriteError('modification');
+    }
   };
 
   const deleteActivite = async (id: string) => {
+    const previous = activites.find(item => item.id === id);
     setActivites(prev => prev.filter(item => item.id !== id));
-    try { await deleteCollectionDocument('activites', id); } catch (err) {}
+    try { await deleteCollectionDocument('activites', id); } catch (err) {
+      if (previous) setActivites(prev => [...prev, previous]);
+      notifyWriteError('suppression');
+    }
   };
 
   // --- REPAS ---
@@ -327,17 +414,29 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const freshId = await addCollectionDocument('repas', meal);
       setRepas(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
-    } catch (err) { return tempId; }
+    } catch (err) {
+      setRepas(prev => prev.filter(item => item.id !== tempId));
+      notifyWriteError('ajout');
+      return tempId;
+    }
   };
 
   const updateRepas = async (id: string, data: Partial<Repas>) => {
+    const previous = repas.find(item => item.id === id);
     setRepas(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try { await updateCollectionDocument<Repas>('repas', id, data); } catch (err) {}
+    try { await updateCollectionDocument<Repas>('repas', id, data); } catch (err) {
+      if (previous) setRepas(prev => prev.map(item => item.id === id ? previous : item));
+      notifyWriteError('modification');
+    }
   };
 
   const deleteRepas = async (id: string) => {
+    const previous = repas.find(item => item.id === id);
     setRepas(prev => prev.filter(item => item.id !== id));
-    try { await deleteCollectionDocument('repas', id); } catch (err) {}
+    try { await deleteCollectionDocument('repas', id); } catch (err) {
+      if (previous) setRepas(prev => [...prev, previous]);
+      notifyWriteError('suppression');
+    }
   };
 
   // --- COMPTES ---
@@ -350,6 +449,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       headers: { Authorization: `Bearer ${session?.access_token}` },
     });
     if (error || data?.error) {
+      notifyWriteError('ajout');
       throw new Error(data?.error || error?.message || 'Erreur création compte');
     }
     await refreshAll(); // recharge depuis le serveur plutôt que de deviner l'état local
@@ -358,10 +458,17 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   // ✅ FIX: on ne cache plus l'erreur. Si la policy RLS bloque la modification
   // (ex: admin qui essaie de suspendre le compte d'un directeur), l'appelant
-  // le sait maintenant au lieu de croire que ça a marché.
+  // le sait maintenant au lieu de croire que ça a marché, et l'état local est restauré.
   const updateCompte = async (id: string, data: Partial<UserAccount>) => {
+    const previous = comptes.find(item => item.id === id);
     setComptes(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    await updateCollectionDocument<UserAccount>('comptes', id, data);
+    try {
+      await updateCollectionDocument<UserAccount>('comptes', id, data);
+    } catch (err) {
+      if (previous) setComptes(prev => prev.map(item => item.id === id ? previous : item));
+      notifyWriteError('modification');
+      throw err;
+    }
   };
 
   // ✅ FIX: appelle l'Edge Function "delete-account" qui supprime le VRAI utilisateur
@@ -374,6 +481,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       headers: { Authorization: `Bearer ${session?.access_token}` },
     });
     if (error || data?.error) {
+      notifyWriteError('suppression');
       throw new Error(data?.error || error?.message || 'Erreur suppression compte');
     }
     setComptes(prev => prev.filter(item => item.id !== id));
@@ -388,17 +496,29 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const freshId = await addCollectionDocument('discussion_messages', msg);
       setMessages(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
-    } catch (err) { return tempId; }
+    } catch (err) {
+      setMessages(prev => prev.filter(item => item.id !== tempId));
+      notifyWriteError('ajout');
+      return tempId;
+    }
   };
 
   const updateMessage = async (id: string, data: Partial<DiscussionMessage>) => {
+    const previous = messages.find(item => item.id === id);
     setMessages(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try { await updateCollectionDocument<DiscussionMessage>('discussion_messages', id, data); } catch (err) {}
+    try { await updateCollectionDocument<DiscussionMessage>('discussion_messages', id, data); } catch (err) {
+      if (previous) setMessages(prev => prev.map(item => item.id === id ? previous : item));
+      // Pas de toast ici : c'est surtout utilisé pour marquer "lu" en tâche de fond, pas la peine d'interrompre l'utilisateur.
+    }
   };
 
   const deleteMessage = async (id: string) => {
+    const previous = messages.find(item => item.id === id);
     setMessages(prev => prev.filter(item => item.id !== id));
-    try { await deleteCollectionDocument('discussion_messages', id); } catch (err) {}
+    try { await deleteCollectionDocument('discussion_messages', id); } catch (err) {
+      if (previous) setMessages(prev => [...prev, previous]);
+      notifyWriteError('suppression');
+    }
   };
 
   // --- AVIS ---
@@ -410,7 +530,11 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const freshId = await addCollectionDocument('avis', avisData);
       setAvis(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
-    } catch (err) { return tempId; }
+    } catch (err) {
+      setAvis(prev => prev.filter(item => item.id !== tempId));
+      notifyWriteError('ajout');
+      return tempId;
+    }
   };
 
   // --- NOTIFICATIONS (annonces admin -> directeurs) ---
@@ -418,9 +542,16 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     const tempId = 'notif_' + Date.now();
     const cleanNotif = { ...notif, id: tempId } as AppNotification;
     setNotifications(prev => [cleanNotif, ...prev]);
-    const freshId = await addCollectionDocument('notifications', notif);
-    setNotifications(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
-    return freshId;
+    try {
+      const freshId = await addCollectionDocument('notifications', notif);
+      setNotifications(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      return freshId;
+    } catch (err) {
+      // ✅ FIX: avant, aucun try/catch ici -> une erreur faisait planter tout l'appelant sans rollback visuel.
+      setNotifications(prev => prev.filter(item => item.id !== tempId));
+      notifyWriteError('ajout');
+      return tempId;
+    }
   };
 
   const markNotificationRead = async (id: string, userId: string) => {
@@ -436,8 +567,14 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const deleteNotification = async (id: string) => {
+    const previous = notifications.find(item => item.id === id);
     setNotifications(prev => prev.filter(item => item.id !== id));
-    await deleteCollectionDocument('notifications', id);
+    try {
+      await deleteCollectionDocument('notifications', id);
+    } catch (err) {
+      if (previous) setNotifications(prev => [previous, ...prev]);
+      notifyWriteError('suppression');
+    }
   };
 
   // --- GÉNÉRATION AUTOMATIQUE DES FACTURES MENSUELLES ---
@@ -457,10 +594,17 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     const today = new Date();
     const currentMoisConcerne = `${MOIS_FR[today.getMonth()]} ${today.getFullYear()}`;
 
+    // ✅ FIX: nombre de jours du mois en cours, pour "capper" l'échéance des enfants dont le
+    // jourEcheanceMensuel est 29/30/31. Avant ce fix, un enfant avec échéance = 31 ne déclenchait
+    // JAMAIS la facture auto pendant les mois de moins de 31 jours (février, avril, juin...) car
+    // today.getDate() n'atteint jamais 31 dans ces mois-là -> facture silencieusement jamais générée.
+    const daysInCurrentMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+
     const enfantsDuDirecteur = enfants.filter(e => e.crecheId === user.id && e.statut === 'Actif');
     const aGenerer = enfantsDuDirecteur.filter(enfant => {
       if (!enfant.jourEcheanceMensuel) return false;
-      if (today.getDate() < enfant.jourEcheanceMensuel) return false; // échéance pas encore atteinte ce mois-ci
+      const echeanceEffective = Math.min(enfant.jourEcheanceMensuel, daysInCurrentMonth);
+      if (today.getDate() < echeanceEffective) return false; // échéance pas encore atteinte ce mois-ci
       const dejaExistant = paiements.some(p => p.enfantId === enfant.id && p.moisConcerne === currentMoisConcerne);
       return !dejaExistant;
     });
@@ -474,12 +618,15 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     (async () => {
       for (const enfant of aGenerer) {
         try {
+          // ✅ FIX: même correctif que ci-dessus appliqué à la date d'échéance stockée sur la facture —
+          // sinon "31" en avril (30 jours) débordait silencieusement sur le 1er mai.
+          const echeanceEffective = Math.min(enfant.jourEcheanceMensuel!, daysInCurrentMonth);
           await addPaiement({
             enfantId: enfant.id,
             montant: creche?.tuitionFeeRate || 4500,
             statut: 'En attente',
             moisConcerne: currentMoisConcerne,
-            dateEcheance: new Date(today.getFullYear(), today.getMonth(), enfant.jourEcheanceMensuel).toISOString().split('T')[0],
+            dateEcheance: new Date(today.getFullYear(), today.getMonth(), echeanceEffective).toISOString().split('T')[0],
             autoGenere: true,
           });
         } catch (err) {
@@ -499,7 +646,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       personnel: scopedPersonnel,
       activites: scopedActivites,
       repas: scopedRepas,
-      comptes,
+      comptes: scopedComptes,
       messages,
       avis,
       notifications,

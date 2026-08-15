@@ -61,9 +61,12 @@ create table if not exists parametres (
   created_at timestamptz default now()
 );
 
--- Active la sécurité ligne par ligne (RLS) puis autorise tout
--- (équivalent à tes règles Firestore actuelles "allow read, write: if true")
--- A resserrer plus tard si tu veux une vraie authentification par rôle.
+-- ⚠️ Active la sécurité ligne par ligne (RLS) puis autorise tout pour l'instant.
+-- ⚠️ CE BLOC EST VOLONTAIREMENT PERMISSIF SEULEMENT POUR LA CRÉATION INITIALE
+-- DES TABLES. Une fois les tables créées, lance obligatoirement le fichier
+-- supabase_rls_migration.sql qui remplace ces policies "allow all" par de
+-- vraies règles d'isolation entre crèches (sinon toutes les crèches clientes
+-- peuvent lire/modifier les données de toutes les autres via l'API directe).
 alter table enfants enable row level security;
 alter table presences enable row level security;
 alter table paiements enable row level security;
