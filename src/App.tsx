@@ -27,6 +27,7 @@ import NotificationPopup from './components/NotificationPopup';
 import ChatBubble from './components/ChatBubble';
 import { AlertCircle, Lock, Check } from 'lucide-react';
 import OnboardingCrecheModal, { hasCompletedOnboarding } from './components/OnboardingCrecheModal';
+import WelcomeDirectorModal from './components/WelcomeDirectorModal';
 
 function AppContent() {
   const { isAuthenticated, user, creche, logout } = useAuth();
@@ -40,6 +41,24 @@ function AppContent() {
   // ✅ Onboarding premier login : on vérifie une fois si le directeur a déjà rempli
   // ses infos de crèche (existence du doc "parametres/creche_{id}"). null = pas encore vérifié.
   const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
+  const [showWelcome, setShowWelcome] = useState(false);
+
+  useEffect(() => {
+    if (user?.role === 'directeur') {
+      const welcomeKey = `rawdha_welcome_seen_${user.id}`;
+      setShowWelcome(localStorage.getItem(welcomeKey) !== '1');
+    } else {
+      setShowWelcome(false);
+    }
+  }, [user?.id, user?.role]);
+
+  const closeWelcome = () => {
+    if (user?.id) {
+      localStorage.setItem(`rawdha_welcome_seen_${user.id}`, '1');
+    }
+    setShowWelcome(false);
+  };
+
   useEffect(() => {
     if (user?.role === 'directeur') {
       hasCompletedOnboarding(user.id).then(done => setNeedsOnboarding(!done));
@@ -390,7 +409,15 @@ if (isSubscriptionExpired) {
 
         {/* Page Content */}
 <main className="p-3 sm:p-6 lg:p-10 max-w-[1600px] mx-auto">
-  {needsOnboarding && (
+  {showWelcome && user?.role === 'directeur' && (
+    <WelcomeDirectorModal
+      user={user}
+      language={language as 'fr' | 'ar'}
+      onLanguageChange={setLanguage}
+      onDone={closeWelcome}
+    />
+  )}
+  {!showWelcome && needsOnboarding && (
     <OnboardingCrecheModal onDone={() => setNeedsOnboarding(false)} />
   )}
   {renderPage()}
