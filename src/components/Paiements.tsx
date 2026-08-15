@@ -13,12 +13,13 @@ import {
   Calendar,
   HelpCircle,
   FileText,
-  Edit
+  Edit,
+  Copy
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
-import { Paiement } from '../types';
+import { Enfant, Paiement } from '../types';
 import { formatCurrency } from '../utils/format';
 import { motion, AnimatePresence } from 'motion/react';
 import Facture from './Facture';
@@ -53,9 +54,13 @@ export default function Paiements() {
   const nextWeekDate = new Date(today);
   nextWeekDate.setDate(today.getDate() + 7);
   const nextWeekDateKey = nextWeekDate.toISOString().split('T')[0];
+  const todayKey = today.toISOString().split('T')[0];
 
   const paiements: RichPaiement[] = dbPaiements.map((p: any) => ({
     ...p,
+    // Une facture en attente dont l’échéance est passée devient automatiquement un retard à l’affichage.
+    // Le statut enregistré n’est pas modifié tant que la direction ne valide pas l’encaissement.
+    statut: p.statut === 'En attente' && p.dateEcheance && p.dateEcheance < todayKey ? 'Retard' : p.statut,
     moyenPaiement: p.moyenPaiement || (p.statut === 'Payé' ? 'Espèces' : undefined),
     // Une facture ancienne sans échéance reste sans échéance : on ne fabrique pas
     // une date 2026 qui donnerait une information fausse à la directrice.
@@ -71,6 +76,19 @@ export default function Paiements() {
   const [filterStatut, setFilterStatut] = useState('Tous');
   const [showFacture, setShowFacture] = useState(false);
   const [selectedFacturePaiement, setSelectedFacturePaiement] = useState<any | null>(null);
+  const [copiedPaiementId, setCopiedPaiementId] = useState<string | null>(null);
+
+  const handleCopyRelance = async (paiement: RichPaiement, enfant?: Enfant) => {
+    const nom = enfant ? `${enfant.prenom} ${enfant.nom}` : 'la famille';
+    const message = `Bonjour,\\n\\nNous vous informons que la facture de ${nom} concernant ${paiement.moisConcerne} (${formatCurrency(paiement.montant)}) est ${paiement.statut === 'Retard' ? 'arrivée à échéance et reste impayée' : 'en attente de règlement'}.\\n\\nMerci de prendre contact avec la direction de la crèche pour régulariser la situation.\\n\\nCordialement,\\nLa direction de Rawdha+`;
+    try {
+      await navigator.clipboard.writeText(message);
+      setCopiedPaiementId(paiement.id);
+      window.setTimeout(() => setCopiedPaiementId(null), 2200);
+    } catch {
+      window.alert(isArabic ? 'تعذر نسخ رسالة التذكير.' : 'La relance n’a pas pu être copiée automatiquement.');
+    }
+  };
 
   const [formData, setFormData] = useState({
     enfantId: enfantsData[0]?.id || '',
@@ -358,6 +376,16 @@ export default function Paiements() {
                           >
                             <Edit size={16} />
                           </button>
+
+                          {p.statut !== 'Payé' && (
+                            <button
+                              className={`p-1.5 rounded-lg transition cursor-pointer ${copiedPaiementId === p.id ? 'text-emerald-600 bg-emerald-50' : 'text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50'}`}
+                              onClick={() => handleCopyRelance(p, enfant)}
+                              title={isArabic ? 'نسخ رسالة التذكير' : 'Copier une relance'}
+                            >
+                              <Copy size={16} />
+                            </button>
+                          )}
 
                           <button 
                             className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer" 
