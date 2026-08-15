@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Enfant, Presence, PresenceJournee, Paiement, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement } from '../types';
+import { Enfant, Presence, PresenceJournee, Paiement, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction } from '../types';
 import { 
   getCollectionData, 
   addCollectionDocument, 
@@ -25,6 +25,11 @@ interface DbContextType {
   messages: DiscussionMessage[];
   avis: Avis[];
   signalements: Signalement[];
+  communityPosts: CommunityPost[];
+  communityComments: CommunityComment[];
+  communityReactions: CommunityReaction[];
+  inscriptionLinks: InscriptionLink[];
+  demandesAdmission: DemandeAdmission[];
   notifications: AppNotification[];
   loading: boolean;
   refreshAll: () => Promise<void>;
@@ -43,6 +48,18 @@ interface DbContextType {
   addSignalement: (signalement: Omit<Signalement, 'id'>) => Promise<string>;
   updateSignalement: (id: string, signalement: Partial<Signalement>) => Promise<void>;
   deleteSignalement: (id: string) => Promise<void>;
+
+  addCommunityPost: (post: Omit<CommunityPost, 'id'>) => Promise<string>;
+  updateCommunityPost: (id: string, post: Partial<CommunityPost>) => Promise<void>;
+  deleteCommunityPost: (id: string) => Promise<void>;
+  addCommunityComment: (comment: Omit<CommunityComment, 'id'>) => Promise<string>;
+  updateCommunityComment: (id: string, comment: Partial<CommunityComment>) => Promise<void>;
+  deleteCommunityComment: (id: string) => Promise<void>;
+  toggleCommunityReaction: (postId: string) => Promise<void>;
+
+  createInscriptionLink: (label?: string, expiresAt?: string | null) => Promise<InscriptionLink & { token: string }>;
+  toggleInscriptionLink: (id: string, active: boolean) => Promise<void>;
+  decideAdmission: (id: string, statut: 'acceptee' | 'refusee', motif?: string) => Promise<void>;
 
   addCompte: (compte: Omit<UserAccount, 'id'>) => Promise<string>;
   updateCompte: (id: string, compte: Partial<UserAccount>) => Promise<void>;
@@ -111,6 +128,11 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const [messages, setMessages] = useState<DiscussionMessage[]>([]);
   const [avis, setAvis] = useState<Avis[]>([]);
   const [signalements, setSignalements] = useState<Signalement[]>([]);
+  const [communityPosts, setCommunityPosts] = useState<CommunityPost[]>([]);
+  const [communityComments, setCommunityComments] = useState<CommunityComment[]>([]);
+  const [communityReactions, setCommunityReactions] = useState<CommunityReaction[]>([]);
+  const [inscriptionLinks, setInscriptionLinks] = useState<InscriptionLink[]>([]);
+  const [demandesAdmission, setDemandesAdmission] = useState<DemandeAdmission[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const autoInvoiceRanRef = React.useRef(false); // évite de relancer la génération auto plusieurs fois par session
@@ -143,6 +165,11 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setMessages([]);
       setAvis([]);
       setSignalements([]);
+      setCommunityPosts([]);
+      setCommunityComments([]);
+      setCommunityReactions([]);
+      setInscriptionLinks([]);
+      setDemandesAdmission([]);
       setNotifications([]);
       setLoading(false);
       return;
@@ -191,15 +218,25 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         getCollectionData<DiscussionMessage>('discussion_messages'),
         getCollectionData<Avis>('avis'),
         getCollectionData<Signalement>('signalements'),
+        getCollectionData<CommunityPost>('community_posts'),
+        getCollectionData<CommunityComment>('community_comments'),
+        getCollectionData<CommunityReaction>('community_reactions'),
+        getCollectionData<InscriptionLink>('inscription_liens'),
+        getCollectionData<DemandeAdmission>('demandes_admission'),
         getCollectionData<AppNotification>('notifications'),
       ])
-        .then(([dbClasses, dbActivites, dbRepas, dbMessages, dbAvis, dbSignalements, dbNotifications]) => {
+        .then(([dbClasses, dbActivites, dbRepas, dbMessages, dbAvis, dbSignalements, dbCommunityPosts, dbCommunityComments, dbCommunityReactions, dbInscriptionLinks, dbDemandesAdmission, dbNotifications]) => {
           setClasses(dbClasses);
           setActivites(dbActivites);
           setRepas(dbRepas);
           setMessages(dbMessages);
           setAvis(dbAvis);
           setSignalements(dbSignalements);
+          setCommunityPosts(dbCommunityPosts);
+          setCommunityComments(dbCommunityComments);
+          setCommunityReactions(dbCommunityReactions);
+          setInscriptionLinks(dbInscriptionLinks);
+          setDemandesAdmission(dbDemandesAdmission);
           setNotifications(dbNotifications);
         })
         .catch(err => {
@@ -254,6 +291,11 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   // alors qu'il n'a besoin de voir que le sien. Seul l'admin a besoin de la liste complète.
   const scopedComptes = user?.role === 'admin' ? comptes : comptes.filter(c => c.id === user?.id);
   const scopedDemandesDirecteur = user?.role === 'admin' ? demandesDirecteur : [];
+  const scopedInscriptionLinks = user?.role === 'directeur' ? inscriptionLinks.filter(link => link.crecheId === user.id) : inscriptionLinks;
+  const scopedDemandesAdmission = user?.role === 'directeur' ? demandesAdmission.filter(demande => demande.crecheId === user.id) : demandesAdmission;
+  const scopedCommunityPosts = user?.role === 'directeur' || user?.role === 'admin' ? communityPosts : [];
+  const scopedCommunityComments = user?.role === 'directeur' || user?.role === 'admin' ? communityComments : [];
+  const scopedCommunityReactions = user?.role === 'directeur' || user?.role === 'admin' ? communityReactions : [];
 
 
   // --- DEMANDES DIRECTEUR ---
@@ -728,6 +770,182 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  // --- COMMUNAUTÉ PROFESSIONNELLE PRIVÉE ---
+  const addCommunityPost = async (postData: Omit<CommunityPost, 'id'>) => {
+    const tempId = 'community_post_' + Date.now();
+    const optimistic = { ...postData, id: tempId } as CommunityPost;
+    setCommunityPosts(prev => [optimistic, ...prev]);
+    try {
+      const freshId = await addCollectionDocument('community_posts', postData);
+      setCommunityPosts(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      return freshId;
+    } catch (err) {
+      setCommunityPosts(prev => prev.filter(item => item.id !== tempId));
+      notifyWriteError('ajout');
+      throw err;
+    }
+  };
+
+  const updateCommunityPost = async (id: string, data: Partial<CommunityPost>) => {
+    const previous = communityPosts.find(item => item.id === id);
+    setCommunityPosts(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    try {
+      await updateCollectionDocument<CommunityPost>('community_posts', id, data);
+    } catch (err) {
+      if (previous) setCommunityPosts(prev => prev.map(item => item.id === id ? previous : item));
+      notifyWriteError('modification');
+      throw err;
+    }
+  };
+
+  const deleteCommunityPost = async (id: string) => {
+    const previous = communityPosts.find(item => item.id === id);
+    setCommunityPosts(prev => prev.filter(item => item.id !== id));
+    try {
+      await deleteCollectionDocument('community_posts', id);
+    } catch (err) {
+      if (previous) setCommunityPosts(prev => [previous, ...prev]);
+      notifyWriteError('suppression');
+      throw err;
+    }
+  };
+
+  const addCommunityComment = async (commentData: Omit<CommunityComment, 'id'>) => {
+    const tempId = 'community_comment_' + Date.now();
+    const optimistic = { ...commentData, id: tempId } as CommunityComment;
+    setCommunityComments(prev => [...prev, optimistic]);
+    try {
+      const freshId = await addCollectionDocument('community_comments', commentData);
+      setCommunityComments(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      return freshId;
+    } catch (err) {
+      setCommunityComments(prev => prev.filter(item => item.id !== tempId));
+      notifyWriteError('ajout');
+      throw err;
+    }
+  };
+
+  const updateCommunityComment = async (id: string, data: Partial<CommunityComment>) => {
+    const previous = communityComments.find(item => item.id === id);
+    setCommunityComments(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    try {
+      await updateCollectionDocument<CommunityComment>('community_comments', id, data);
+    } catch (err) {
+      if (previous) setCommunityComments(prev => prev.map(item => item.id === id ? previous : item));
+      notifyWriteError('modification');
+      throw err;
+    }
+  };
+
+  const deleteCommunityComment = async (id: string) => {
+    const previous = communityComments.find(item => item.id === id);
+    setCommunityComments(prev => prev.filter(item => item.id !== id));
+    try {
+      await deleteCollectionDocument('community_comments', id);
+    } catch (err) {
+      if (previous) setCommunityComments(prev => [...prev, previous]);
+      notifyWriteError('suppression');
+      throw err;
+    }
+  };
+
+  const toggleCommunityReaction = async (postId: string) => {
+    if (!user) throw new Error('Session requise');
+    const previousReactions = communityReactions;
+    const previousPosts = communityPosts;
+    const existing = communityReactions.find(reaction => reaction.postId === postId && reaction.userId === user.id);
+    if (existing) {
+      setCommunityReactions(prev => prev.filter(reaction => reaction.id !== existing.id));
+      setCommunityPosts(prev => prev.map(post => post.id === postId ? { ...post, likesCount: Math.max(0, post.likesCount - 1) } : post));
+      try {
+        await deleteCollectionDocument('community_reactions', existing.id);
+      } catch (err) {
+        setCommunityReactions(previousReactions);
+        setCommunityPosts(previousPosts);
+        notifyWriteError('modification');
+        throw err;
+      }
+      return;
+    }
+
+    const reactionData: Omit<CommunityReaction, 'id'> = {
+      postId,
+      userId: user.id,
+      createdAt: new Date().toISOString(),
+    };
+    const tempId = 'community_reaction_' + Date.now();
+    setCommunityReactions(prev => [...prev, { ...reactionData, id: tempId }]);
+    setCommunityPosts(prev => prev.map(post => post.id === postId ? { ...post, likesCount: post.likesCount + 1 } : post));
+    try {
+      const freshId = await addCollectionDocument('community_reactions', reactionData);
+      setCommunityReactions(prev => prev.map(reaction => reaction.id === tempId ? { ...reaction, id: freshId } : reaction));
+    } catch (err) {
+      setCommunityReactions(previousReactions);
+      setCommunityPosts(previousPosts);
+      notifyWriteError('modification');
+      throw err;
+    }
+  };
+
+  // --- ADMISSIONS PAR LIEN PRIVÉ ---
+  const createInscriptionLink = async (label?: string, expiresAt?: string | null) => {
+    const { data, error } = await supabase.rpc('rawdha_create_inscription_link', {
+      p_label: label?.trim() || null,
+      p_expires_at: expiresAt || null,
+    });
+    if (error || !data?.id || !data?.token) {
+      notifyWriteError('ajout');
+      throw new Error(error?.message || 'Impossible de générer le lien d’admission');
+    }
+    const created = {
+      id: data.id as string,
+      crecheId: user?.id || '',
+      token: data.token as string,
+      label: label?.trim() || undefined,
+      nomCreche: data.nomCreche as string | undefined,
+      active: true,
+      createdAt: new Date().toISOString(),
+      expiresAt: (data.expiresAt as string | null | undefined) || null,
+    } satisfies InscriptionLink & { token: string };
+    setInscriptionLinks(prev => [created, ...prev]);
+    return created;
+  };
+
+  const toggleInscriptionLink = async (id: string, active: boolean) => {
+    const previous = inscriptionLinks.find(item => item.id === id);
+    setInscriptionLinks(prev => prev.map(item => item.id === id ? { ...item, active } : item));
+    try {
+      await updateCollectionDocument<InscriptionLink>('inscription_liens', id, { active });
+    } catch (err) {
+      if (previous) setInscriptionLinks(prev => prev.map(item => item.id === id ? previous : item));
+      notifyWriteError('modification');
+      throw err;
+    }
+  };
+
+  const decideAdmission = async (id: string, statut: 'acceptee' | 'refusee', motif?: string) => {
+    const previous = demandesAdmission.find(item => item.id === id);
+    setDemandesAdmission(prev => prev.map(item => item.id === id ? {
+      ...item,
+      statut,
+      motifRefus: statut === 'refusee' ? motif : undefined,
+      traiteLe: new Date().toISOString(),
+    } : item));
+    try {
+      const { data, error } = await supabase.rpc('rawdha_decide_admission', {
+        p_id: id,
+        p_statut: statut,
+        p_motif: motif?.trim() || null,
+      });
+      if (error || data?.error) throw new Error(error?.message || data?.error || 'Impossible de traiter la demande');
+      await refreshAll();
+    } catch (err) {
+      if (previous) setDemandesAdmission(prev => prev.map(item => item.id === id ? previous : item));
+      notifyWriteError('modification');
+      throw err;
+    }
+  };
+
   // --- NOTIFICATIONS (annonces admin -> directeurs) ---
   const addNotification = async (notif: Omit<AppNotification, 'id'>) => {
     const tempId = 'notif_' + Date.now();
@@ -843,6 +1061,11 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       messages,
       avis,
       signalements,
+      communityPosts: scopedCommunityPosts,
+      communityComments: scopedCommunityComments,
+      communityReactions: scopedCommunityReactions,
+      inscriptionLinks: scopedInscriptionLinks,
+      demandesAdmission: scopedDemandesAdmission,
       notifications,
       loading,
       refreshAll,
@@ -854,6 +1077,16 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       addSignalement,
       updateSignalement,
       deleteSignalement,
+      addCommunityPost,
+      updateCommunityPost,
+      deleteCommunityPost,
+      addCommunityComment,
+      updateCommunityComment,
+      deleteCommunityComment,
+      toggleCommunityReaction,
+      createInscriptionLink,
+      toggleInscriptionLink,
+      decideAdmission,
       addNotification,
       markNotificationRead,
       deleteNotification,

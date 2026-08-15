@@ -10,6 +10,7 @@ import {
   HelpCircle,
   LayoutDashboard,
   MessageCircleQuestion,
+  Network,
   School,
   Settings,
   Users,
@@ -38,6 +39,7 @@ const pageIcons: Record<string, any> = {
   parametres: Settings,
   comptes: Users,
   notifications: Bell,
+  community: Network,
 };
 
 export default function HelpCenterModal({ isOpen, onClose, currentPage, language }: HelpCenterModalProps) {
@@ -92,6 +94,10 @@ export default function HelpCenterModal({ isOpen, onClose, currentPage, language
     notifications: {
       fr: ['Notifications', 'Rester informé', 'Retrouvez les annonces et les informations importantes envoyées par l’administration.'],
       ar: ['الإشعارات', 'ابقَ على اطلاع', 'اطّلع على الإعلانات والمعلومات المهمة التي ترسلها الإدارة.'],
+    },
+    community: {
+      fr: ['Réseau professionnel', 'La communauté privée des crèches', 'Publiez des activités, du matériel, des offres de recrutement et des partenariats entre crèches vérifiées. Les parents ne peuvent pas accéder à cet espace.'],
+      ar: ['الشبكة المهنية', 'مجتمع خاص بالروضات', 'انشر الأنشطة والمعدات وفرص التوظيف والشراكات بين الروضات الموثوقة. لا يمكن للأولياء الدخول إلى هذا الفضاء.'],
     },
   };
 

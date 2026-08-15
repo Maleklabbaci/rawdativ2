@@ -18,7 +18,9 @@ import {
   BarChart3,
   X,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  QrCode,
+  Network
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -32,12 +34,15 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
       { key: 'comptes', label: 'comptes', icon: User, color: 'text-violet-500' },
       { key: 'notifications', label: 'notifications', icon: Bell, color: 'text-pink-500' },
       { key: 'communication', label: 'communication', icon: MessageSquareQuote, color: 'text-amber-500' },
+      { key: 'community', label: 'community', icon: Network, color: 'text-indigo-400' },
       { key: 'parametres', label: 'settings', icon: Settings, color: 'text-slate-500' },
     ];
   } else if (user?.role === 'directeur') {
     items = [
       { key: 'dashboard', label: 'dashboard', icon: LayoutDashboard, color: 'text-indigo-500' },
       { key: 'enfants', label: 'children', icon: Baby, color: 'text-rose-500' },
+      { key: 'admissions', label: 'admissions', icon: QrCode, color: 'text-indigo-400' },
+      { key: 'community', label: 'community', icon: Network, color: 'text-indigo-400' },
       { key: 'classes', label: 'classes', icon: School, color: 'text-amber-500' },
       { key: 'presences', label: 'attendance', icon: CalendarCheck, color: 'text-emerald-500' },
       { key: 'paiements', label: 'invoices', icon: CreditCard, color: 'text-cyan-500' },
@@ -58,6 +63,12 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
     }
     if (key === 'communication') {
       return language === 'ar' ? 'الرسائل والتقييمات والملاحظات' : 'Messages, Avis & Retours';
+    }
+    if (key === 'admissions') {
+      return language === 'ar' ? 'التسجيل عبر QR' : 'Admissions par QR';
+    }
+    if (key === 'community') {
+      return language === 'ar' ? 'شبكة الروضات المهنية' : 'Réseau professionnel';
     }
     return t(originalLabel);
   };

@@ -22,6 +22,9 @@ const Comptes = lazy(() => import('./components/Comptes'));
 const Notifications = lazy(() => import('./components/Notifications'));
 const CommunicationAdmin = lazy(() => import('./components/CommunicationAdmin'));
 const Rapports = lazy(() => import('./components/Rapports'));
+const Admissions = lazy(() => import('./components/Admissions'));
+const Community = lazy(() => import('./components/Community'));
+import PublicAdmission from './components/PublicAdmission';
 import NotificationBell from './components/NotificationBell';
 import SubscriptionStatusBadge from './components/SubscriptionStatusBadge';
 import NotificationPopup from './components/NotificationPopup';
@@ -43,6 +46,7 @@ function AppContent() {
   const [showCouponInput, setShowCouponInput] = useState(false); // ✅ champ coupon replié par défaut, pour ne pas distraire du CTA principal // ✅ champ code coupon sur l'écran d'abonnement expiré
   const { language, setLanguage, t } = useLanguage();
   const { loading, comptes } = useDb();
+  const isPublicAdmission = window.location.pathname.replace(/\/+$/, '') === '/admission';
 
   // ✅ Onboarding premier login : on vérifie une fois si le directeur a déjà rempli
   // ses infos de crèche (existence du doc "parametres/creche_{id}"). null = pas encore vérifié.
@@ -105,7 +109,7 @@ function AppContent() {
 
   useEffect(() => {
     if (user?.role === 'admin') {
-      if (currentPage !== 'comptes' && currentPage !== 'parametres' && currentPage !== 'notifications' && currentPage !== 'communication') {
+      if (currentPage !== 'comptes' && currentPage !== 'parametres' && currentPage !== 'notifications' && currentPage !== 'communication' && currentPage !== 'community') {
         setCurrentPage('comptes');
       }
     } else {
@@ -129,6 +133,10 @@ function AppContent() {
 
     document.title = creche?.nom ? `${creche.nom} — RAWDHA+` : 'RAWDHA+';
   }, [creche?.logoUrl, creche?.nom]);
+
+  if (isPublicAdmission) {
+    return <PublicAdmission />;
+  }
 
   if (!isAuthenticated) {
     return <SignIn />;
@@ -315,6 +323,8 @@ if (isSubscriptionExpired) {
       switch (currentPage) {
         case 'dashboard': return <Dashboard />;
         case 'enfants': return <Enfants />;
+        case 'admissions': return <Admissions />;
+        case 'community': return <Community />;
         case 'classes': return <Classes />;
         case 'presences': return <Presences />;
         case 'paiements': return <Paiements />;

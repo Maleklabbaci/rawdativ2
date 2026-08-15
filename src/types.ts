@@ -184,6 +184,53 @@ export interface DemandeDirecteur {
   motifRefus?: string;
 }
 
+export type DemandeAdmissionStatut = 'en_attente' | 'acceptee' | 'refusee';
+
+export interface InscriptionLink {
+  id: string;
+  crecheId: string;
+  token?: string;
+  label?: string;
+  nomCreche?: string;
+  active: boolean;
+  createdAt: string;
+  expiresAt?: string | null;
+}
+
+export interface DemandeAdmission {
+  id: string;
+  crecheId: string;
+  nomCreche: string;
+  lienId?: string;
+  statut: DemandeAdmissionStatut;
+  dateDemande: string;
+  nom: string;
+  prenom: string;
+  dateNaissance: string;
+  genre: 'Garçon' | 'Fille';
+  groupeAge: 'Bébés' | 'Moyens' | 'Grands';
+  allergie?: string;
+  regimeAlimentaire?: string;
+  bloodGroup?: string;
+  weightKg?: string;
+  pediatricianName?: string;
+  vaccinations?: string;
+  notesMedicales?: string;
+  parentNom: string;
+  parentPrenom: string;
+  parentTelephone: string;
+  parentEmail?: string;
+  parentAdresse?: string;
+  parentProfession?: string;
+  parentLien: 'Mère' | 'Père' | 'Tuteur';
+  documentsRequis?: Enfant['documentsRequis'];
+  documentsFichiers?: Enfant['documentsFichiers'];
+  motifRefus?: string;
+  traiteLe?: string;
+  traitePar?: string;
+  enfantId?: string;
+}
+
 export interface UserAccount {
   id: string;
   nom: string;
@@ -219,6 +266,47 @@ export interface Avis {
   rating: number;
   comment: string;
   date: string;
+}
+
+export type CommunityPostCategory = 'activite' | 'materiel' | 'recrutement' | 'formation' | 'partenariat' | 'vente_echange';
+export type CommunityPostStatus = 'publie' | 'masquee';
+
+export interface CommunityPost {
+  id: string;
+  authorId: string;
+  authorName: string;
+  crecheId: string;
+  nomCreche: string;
+  categorie: CommunityPostCategory;
+  titre?: string;
+  contenu: string;
+  ville?: string;
+  prix?: number;
+  contact?: string;
+  imageUrls?: string[];
+  statut: CommunityPostStatus;
+  likesCount: number;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface CommunityComment {
+  id: string;
+  postId: string;
+  authorId: string;
+  authorName: string;
+  crecheId: string;
+  nomCreche: string;
+  contenu: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface CommunityReaction {
+  id: string;
+  postId: string;
+  userId: string;
+  createdAt: string;
 }
 
 export type SignalementType = 'bug' | 'probleme' | 'suggestion' | 'amelioration';
