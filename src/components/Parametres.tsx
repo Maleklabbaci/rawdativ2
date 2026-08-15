@@ -49,7 +49,7 @@ export default function Parametres() {
     platformName: 'Rawdha+ Platform',
     platformVersion: 'v2.5.0 Premium',
     baseLicensingFee: '5000',
-    platformSupportEmail: 'support@rawdha.com',
+    platformSupportEmail: 'support@rawdha.dz',
     platformSupportPhone: '+213 21 73 88 19',
     defaultGracePeriodDays: '30',
     maintenanceMode: false,
@@ -60,11 +60,11 @@ export default function Parametres() {
 
   // 2. Director's Creche state
   const [crecheData, setCrecheData] = useState({
-    crecheName: user?.nomCreche || 'Crèche les Marguerites',
-    licenseCode: 'RAWD-2026-DZ-9981',
-    principalEmail: user?.email || 'contact@creche.com',
+    crecheName: user?.nomCreche || 'Ma crèche',
+    licenseCode: '',
+    principalEmail: user?.email || '',
     phoneNumbers: '+213 555 12 34 56',
-    addressLine: 'Riad El-Feth, Algérie',
+    addressLine: '',
     workingHours: '07:30 - 17:30',
     tuitionFeeRate: '4500',
     mealPricePerDay: '250',

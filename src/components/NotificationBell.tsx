@@ -25,13 +25,31 @@ export default function NotificationBell({ onNavigateToPaiements }: { onNavigate
 
   const annoncesNonLues = mesAnnonces.filter(n => !n.readBy?.includes(user?.id || ''));
 
+  // Les anciennes annonces de démonstration ne doivent pas apparaître telles quelles
+  // dans une interface professionnelle. On conserve l'annonce mais on présente un
+  // texte neutre côté directrice, sans réécrire la donnée Supabase.
+  const displayAnnonce = (notification: (typeof mesAnnonces)[number]) => {
+    const legacyText = `${notification.title} ${notification.message}`.toLowerCase();
+    if (legacyText.includes('siteweb') || legacyText.includes('si ta pas')) {
+      return {
+        title: isFrench ? 'Information de la plateforme' : 'معلومة من المنصة',
+        message: isFrench
+          ? 'La plateforme Rawdha+ est disponible pour vous accompagner dans la gestion de votre crèche.'
+          : 'منصة Rawdha+ متاحة لمساعدتكم في تسيير الحضانة.',
+      };
+    }
+    return { title: notification.title, message: notification.message };
+  };
+
   // Paiements non réglés de ses propres enfants -> reste visible tant que non payé
   const paiementsEnAttente = paiements
     .filter(p => p.statut !== 'Payé')
     .map(p => ({ paiement: p, enfant: enfants.find(e => e.id === p.enfantId) }))
     .filter(x => x.enfant); // ignore si l'enfant lié n'existe plus
 
-  const totalBadge = annoncesNonLues.length + paiementsEnAttente.length;
+  // Le badge correspond aux éléments réellement visibles dans le panneau :
+  // annonces + paiements à traiter, et non uniquement aux annonces non lues.
+  const totalBadge = mesAnnonces.length + paiementsEnAttente.length;
 
   // Ferme le popup si on clique en dehors
   useEffect(() => {
@@ -50,6 +68,10 @@ export default function NotificationBell({ onNavigateToPaiements }: { onNavigate
 
   const timeAgo = (dateStr: string) => {
     const diffMs = Date.now() - new Date(dateStr).getTime();
+    if (diffMs < 0) {
+      const futureDays = Math.ceil(Math.abs(diffMs) / 86400000);
+      return isFrench ? `Dans ${futureDays}j` : `بعد ${futureDays} يوم`;
+    }
     const diffH = Math.floor(diffMs / 3600000);
     if (diffH < 1) return isFrench ? 'À l\'instant' : 'الآن';
     if (diffH < 24) return isFrench ? `Il y a ${diffH}h` : `منذ ${diffH} س`;
@@ -82,9 +104,14 @@ export default function NotificationBell({ onNavigateToPaiements }: { onNavigate
             className="absolute ltr:right-0 rtl:left-0 mt-2 w-80 sm:w-96 max-h-[28rem] bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 flex flex-col overflow-hidden"
           >
             <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <h3 className="font-black text-sm text-slate-800">
-                {isFrench ? 'Notifications' : 'الإشعارات'}
-              </h3>
+              <div>
+                <h3 className="font-black text-sm text-slate-800">
+                  {isFrench ? 'Notifications' : 'الإشعارات'}
+                </h3>
+                <p className="text-[10px] font-semibold text-slate-400 mt-0.5">
+                  {totalBadge} {isFrench ? (totalBadge > 1 ? 'éléments visibles' : 'élément visible') : 'عناصر ظاهرة'}
+                </p>
+              </div>
               <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
@@ -111,8 +138,8 @@ export default function NotificationBell({ onNavigateToPaiements }: { onNavigate
                         <div className="flex items-start gap-2">
                           {!isRead && <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0" />}
                           <div className={!isRead ? '' : 'ltr:pl-3.5 rtl:pr-3.5'}>
-                            <p className="text-xs font-bold text-slate-800">{n.title}</p>
-                            <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">{n.message}</p>
+                            <p className="text-xs font-bold text-slate-800">{displayAnnonce(n).title}</p>
+                            <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">{displayAnnonce(n).message}</p>
                             <p className="text-[10px] text-slate-400 mt-1">{timeAgo(n.createdAt)}</p>
                           </div>
                         </div>

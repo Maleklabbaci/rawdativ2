@@ -36,6 +36,16 @@ export interface Enfant {
     justificatifDomicile: boolean;
     photoIdentite: boolean;
   };
+  // Pièces jointes d'admission réellement sélectionnées par la directrice.
+  // Le format data URL est limité côté formulaire pour rester compatible avec le
+  // stockage JSONB actuel; un bucket Storage pourra remplacer ce champ plus tard.
+  documentsFichiers?: Partial<Record<'certificatMedical' | 'carnetVaccination' | 'justificatifDomicile' | 'photoIdentite', {
+    nom: string;
+    type: string;
+    taille: number;
+    contenu: string;
+    ajouteLe: string;
+  }>>;
   // ✅ Jour du mois (1-31) où la facture mensuelle de cet enfant doit être générée
   // automatiquement + notification envoyée au directeur jusqu'au règlement.
   jourEcheanceMensuel?: number;

@@ -34,6 +34,9 @@ import EnfantDetails from './EnfantDetails';
 import { useLanguage } from '../contexts/LanguageContext';
 import { motion, AnimatePresence } from 'motion/react';
 
+type DocumentKey = 'certificatMedical' | 'carnetVaccination' | 'justificatifDomicile' | 'photoIdentite';
+type DocumentUpload = { nom: string; type: string; taille: number; contenu: string; ajouteLe: string };
+
 export default function Enfants() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
@@ -74,10 +77,11 @@ export default function Enfants() {
     parentAdresse: '',
     parentProfession: '',
     parentLien: 'Mère' as 'Mère' | 'Père' | 'Tuteur',
-    docCertif: true,
-    docVaccin: true,
+    docCertif: false,
+    docVaccin: false,
     docDomicile: false,
     docPhoto: false,
+    docFiles: {} as Partial<Record<DocumentKey, DocumentUpload>>,
     jourEcheanceMensuel: '5', // ✅ jour du mois (1-31) pour la facture auto + notification de paiement
   });
 
@@ -118,6 +122,30 @@ export default function Enfants() {
       dateSortie: undefined,
       motifSortie: undefined,
     });
+  };
+
+  // Les pièces sont limitées à 2 Mo pour rester compatibles avec le stockage
+  // JSONB existant. Le fichier est réellement encodé et enregistré avec le dossier.
+  const handleDocumentFile = (key: DocumentKey, file?: File) => {
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      alert(isArabic ? 'الملف كبير جداً (الحد الأقصى 2 ميغابايت).' : 'Le fichier est trop volumineux (2 Mo maximum).');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const contenu = typeof reader.result === 'string' ? reader.result : '';
+      if (!contenu) return;
+      setFormData(prev => ({
+        ...prev,
+        [key === 'certificatMedical' ? 'docCertif' : key === 'carnetVaccination' ? 'docVaccin' : key === 'justificatifDomicile' ? 'docDomicile' : 'docPhoto']: true,
+        docFiles: {
+          ...prev.docFiles,
+          [key]: { nom: file.name, type: file.type || 'application/octet-stream', taille: file.size, contenu, ajouteLe: new Date().toISOString() }
+        }
+      }));
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleAjouter = () => {
@@ -163,6 +191,7 @@ export default function Enfants() {
           justificatifDomicile: formData.docDomicile,
           photoIdentite: formData.docPhoto
         },
+        documentsFichiers: formData.docFiles,
         jourEcheanceMensuel: formData.jourEcheanceMensuel ? Number(formData.jourEcheanceMensuel) : undefined
       };
       updateEnfant(editingEnfantId, updatedEnfant);
@@ -206,6 +235,7 @@ export default function Enfants() {
           justificatifDomicile: formData.docDomicile,
           photoIdentite: formData.docPhoto
         },
+        documentsFichiers: formData.docFiles,
         jourEcheanceMensuel: formData.jourEcheanceMensuel ? Number(formData.jourEcheanceMensuel) : undefined
       };
       addEnfant(nouvelEnfant);
@@ -230,10 +260,11 @@ export default function Enfants() {
       parentAdresse: '',
       parentProfession: '',
       parentLien: 'Mère',
-      docCertif: true,
-      docVaccin: true,
+      docCertif: false,
+      docVaccin: false,
       docDomicile: false,
       docPhoto: false,
+      docFiles: {},
       jourEcheanceMensuel: '5',
     });
   };
@@ -450,6 +481,7 @@ export default function Enfants() {
                                 docCertif: enfant.documentsRequis.certificatMedical,
                                 docVaccin: enfant.documentsRequis.carnetVaccination,
                                 docDomicile: enfant.documentsRequis.justificatifDomicile,
+                                docFiles: enfant.documentsFichiers || {},
                                 jourEcheanceMensuel: String(enfant.jourEcheanceMensuel || 5),
                                 docPhoto: enfant.documentsRequis.photoIdentite,
                                 allergie: enfant.allergie || '',
@@ -980,46 +1012,35 @@ export default function Enfants() {
                   </h4>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 rounded-2xl p-4">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        className="w-4.5 h-4.5 text-indigo-600 rounded"
-                        checked={formData.docCertif}
-                        onChange={e => setFormData({...formData, docCertif: e.target.checked})}
-                      />
-                      <span className="text-xs font-bold text-slate-700">{isArabic ? 'شهادة طبية مُقدمة' : 'Certificat médical requis remis'}</span>
-                    </label>
-
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        className="w-4.5 h-4.5 text-indigo-600 rounded"
-                        checked={formData.docVaccin}
-                        onChange={e => setFormData({...formData, docVaccin: e.target.checked})}
-                      />
-                      <span className="text-xs font-bold text-slate-700">{isArabic ? 'دفتر التلقيح مُحدث' : 'Carnet de vaccination à jour'}</span>
-                    </label>
-
-                    <label className="flex items-center gap-3 cursor-pointer mt-2 sm:mt-0">
-                      <input 
-                        type="checkbox" 
-                        className="w-4.5 h-4.5 text-indigo-600 rounded"
-                        checked={formData.docDomicile}
-                        onChange={e => setFormData({...formData, docDomicile: e.target.checked})}
-                      />
-                      <span className="text-xs font-bold text-slate-700">{isArabic ? 'إثبات الإقامة متوفر' : 'Justificatif de domicile fourni'}</span>
-                    </label>
-
-                    <label className="flex items-center gap-3 cursor-pointer mt-2 sm:mt-0">
-                      <input 
-                        type="checkbox" 
-                        className="w-4.5 h-4.5 text-indigo-600 rounded"
-                        checked={formData.docPhoto}
-                        onChange={e => setFormData({...formData, docPhoto: e.target.checked})}
-                      />
-                      <span className="text-xs font-bold text-slate-700">{isArabic ? 'صورة شمسية مُقدمة' : 'Photo d\'identité fournie'}</span>
-                    </label>
+                    {([
+                      ['certificatMedical', isArabic ? 'الشهادة الطبية' : 'Certificat médical', 'docCertif'],
+                      ['carnetVaccination', isArabic ? 'دفتر التلقيح' : 'Carnet de vaccination', 'docVaccin'],
+                      ['justificatifDomicile', isArabic ? 'إثبات الإقامة' : 'Justificatif de domicile', 'docDomicile'],
+                      ['photoIdentite', isArabic ? 'صورة الهوية' : 'Photo d\'identité', 'docPhoto'],
+                    ] as Array<[DocumentKey, string, 'docCertif' | 'docVaccin' | 'docDomicile' | 'docPhoto']>).map(([key, label, legacyFlag]) => {
+                      const attached = formData.docFiles[key];
+                      const legacyDeclared = formData[legacyFlag];
+                      return (
+                        <div key={key} className="rounded-xl border border-slate-200 bg-white p-3">
+                          <label className="block text-xs font-bold text-slate-700 mb-2">{label}</label>
+                          <input
+                            type="file"
+                            accept="image/*,.pdf"
+                            onChange={e => handleDocumentFile(key, e.target.files?.[0])}
+                            className="w-full text-[11px] text-slate-500 file:mr-2 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-2.5 file:py-1.5 file:text-[11px] file:font-bold file:text-indigo-700 hover:file:bg-indigo-100"
+                          />
+                          {attached ? (
+                            <p className="mt-2 text-[10px] font-bold text-emerald-700">✓ {attached.nom} ({Math.ceil(attached.taille / 1024)} Ko)</p>
+                          ) : legacyDeclared ? (
+                            <p className="mt-2 text-[10px] font-semibold text-amber-700">{isArabic ? 'حالة قديمة مسجلة، بدون ملف مرفق' : 'Statut historique déclaré, sans fichier joint'}</p>
+                          ) : (
+                            <p className="mt-2 text-[10px] font-semibold text-slate-400">{isArabic ? 'لم يتم إرفاق ملف' : 'Aucun fichier joint'}</p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
+                  <p className="mt-2 text-[10px] font-semibold text-slate-400">{isArabic ? 'الحد الأقصى للملف: 2 ميغابايت. الصيغ: PDF أو صورة.' : 'Un vrai fichier est enregistré avec le dossier. Limite : 2 Mo, PDF ou image.'}</p>
                 </div>
 
               </div>

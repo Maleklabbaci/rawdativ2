@@ -20,7 +20,7 @@ import { formatCurrency } from '../utils/format';
 import { useLanguage } from '../contexts/LanguageContext';
 
 export default function Dashboard() {
-  const { enfants: allEnfantsData, presences: allPresencesData, paiements: allPaiementsData, personnel: allPersonnelData } = useDb();
+  const { enfants: allEnfantsData, presences: allPresencesData, paiements: allPaiementsData, personnel: allPersonnelData, classes: allClassesData } = useDb();
   const { user } = useAuth();
   const isDirecteur = user?.role === 'directeur';
   const enfantsData = isDirecteur ? allEnfantsData.filter(e => e.crecheId === user!.id) : allEnfantsData;
@@ -28,18 +28,55 @@ export default function Dashboard() {
   const presencesData = isDirecteur ? allPresencesData.filter(p => enfantIdsVisibles.has(p.enfantId)) : allPresencesData;
   const paiementsData = isDirecteur ? allPaiementsData.filter(p => enfantIdsVisibles.has(p.enfantId)) : allPaiementsData;
   const personnelData = isDirecteur ? allPersonnelData.filter((p: any) => p.crecheId === user!.id) : allPersonnelData;
+  const classesData = isDirecteur ? allClassesData.filter((c: any) => c.crecheId === user!.id) : allClassesData;
   const { language } = useLanguage();
   const isArabic = language === 'ar';
   const [periodeSelectionnee, setPeriodeSelectionnee] = useState<'semaine' | 'mois'>('semaine');
-  
-  const today = new Date().toISOString().split('T')[0];
+
+  // Utilise la date locale (et non UTC) afin que la présence corresponde bien au jour
+  // affiché à la directrice, même le soir ou lors d'un changement de fuseau horaire.
+  const toDateKey = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const now = new Date();
+  const today = toDateKey(now);
   const presencesAujourdhui = presencesData.filter(p => p.date === today && p.statut === 'Présent');
   const enfantsActifs = enfantsData.filter(e => e.statut === 'Actif');
-  const paiementsPayes = paiementsData.filter(p => p.statut === 'Payé');
+
+  // La capacité vient des classes enregistrées. Les enfants affectés sont dédupliqués
+  // par identifiant; si les classes ne contiennent pas encore d'affectation, on utilise
+  // les enfants actifs de la crèche plutôt que d'inventer une capacité de 30 places.
+  const capaciteTotale = classesData.reduce((total, classe: any) => total + Math.max(0, Number(classe.capacite) || 0), 0);
+  const enfantsAffectesIds = new Set<string>(classesData.flatMap((classe: any) => Array.isArray(classe.childrenIds) ? classe.childrenIds : []));
+  const enfantsOccupants = enfantsAffectesIds.size > 0
+    ? enfantsActifs.filter(enfant => enfantsAffectesIds.has(enfant.id))
+    : enfantsActifs;
+  const placesOccupees = enfantsOccupants.length;
+  const tauxOccupation = capaciteTotale > 0 ? Math.round((placesOccupees / capaciteTotale) * 100) : 0;
+  const placesDisponibles = Math.max(0, capaciteTotale - placesOccupees);
+  const depassementCapacite = Math.max(0, placesOccupees - capaciteTotale);
+
+  const paymentDate = (paiement: any): Date | null => {
+    const rawDate = paiement.datePaiement || paiement.dateReglement || paiement.dateEcheance;
+    if (!rawDate) return null;
+    const parsed = new Date(rawDate);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+  const periodStart = new Date(now);
+  if (periodeSelectionnee === 'semaine') periodStart.setDate(now.getDate() - 6);
+  else periodStart.setDate(1);
+  periodStart.setHours(0, 0, 0, 0);
+  const paiementsPayes = paiementsData.filter(p => {
+    if (p.statut !== 'Payé') return false;
+    const date = paymentDate(p);
+    return date !== null && date >= periodStart && date <= now;
+  });
   const paiementsEnAttente = paiementsData.filter(p => p.statut === 'En attente' || p.statut === 'Retard');
-  const totalRevenusPayes = paiementsPayes.reduce((sum, p) => sum + p.montant, 0);
-  const totalRevenusAttendus = paiementsEnAttente.reduce((sum, p) => sum + p.montant, 0);
-  const tauxOccupation = Math.round((enfantsActifs.length / 30) * 100) || 0;
+  const totalRevenusPayes = paiementsPayes.reduce((sum, p) => sum + (Number(p.montant) || 0), 0);
+  const totalRevenusAttendus = paiementsEnAttente.reduce((sum, p) => sum + (Number(p.montant) || 0), 0);
   const tauxPresence = enfantsActifs.length > 0 ? Math.round((presencesAujourdhui.length / enfantsActifs.length) * 100) : 0;
 
   const periodeLabel = periodeSelectionnee === 'semaine' 
@@ -96,7 +133,9 @@ export default function Dashboard() {
     {
       title: isArabic ? 'الأطفال المسجلون' : 'Enfants Inscrits',
       value: enfantsActifs.length,
-      subtitle: isArabic ? 'طاقة الاستيعاب القصوى: 30' : 'Capacité : 30 places',
+      subtitle: capaciteTotale > 0
+        ? (isArabic ? `القدرة الاستيعابية: ${capaciteTotale} مقعد` : `Capacité : ${capaciteTotale} places`)
+        : (isArabic ? 'السعة غير مهيأة' : 'Capacité non configurée'),
       icon: Baby,
       color: 'from-indigo-500 to-indigo-600',
       bgLight: 'bg-indigo-50 text-indigo-600',
@@ -297,12 +336,12 @@ export default function Dashboard() {
             <div className="text-center py-4">
               <p className="text-6xl font-black mb-1">{tauxOccupation}%</p>
               <p className="text-indigo-100 text-xs font-semibold">
-                {enfantsActifs.length} / 30 places actives occupées
+                {placesOccupees} / {capaciteTotale > 0 ? capaciteTotale : '—'} {isArabic ? 'مقاعد مشغولة' : 'places occupées'}
               </p>
             </div>
             <div className="mt-4 pt-4 border-t border-white/15 text-xs text-indigo-200 font-bold flex justify-between items-center">
               <span>{isArabic ? 'المقاعد المتاحة فورياً:' : 'Places disponibles :'}</span>
-              <span className="bg-white/10 px-2 py-0.5 rounded-lg text-white font-black">{Math.max(0, 30 - enfantsActifs.length)} places</span>
+              <span className="bg-white/10 px-2 py-0.5 rounded-lg text-white font-black">{capaciteTotale > 0 ? `${placesDisponibles} ${isArabic ? 'مقاعد' : 'places'}` : '—'}</span>
             </div>
           </div>
 

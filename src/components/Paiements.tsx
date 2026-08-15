@@ -48,11 +48,18 @@ export default function Paiements() {
   const enfantsData = isDirecteur ? allEnfantsData.filter(e => e.crecheId === user!.id) : allEnfantsData;
   const enfantIdsVisibles = new Set(enfantsData.map(e => e.id));
   const dbPaiements = isDirecteur ? allDbPaiements.filter(p => enfantIdsVisibles.has(p.enfantId)) : allDbPaiements;
+  const today = new Date();
+  const currentMonthLabel = new Intl.DateTimeFormat(isArabic ? 'ar-DZ' : 'fr-FR', { month: 'long', year: 'numeric' }).format(today);
+  const nextWeekDate = new Date(today);
+  nextWeekDate.setDate(today.getDate() + 7);
+  const nextWeekDateKey = nextWeekDate.toISOString().split('T')[0];
 
   const paiements: RichPaiement[] = dbPaiements.map((p: any) => ({
     ...p,
     moyenPaiement: p.moyenPaiement || (p.statut === 'Payé' ? 'Espèces' : undefined),
-    dateEcheance: p.dateEcheance || (p.statut !== 'Payé' ? '2026-07-05' : undefined),
+    // Une facture ancienne sans échéance reste sans échéance : on ne fabrique pas
+    // une date 2026 qui donnerait une information fausse à la directrice.
+    dateEcheance: p.dateEcheance || undefined,
     reductionCode: p.reductionCode || 'Aucun',
     typeFacture: p.typeFacture || 'Mensuel'
   }));
@@ -70,9 +77,9 @@ export default function Paiements() {
     montant: creche?.tuitionFeeRate || 12000, // ✅ synchronisé avec le tarif défini dans Paramètres
     statut: 'En attente' as 'Payé' | 'En attente' | 'Retard',
     typeFacture: 'Mensuel' as 'Mensuel' | 'Annuel',
-    moisConcerne: 'Mai 2026',
+    moisConcerne: currentMonthLabel,
     moyenPaiement: 'Espèces' as 'Espèces' | 'Chèque' | 'Virement' | 'Carte',
-    dateEcheance: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().split('T')[0],
+    dateEcheance: nextWeekDateKey,
     reductionCode: 'Aucun',
     notes: ''
   });
@@ -113,9 +120,9 @@ export default function Paiements() {
       montant: creche?.tuitionFeeRate || 12000, // ✅ synchronisé avec le tarif défini dans Paramètres
       statut: 'En attente',
       typeFacture: 'Mensuel',
-      moisConcerne: 'Mai 2026',
+      moisConcerne: currentMonthLabel,
       moyenPaiement: 'Espèces',
-      dateEcheance: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().split('T')[0],
+      dateEcheance: nextWeekDateKey,
       reductionCode: 'Aucun',
       notes: ''
     });
@@ -448,7 +455,9 @@ export default function Paiements() {
                             ...formData, 
                             typeFacture: type.key as any,
                             montant: isAnnuel ? monthlyRate * 12 : monthlyRate,
-                            moisConcerne: isAnnuel ? 'Année Scolaire 2026/2027' : 'Mai 2026'
+                            moisConcerne: isAnnuel
+                              ? `Année Scolaire ${today.getFullYear()}/${today.getFullYear() + 1}`
+                              : currentMonthLabel
                           });
                         }}
                         className={`p-3 text-xs font-bold rounded-xl border transition cursor-pointer text-center ${
@@ -505,9 +514,9 @@ export default function Paiements() {
                         value={formData.moisConcerne}
                         onChange={e => setFormData({...formData, moisConcerne: e.target.value})}
                       >
-                        <option value="Année Scolaire 2025/2026">Année Scolaire 2025/2026</option>
-                        <option value="Année Scolaire 2026/2027">Année Scolaire 2026/2027</option>
-                        <option value="Année Scolaire 2027/2028">Année Scolaire 2027/2028</option>
+                        <option value={`Année Scolaire ${today.getFullYear() - 1}/${today.getFullYear()}`}>{`Année Scolaire ${today.getFullYear() - 1}/${today.getFullYear()}`}</option>
+                        <option value={`Année Scolaire ${today.getFullYear()}/${today.getFullYear() + 1}`}>{`Année Scolaire ${today.getFullYear()}/${today.getFullYear() + 1}`}</option>
+                        <option value={`Année Scolaire ${today.getFullYear() + 1}/${today.getFullYear() + 2}`}>{`Année Scolaire ${today.getFullYear() + 1}/${today.getFullYear() + 2}`}</option>
                       </select>
                     ) : (
                       <select
@@ -515,13 +524,11 @@ export default function Paiements() {
                         value={formData.moisConcerne}
                         onChange={e => setFormData({...formData, moisConcerne: e.target.value})}
                       >
-                        <option value="Janvier 2026">Janvier 2026</option>
-                        <option value="Février 2026">Février 2026</option>
-                        <option value="Mars 2026">Mars 2026</option>
-                        <option value="Avril 2026">Avril 2026</option>
-                        <option value="Mai 2026">Mai 2026</option>
-                        <option value="Juin 2026">Juin 2026</option>
-                        <option value="Juillet 2026">Juillet 2026</option>
+                        {Array.from({ length: 12 }, (_, index) => {
+                          const monthDate = new Date(today.getFullYear(), today.getMonth() - 5 + index, 1);
+                          const label = new Intl.DateTimeFormat(isArabic ? 'ar-DZ' : 'fr-FR', { month: 'long', year: 'numeric' }).format(monthDate);
+                          return <option key={label} value={label}>{label}</option>;
+                        })}
                       </select>
                     )}
                   </div>

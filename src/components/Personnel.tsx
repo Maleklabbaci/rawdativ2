@@ -34,22 +34,23 @@ export default function Personnel() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
 
-  const { personnel: allDbPersonnel, addPersonnel, deletePersonnel } = useDb();
+  const { personnel: allDbPersonnel, classes: allDbClasses, addPersonnel, deletePersonnel } = useDb();
   const { user } = useAuth();
   const isDirecteur = user?.role === 'directeur';
   const dbPersonnel = isDirecteur ? allDbPersonnel.filter((p: any) => p.crecheId === user!.id) : allDbPersonnel;
+  const classes = (isDirecteur ? allDbClasses.filter((c: any) => c.crecheId === user!.id) : allDbClasses) as any[];
+  const classNames = classes.map(classe => String(classe.nom || '').trim()).filter(Boolean);
+  const normaliseEmail = (email?: string) => (email || '').replace(/@rawdati(?:\.com|\.dz)$/i, '@rawdha.dz');
 
-  const personnel: RichPersonnel[] = dbPersonnel.map((p, idx) => {
-    const classesAssigned = ['Classe des Papillons (Bébés)', 'Classe Verte (Moyens)', 'Classe Bleue (Grands)', 'Toutes les classes'];
-    return {
-      ...p,
-      telephone: p.telephone || `0555 ${12 + idx * 3} ${34 + idx * 2} ${56 - idx}`,
-      email: p.email || `${p.prenom.toLowerCase()}.${p.nom.toLowerCase()}@rawdha.dz`,
-      dateEmbauche: p.dateEmbauche || `2024-0${Math.max(1, 9 - idx)}-12`,
-      classeAssignee: p.classeAssignee || classesAssigned[idx % classesAssigned.length],
-      groupeSanguin: p.groupeSanguin || ['O+', 'A+', 'B+', 'AB+'][idx % 4],
-    };
-  });
+  const personnel: RichPersonnel[] = dbPersonnel.map((p) => ({
+    ...p,
+    // Ne pas inventer de téléphone, date d'embauche ou groupe sanguin pour remplir l'écran.
+    telephone: p.telephone || '',
+    email: normaliseEmail(p.email),
+    dateEmbauche: p.dateEmbauche || '',
+    classeAssignee: p.classeAssignee || 'Toutes les classes',
+    groupeSanguin: p.groupeSanguin || '',
+  }));
 
   const [showModal, setShowModal] = useState(false);
   const [selectedPersonnel, setSelectedPersonnel] = useState<any | null>(null);
@@ -63,7 +64,7 @@ export default function Personnel() {
     telephone: '0555 90 23 45',
     email: '',
     dateEmbauche: new Date().toISOString().split('T')[0],
-    classeAssignee: 'Classe des Papillons (Bébés)',
+    classeAssignee: 'Toutes les classes',
     groupeSanguin: 'O+',
     assuranceActive: false, // ✅ assurance de l'employé(e)
     numeroAssurance: '', // ✅ numéro de police / référence CNAS
@@ -90,7 +91,7 @@ export default function Personnel() {
       telephone: '0555 90 23 45',
       email: '',
       dateEmbauche: new Date().toISOString().split('T')[0],
-      classeAssignee: 'Classe des Papillons (Bébés)',
+      classeAssignee: 'Toutes les classes',
       groupeSanguin: 'O+',
       assuranceActive: false,
       numeroAssurance: '',
@@ -402,10 +403,10 @@ export default function Personnel() {
                       value={formData.classeAssignee}
                       onChange={e => setFormData({...formData, classeAssignee: e.target.value})}
                     >
-                      <option value="Classe des Papillons (Bébés)">Classe des Papillons (Bébés)</option>
-                      <option value="Classe Verte (Moyens)">Classe Verte (Moyens)</option>
-                      <option value="Classe Bleue (Grands)">Classe Bleue (Grands)</option>
-                      <option value="Toutes les classes">Toutes les classes / Polyvalente</option>
+                      {classNames.map(className => (
+                        <option key={className} value={className}>{className}</option>
+                      ))}
+                      <option value="Toutes les classes">{isArabic ? 'كل الأقسام / متعدد' : 'Toutes les classes / Polyvalente'}</option>
                     </select>
                   </div>
 
