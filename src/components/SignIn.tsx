@@ -3,10 +3,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import {
   AlertCircle,
-  ArrowLeft,
   Baby,
   Building,
-  Chrome,
   Globe2,
   MapPin,
   KeyRound,
@@ -17,8 +15,6 @@ import {
   Sparkles,
   UserRound,
 } from 'lucide-react';
-
-type AuthMethod = 'password' | 'email' | 'phone';
 
 function formatAuthError(message: string | null, fallback: string): string {
   if (!message || message === '{}' || message === '[object Object]') return fallback;
@@ -38,19 +34,12 @@ export default function SignIn() {
   const { isFrench } = useLanguage();
   const {
     loginWithCredentials,
-    signInWithGoogle,
-    requestEmailOtp,
-    verifyEmailOtp,
-    requestPhoneOtp,
-    verifyPhoneOtp,
     createDirectorAccount,
   } = useAuth();
 
   const [view, setView] = useState<'signin' | 'signup'>('signin');
-  const [method, setMethod] = useState<AuthMethod>('password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [phone, setPhone] = useState('');
   const [directorNom, setDirectorNom] = useState('');
   const [directorPrenom, setDirectorPrenom] = useState('');
   const [directorEmail, setDirectorEmail] = useState('');
@@ -60,19 +49,9 @@ export default function SignIn() {
   const [directorPhone, setDirectorPhone] = useState('');
   const [directorAddress, setDirectorAddress] = useState('');
   const [directorWebsite, setDirectorWebsite] = useState('');
-  const [otp, setOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-
-  const changeMethod = (nextMethod: AuthMethod) => {
-    setMethod(nextMethod);
-    setOtpSent(false);
-    setOtp('');
-    setError('');
-    setSuccess('');
-  };
 
   const handleCreateDirector = async (event: FormEvent) => {
     event.preventDefault();
@@ -108,7 +87,6 @@ export default function SignIn() {
       setError(formatAuthError(result.error, 'Impossible de créer le compte directeur.'));
     } else if (result.requiresEmailConfirmation) {
       setView('signin');
-      setMethod('password');
       setEmail(directorEmail.trim().toLowerCase());
       setPassword('');
       setSuccess('Compte créé. Consultez votre e-mail pour confirmer l’adresse avant de vous connecter.');
@@ -126,65 +104,12 @@ export default function SignIn() {
     }
     setLoading(true);
     setError('');
-    const matched = await loginWithCredentials(email, password);
-    if (!matched) {
-      setError(formatAuthError(null, isFrench
+    setSuccess('');
+    const result = await loginWithCredentials(email, password);
+    if (result.error || !result.user) {
+      setError(formatAuthError(result.error, isFrench
         ? 'Identifiants incorrects. Vérifiez votre adresse e-mail et votre mot de passe.'
         : 'بيانات الاعتماد غير صحيحة.'));
-    }
-    setLoading(false);
-  };
-
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    setError('');
-    const result = await signInWithGoogle();
-    if (result.error) {
-      setError(formatAuthError(result.error, 'La connexion avec Google n’a pas pu être lancée.'));
-      setLoading(false);
-    }
-  };
-
-  const handleRequestOtp = async (event: FormEvent) => {
-    event.preventDefault();
-    const value = method === 'email' ? email.trim() : phone.trim();
-    if (!value) {
-      setError(method === 'email' ? 'Saisissez votre adresse e-mail.' : 'Saisissez votre numéro de téléphone.');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    setSuccess('');
-    const result = method === 'email'
-      ? await requestEmailOtp(value)
-      : await requestPhoneOtp(value);
-
-    if (result.error) {
-      setError(formatAuthError(result.error, 'Le lien de connexion n’a pas pu être envoyé. Réessayez dans quelques secondes.'));
-    } else {
-      setOtpSent(true);
-      setSuccess(method === 'email'
-        ? 'Un lien ou un code de connexion vient d’être envoyé à votre adresse e-mail.'
-        : 'Un code de connexion à 6 chiffres vient d’être envoyé par SMS.');
-    }
-    setLoading(false);
-  };
-
-  const handleVerifyOtp = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!/^\d{6}$/.test(otp.trim())) {
-      setError('Saisissez le code à 6 chiffres reçu.');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    const result = method === 'email'
-      ? await verifyEmailOtp(email, otp)
-      : await verifyPhoneOtp(phone, otp);
-    if (result.error) {
-      setError(formatAuthError(result.error, 'Le code est invalide ou expiré.'));
     }
     setLoading(false);
   };
@@ -268,36 +193,6 @@ export default function SignIn() {
           </div>
 
           {view === 'signin' ? (
-            <>
-          <button
-            type="button"
-            onClick={handleGoogleLogin}
-            disabled={loading}
-            className="w-full py-3.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold hover:border-indigo-300 hover:shadow-md transition flex items-center justify-center gap-3 disabled:opacity-50"
-          >
-            <Chrome className="w-5 h-5 text-[#4285F4]" />
-            <span>Continuer avec Google</span>
-          </button>
-
-          <div className="flex items-center gap-3 text-xs text-slate-400">
-            <div className="h-px bg-slate-200 flex-1" />
-            <span>ou avec vos identifiants</span>
-            <div className="h-px bg-slate-200 flex-1" />
-          </div>
-
-          <div className="grid grid-cols-3 gap-2 p-1 bg-slate-100 rounded-xl">
-            <button type="button" onClick={() => changeMethod('password')} className={`py-2.5 rounded-lg text-xs font-bold transition ${method === 'password' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              Mot de passe
-            </button>
-            <button type="button" onClick={() => changeMethod('email')} className={`py-2.5 rounded-lg text-xs font-bold transition ${method === 'email' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              Code e-mail
-            </button>
-            <button type="button" onClick={() => changeMethod('phone')} className={`py-2.5 rounded-lg text-xs font-bold transition ${method === 'phone' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              SMS
-            </button>
-          </div>
-
-          {method === 'password' && (
             <form onSubmit={handleLogin} className="space-y-5">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Adresse e-mail</label>
@@ -313,54 +208,11 @@ export default function SignIn() {
                   <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all font-medium text-slate-800" placeholder="••••••••" required />
                 </div>
               </div>
+              <p className="text-xs leading-relaxed text-slate-500">Utilisez l’adresse e-mail confirmée du directeur et son mot de passe Rawdha+.</p>
               <button type="submit" disabled={loading} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-indigo-100 transition flex items-center justify-center gap-2 shadow-md disabled:opacity-50">
                 {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><LogIn className="w-5 h-5" /><span>Se connecter à RAWDHA+</span></>}
               </button>
             </form>
-          )}
-
-          {method !== 'password' && !otpSent && (
-            <form onSubmit={handleRequestOtp} className="space-y-5">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-                  {method === 'email' ? 'Adresse e-mail' : 'Numéro de téléphone'}
-                </label>
-                <div className="relative">
-                  {method === 'email' ? <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /> : <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />}
-                  <input
-                    type={method === 'email' ? 'email' : 'tel'}
-                    value={method === 'email' ? email : phone}
-                    onChange={(event) => method === 'email' ? setEmail(event.target.value) : setPhone(event.target.value)}
-                    className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all font-medium text-slate-800"
-                    placeholder={method === 'email' ? 'direction@rawdha.dz' : '+213 5 55 55 55 55'}
-                    required
-                  />
-                </div>
-              </div>
-              <p className="text-xs leading-relaxed text-slate-500">
-                {method === 'email' ? 'Un lien magique ou un code à usage unique sera envoyé. Aucun mot de passe n’est nécessaire.' : 'Utilisez le format international, par exemple +213 5 55 55 55 55.'}
-              </p>
-              <button type="submit" disabled={loading} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-indigo-100 transition flex items-center justify-center gap-2 shadow-md disabled:opacity-50">
-                {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><KeyRound className="w-5 h-5" /><span>Recevoir le code</span></>}
-              </button>
-            </form>
-          )}
-
-          {method !== 'password' && otpSent && (
-            <form onSubmit={handleVerifyOtp} className="space-y-5">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Code de vérification</label>
-                <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} className="w-full text-center tracking-[0.5em] text-2xl py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all font-bold text-slate-800" placeholder="000000" required />
-              </div>
-              <button type="submit" disabled={loading} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-indigo-100 transition flex items-center justify-center gap-2 shadow-md disabled:opacity-50">
-                {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><LogIn className="w-5 h-5" /><span>Valider la connexion</span></>}
-              </button>
-              <button type="button" onClick={() => { setOtpSent(false); setOtp(''); setSuccess(''); }} className="w-full py-2 text-sm font-semibold text-slate-500 hover:text-indigo-600 flex items-center justify-center gap-2">
-                <ArrowLeft className="w-4 h-4" /> Modifier les coordonnées
-              </button>
-            </form>
-          )}
-            </>
           ) : (
             <form onSubmit={handleCreateDirector} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">

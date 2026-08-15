@@ -46,13 +46,8 @@ interface AuthContextType {
   user: UserAccount | null;
   loading: boolean;
   creche: CrecheInfo;
-  loginWithCredentials: (email: string, motDePasse: string) => Promise<UserAccount | null>;
+  loginWithCredentials: (email: string, motDePasse: string) => Promise<{ user: UserAccount | null; error: string | null }>;
   createDirectorAccount: (details: DirectorSignupDetails) => Promise<{ error: string | null; requiresEmailConfirmation: boolean }>;
-  signInWithGoogle: () => Promise<{ error: string | null }>;
-  requestEmailOtp: (email: string) => Promise<{ error: string | null }>;
-  verifyEmailOtp: (email: string, token: string) => Promise<{ error: string | null }>;
-  requestPhoneOtp: (phone: string) => Promise<{ error: string | null }>;
-  verifyPhoneOtp: (phone: string, token: string) => Promise<{ error: string | null }>;
   logout: () => void;
   // ✅ À appeler après une sauvegarde réussie dans Paramètres pour que le nom / logo /
   // tarif se mettent à jour PARTOUT dans l'appli (sidebar, header, factures) sans recharger la page.
@@ -179,7 +174,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const isAuthenticated = !!user;
 
-  const loginWithCredentials = async (email: string, motDePasse: string): Promise<UserAccount | null> => {
+  const loginWithCredentials = async (email: string, motDePasse: string): Promise<{ user: UserAccount | null; error: string | null }> => {
     const { data, error } = await supabase.auth.signInWithPassword({
       email: email.toLowerCase().trim(),
       password: motDePasse,
@@ -187,13 +182,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     if (error || !data.user) {
       console.error('Erreur de connexion:', error?.message);
-      return null;
+      return {
+        user: null,
+        error: normalizeAuthError(error) || 'Identifiants incorrects. Vérifiez votre adresse e-mail et votre mot de passe.',
+      };
     }
 
     const profile = await loadProfile(data.user.id, data.user);
+    if (!profile) {
+      return {
+        user: null,
+        error: 'Votre authentification est valide, mais votre compte n’est pas encore rattaché à Rawdha+.',
+      };
+    }
     setUser(profile);
     await loadCrecheSettings(profile);
-    return profile;
+    return { user: profile, error: null };
   };
 
   const createDirectorAccount = async (details: DirectorSignupDetails): Promise<{ error: string | null; requiresEmailConfirmation: boolean }> => {
@@ -233,64 +237,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return { error: null, requiresEmailConfirmation: !data.session };
   };
 
-  const signInWithGoogle = async (): Promise<{ error: string | null }> => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin },
-    });
-    return { error: normalizeAuthError(error) };
-  };
-
-  const requestEmailOtp = async (email: string): Promise<{ error: string | null }> => {
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.toLowerCase().trim(),
-      options: {
-        shouldCreateUser: false,
-        emailRedirectTo: window.location.origin,
-      },
-    });
-    return { error: normalizeAuthError(error) };
-  };
-
-  const verifyEmailOtp = async (email: string, token: string): Promise<{ error: string | null }> => {
-    const { data, error } = await supabase.auth.verifyOtp({
-      email: email.toLowerCase().trim(),
-      token: token.trim(),
-      type: 'email',
-    });
-    if (!error && data.user) {
-      const profile = await loadProfile(data.user.id, data.user);
-      setUser(profile);
-      await loadCrecheSettings(profile);
-      if (!profile) return { error: 'Compte authentifié mais profil Rawdha+ introuvable.' };
-    }
-    return { error: normalizeAuthError(error) };
-  };
-
-  const requestPhoneOtp = async (phone: string): Promise<{ error: string | null }> => {
-    const { error } = await supabase.auth.signInWithOtp({
-      phone: phone.trim().replace(/\s+/g, ''),
-      options: { shouldCreateUser: false },
-    });
-    return { error: normalizeAuthError(error) };
-  };
-
-  const verifyPhoneOtp = async (phone: string, token: string): Promise<{ error: string | null }> => {
-    const normalizedPhone = phone.trim().replace(/\s+/g, '');
-    const { data, error } = await supabase.auth.verifyOtp({
-      phone: normalizedPhone,
-      token: token.trim(),
-      type: 'sms',
-    });
-    if (!error && data.user) {
-      const profile = await loadProfile(data.user.id, data.user);
-      setUser(profile);
-      await loadCrecheSettings(profile);
-      if (!profile) return { error: 'Compte authentifié mais profil Rawdha+ introuvable.' };
-    }
-    return { error: normalizeAuthError(error) };
-  };
-
   const logout = async () => {
     await supabase.auth.signOut();
     setUser(null);
@@ -309,11 +255,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       creche,
       loginWithCredentials,
       createDirectorAccount,
-      signInWithGoogle,
-      requestEmailOtp,
-      verifyEmailOtp,
-      requestPhoneOtp,
-      verifyPhoneOtp,
       logout,
       refreshCreche,
     }}>
