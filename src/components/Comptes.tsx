@@ -33,7 +33,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function Comptes() {
-  const { comptes, enfants, demandesDirecteur, addCompte, updateCompte, deleteCompte, approveDemandeDirecteur, updateDemandeDirecteur, refreshAll, loading } = useDb();
+  const { comptes, enfants, demandesDirecteur, addCompte, updateCompte, deleteCompte, approveDemandeDirecteur, deleteDemandeDirecteur, refreshAll, loading } = useDb();
   const { language, isFrench } = useLanguage();
   const { user: currentUser } = useAuth();
 
@@ -209,20 +209,19 @@ export default function Comptes() {
   };
 
   const handleRefuseDemande = async (demande: DemandeDirecteur) => {
-    const motif = window.prompt('Motif du refus (facultatif) :', '') || '';
+    const confirmationText = isFrench
+      ? `Refuser la demande de ${demande.prenom} ${demande.nom} et la supprimer définitivement de Rawdha+ et de la base de données ?`
+      : `هل تريد رفض طلب ${demande.prenom} ${demande.nom} وحذفه نهائياً من Rawdha+ وقاعدة البيانات؟`;
+    if (!window.confirm(confirmationText)) return;
+
     try {
       setDecisionLoading(true);
-      await updateDemandeDirecteur(demande.id, {
-        statut: 'refusee',
-        motifRefus: motif,
-        traiteLe: new Date().toISOString(),
-        traitePar: currentUser?.id,
-      });
+      await deleteDemandeDirecteur(demande.id);
       setSelectedDemande(null);
       await refreshAll();
     } catch (err) {
-      console.error('Erreur refus demande directeur:', err);
-      setDecisionError(err instanceof Error ? err.message : 'Impossible de refuser cette demande.');
+      console.error('Erreur suppression demande directeur:', err);
+      setDecisionError(err instanceof Error ? err.message : 'Impossible de supprimer cette demande.');
     } finally {
       setDecisionLoading(false);
     }
@@ -359,7 +358,7 @@ export default function Comptes() {
                     <UserCheck className="w-4 h-4" /> Accepter
                   </button>
                   <button type="button" onClick={() => handleRefuseDemande(demande)} disabled={decisionLoading} className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white border border-rose-200 text-rose-700 text-sm font-extrabold hover:bg-rose-50 transition disabled:opacity-50">
-                    <UserX className="w-4 h-4" /> Refuser
+                    <UserX className="w-4 h-4" /> Refuser et supprimer
                   </button>
                 </div>
               </div>
@@ -385,7 +384,7 @@ export default function Comptes() {
               </div>
               {decisionError && <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm flex items-start gap-2"><AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />{decisionError}</div>}
               <div className="flex flex-col sm:flex-row gap-3 sm:justify-end">
-                <button type="button" onClick={() => handleRefuseDemande(selectedDemande)} disabled={decisionLoading} className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-rose-200 text-rose-700 font-extrabold hover:bg-rose-50 transition disabled:opacity-50"><UserX className="w-4 h-4" /> Refuser la demande</button>
+                <button type="button" onClick={() => handleRefuseDemande(selectedDemande)} disabled={decisionLoading} className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-rose-200 text-rose-700 font-extrabold hover:bg-rose-50 transition disabled:opacity-50"><UserX className="w-4 h-4" /> Refuser et supprimer la demande</button>
                 <button type="button" onClick={() => handleAcceptDemande(selectedDemande)} disabled={decisionLoading} className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-indigo-600 text-white font-extrabold hover:bg-indigo-700 transition disabled:opacity-50">{decisionLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />} Accepter et activer</button>
               </div>
             </motion.div>
