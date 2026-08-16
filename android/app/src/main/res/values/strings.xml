@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Rawdha+</string>
+    <string name="title_activity_main">Rawdha+</string>
+    <string name="package_name">dz.rawdha.plus</string>
+    <string name="custom_url_scheme">dz.rawdha.plus</string>
+</resources>

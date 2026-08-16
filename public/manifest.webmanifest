@@ -1,0 +1,22 @@
+{
+  "name": "Rawdha+",
+  "short_name": "Rawdha+",
+  "description": "Plateforme de gestion des crèches Rawdha+",
+  "lang": "fr-DZ",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#4f46e5",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
+
