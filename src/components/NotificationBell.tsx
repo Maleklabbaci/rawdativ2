@@ -101,7 +101,7 @@ export default function NotificationBell({ onNavigateToPaiements }: { onNavigate
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.97 }}
             transition={{ duration: 0.15 }}
-            className="absolute ltr:right-0 rtl:left-0 mt-2 w-80 sm:w-96 max-h-[28rem] bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 flex flex-col overflow-hidden"
+            className="absolute ltr:right-0 rtl:left-0 mt-2 w-[min(24rem,calc(100vw-1.5rem))] max-w-[calc(100vw-1.5rem)] sm:w-96 max-h-[min(28rem,calc(100dvh-5rem))] bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 flex flex-col overflow-hidden"
           >
             <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div>

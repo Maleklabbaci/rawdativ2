@@ -108,11 +108,13 @@ function AppContent() {
       const languageSelected = accountLanguageSelected || globalLanguageSelected;
       const introCompleted = readStoredFlag(introCompletedKey)
         || globalIntroCompleted
+        || globalLanguageSelected
         || (welcomeSeen && languageSelected);
 
       // Migration vers les marqueurs par compte et vers le marqueur global de
-      // compatibilité. La langue seule ferme uniquement le choix de langue ;
-      // le bouton « Commencer maintenant » reste responsable de la fin d’accueil.
+      // compatibilité. Une langue globale valide provient de l’ancien parcours
+      // déjà utilisé : elle ferme donc les deux fenêtres historiques pour éviter
+      // de bloquer un ancien compte à chaque connexion.
       if (globalLanguageSelected && !accountLanguageSelected) {
         localStorage.setItem(languageKey, '1');
       }

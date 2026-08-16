@@ -124,7 +124,7 @@ export default function HelpCenterModal({ isOpen, onClose, currentPage, language
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-md"
+          className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-950/65 p-3 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-md sm:items-center sm:p-4"
           dir={isArabic ? 'rtl' : 'ltr'}
           role="dialog"
           aria-modal="true"
@@ -134,9 +134,9 @@ export default function HelpCenterModal({ isOpen, onClose, currentPage, language
             initial={{ opacity: 0, y: 22, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 22, scale: 0.97 }}
-            className="relative max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-[2rem] bg-white shadow-2xl"
+            className="relative my-auto max-h-[calc(100dvh-2rem)] w-full max-w-3xl overflow-y-auto overscroll-contain rounded-[1.5rem] bg-white shadow-2xl sm:max-h-[92vh] sm:rounded-[2rem]"
           >
-            <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-indigo-950 to-indigo-800 px-6 py-7 text-white sm:px-8">
+            <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-indigo-950 to-indigo-800 px-4 py-5 text-white sm:px-8 sm:py-7">
               <button type="button" onClick={onClose} aria-label={isArabic ? 'إغلاق' : 'Fermer'} className="absolute top-4 ltr:right-4 rtl:left-4 rounded-xl p-2 text-white/70 transition hover:bg-white/10 hover:text-white cursor-pointer">
                 <X className="h-5 w-5" />
               </button>
@@ -146,7 +146,7 @@ export default function HelpCenterModal({ isOpen, onClose, currentPage, language
                 </div>
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-200">{isArabic ? 'دليل Rawdha+' : 'Guide Rawdha+'}</p>
-                  <h2 id="help-center-title" className="mt-1 text-2xl font-black">{isArabic ? 'كيف تعمل المنصة؟' : 'Comment fonctionne la plateforme ?'}</h2>
+                  <h2 id="help-center-title" className="mt-1 text-xl font-black sm:text-2xl">{isArabic ? 'كيف تعمل المنصة؟' : 'Comment fonctionne la plateforme ?'}</h2>
                 </div>
               </div>
             </div>

@@ -945,7 +945,7 @@ export default function Parametres() {
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -15 }}
-            className="fixed bottom-6 right-6 p-4 bg-emerald-600 border border-emerald-700 text-white font-semibold rounded-2xl flex items-start gap-3 shadow-xl z-50 max-w-md"
+            className="fixed inset-x-3 bottom-[max(1rem,env(safe-area-inset-bottom))] z-50 flex max-w-md items-start gap-3 rounded-2xl border border-emerald-700 bg-emerald-600 p-4 text-white font-semibold shadow-xl sm:inset-x-auto sm:right-6 sm:bottom-6"
           >
             <ShieldCheck className="w-5 h-5 text-emerald-100 flex-shrink-0 mt-0.5" />
             <div>

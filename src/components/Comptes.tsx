@@ -386,12 +386,12 @@ export default function Comptes() {
 
       <AnimatePresence>
         {selectedDemande && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0, scale: 0.96, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-6 space-y-5">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-950/40 p-3 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:items-center sm:p-4">
+            <motion.div initial={{ opacity: 0, scale: 0.96, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-3xl bg-white p-4 shadow-2xl space-y-5 sm:p-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-xs uppercase tracking-widest font-black text-indigo-600">Validation admin</p>
-                  <h3 className="text-xl font-black text-slate-900 mt-1">Activer {selectedDemande.prenom} {selectedDemande.nom}</h3>
+                  <h3 className="mt-1 break-words text-lg font-black text-slate-900 sm:text-xl">Activer {selectedDemande.prenom} {selectedDemande.nom}</h3>
                   <p className="text-sm text-slate-500 mt-1">{selectedDemande.nomCreche} · {selectedDemande.email}</p>
                 </div>
                 <button type="button" onClick={() => setSelectedDemande(null)} className="p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-100"><XCircle className="w-5 h-5" /></button>

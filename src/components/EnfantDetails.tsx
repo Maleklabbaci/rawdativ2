@@ -80,17 +80,17 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
 
   return (
     <div 
-      className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-center justify-center z-[999] p-4 font-sans cursor-pointer"
+      className="fixed inset-0 z-[999] flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-950/70 p-3 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-lg sm:items-center sm:p-4"
       onClick={onClose}
     >
       <motion.div 
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-2xl max-h-[85vh] mt-16 flex flex-col overflow-hidden cursor-default"
+        className="my-auto flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-2xl cursor-default sm:mt-16 sm:max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className={`p-6 text-white flex justify-between items-center flex-shrink-0 ${
+        <div className={`p-4 text-white flex justify-between items-start gap-3 flex-shrink-0 sm:p-6 ${
           enfant.genre === 'Fille' 
             ? 'bg-gradient-to-r from-pink-500 via-pink-600 to-rose-600' 
             : 'bg-gradient-to-r from-sky-500 via-indigo-500 to-violet-600'
@@ -103,7 +103,7 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
               <p className="text-xs text-white/80 font-bold uppercase tracking-widest leading-none mb-1">
                 {isArabic ? 'ملف التلميذ' : 'Dossier Scolaire Individuel'}
               </p>
-              <h2 className="text-2xl font-black tracking-tight">{enfant.prenom} {enfant.nom}</h2>
+              <h2 className="break-words text-xl font-black tracking-tight sm:text-2xl">{enfant.prenom} {enfant.nom}</h2>
             </div>
           </div>
           <button 
@@ -125,10 +125,10 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
           </div>
         )}
 
-        <div className="flex border-b border-slate-100 bg-slate-50 flex-shrink-0">
+        <div className="flex flex-shrink-0 overflow-x-auto border-b border-slate-100 bg-slate-50">
           <button
             onClick={() => setActiveTab('info')}
-            className={`flex-1 py-4 text-xs sm:text-sm font-black flex items-center justify-center gap-2 border-b-2 transition cursor-pointer ${
+            className={`min-w-[13rem] flex-1 py-4 text-xs sm:text-sm font-black flex items-center justify-center gap-2 border-b-2 transition cursor-pointer ${
               activeTab === 'info'
                 ? 'border-indigo-600 text-indigo-600 bg-white'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -140,7 +140,7 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
           
           <button
             onClick={() => setActiveTab('presences')}
-            className={`flex-1 py-4 text-xs sm:text-sm font-black flex items-center justify-center gap-2 border-b-2 transition cursor-pointer ${
+            className={`min-w-[13rem] flex-1 py-4 text-xs sm:text-sm font-black flex items-center justify-center gap-2 border-b-2 transition cursor-pointer ${
               activeTab === 'presences'
                 ? 'border-indigo-600 text-indigo-600 bg-white'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -157,7 +157,7 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
           
           <button
             onClick={() => setActiveTab('paiements')}
-            className={`flex-1 py-4 text-xs sm:text-sm font-black flex items-center justify-center gap-2 border-b-2 transition cursor-pointer ${
+            className={`min-w-[13rem] flex-1 py-4 text-xs sm:text-sm font-black flex items-center justify-center gap-2 border-b-2 transition cursor-pointer ${
               activeTab === 'paiements'
                 ? 'border-indigo-600 text-indigo-600 bg-white'
                 : 'border-transparent text-slate-500 hover:text-slate-800'

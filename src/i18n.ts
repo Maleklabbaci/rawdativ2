@@ -91,6 +91,11 @@ i18n
   .init({
     resources,
     fallbackLng: 'fr',
+    detection: {
+      order: ['localStorage', 'navigator'],
+      lookupLocalStorage: 'rawdha_language',
+      caches: ['localStorage'],
+    },
     interpolation: {
       escapeValue: false,
     },

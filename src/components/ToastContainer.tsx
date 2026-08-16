@@ -18,7 +18,7 @@ export function ToastContainer() {
   };
 
   return (
-    <div className="fixed top-4 right-4 z-[9999] space-y-2 pointer-events-none">
+    <div className="fixed inset-x-3 top-4 z-[9999] space-y-2 pointer-events-none sm:left-auto sm:right-4 sm:inset-x-auto">
       <AnimatePresence>
         {toasts.map(toast => (
           <motion.div
@@ -27,10 +27,10 @@ export function ToastContainer() {
             animate={{ opacity: 1, y: 0, x: 0 }}
             exit={{ opacity: 0, y: -20, x: 400 }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className={`flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg pointer-events-auto ${colors[toast.type]}`}
+            className={`flex w-full max-w-[min(28rem,calc(100vw-1.5rem))] items-start gap-3 break-words px-4 py-3 rounded-lg border shadow-lg pointer-events-auto ${colors[toast.type]}`}
           >
             {icons[toast.type]}
-            <span className="text-sm font-medium">{toast.message}</span>
+            <span className="min-w-0 flex-1 text-sm font-medium leading-relaxed">{toast.message}</span>
             <button
               onClick={() => removeToast(toast.id)}
               className="ml-auto p-1 hover:bg-black/10 rounded transition"

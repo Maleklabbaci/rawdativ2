@@ -18,8 +18,10 @@ export const LanguageProvider = ({ children }: any) => {
     void i18n.changeLanguage(lang);
   };
 
+  const isFrench = language !== 'ar';
+
   return (
-    <LanguageContext.Provider value={{ language, setLanguage, t }}>
+    <LanguageContext.Provider value={{ language, isFrench, setLanguage, t }}>
       {children}
     </LanguageContext.Provider>
   );

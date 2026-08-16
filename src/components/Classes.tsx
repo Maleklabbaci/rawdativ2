@@ -459,8 +459,8 @@ export default function Classes() {
       {/* ADD / EDIT CLASS MODAL */}
       <AnimatePresence>
         {showModal && (
-          <motion.div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <motion.div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl border border-slate-100">
+          <motion.div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/50 p-3 sm:items-center sm:p-4">
+            <motion.div className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl border border-slate-100 sm:p-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-bold">
                   {editingClasseId 
@@ -587,8 +587,8 @@ export default function Classes() {
       {/* ADD CHILDREN TO CLASS MODAL */}
       <AnimatePresence>
         {showAddChildrenModal && selectedClasse && (
-          <motion.div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <motion.div className="bg-white rounded-2xl p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto shadow-2xl">
+          <motion.div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/50 p-3 sm:items-center sm:p-4">
+            <motion.div className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl sm:max-h-[80vh] sm:p-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-bold">
                   {isArabic ? 'إضافة أطفال إلى' : 'Ajouter enfants à'} {selectedClasse.nom}
