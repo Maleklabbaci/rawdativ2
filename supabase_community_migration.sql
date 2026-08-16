@@ -95,7 +95,7 @@ for insert with check (
     and data->>'authorId' = auth.uid()::text
     and exists (
       select 1 from public.community_posts p
-      where p.id::text = data->>'postId'
+      where p.id::text = community_comments.data->>'postId'
         and coalesce(p.data->>'statut', 'publie') <> 'masquee'
     )
   )
