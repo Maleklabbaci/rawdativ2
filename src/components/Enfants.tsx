@@ -50,6 +50,96 @@ const DEFAULT_DOCUMENTS_REQUIS: Record<DocumentKey, boolean> = {
   photoIdentite: false,
 };
 
+type ImportChildDraft = {
+  nom: string;
+  prenom: string;
+  dateNaissance: string;
+  genre: 'Garçon' | 'Fille';
+  groupeAge: 'Bébés' | 'Moyens' | 'Grands';
+  parentNom: string;
+  parentPrenom: string;
+  parentTelephone: string;
+  parentEmail: string;
+};
+
+type ImportPreviewRow = {
+  rowNumber: number;
+  draft: ImportChildDraft;
+  missing: string[];
+  warnings: string[];
+  invalid: boolean;
+};
+
+type ImportPreview = {
+  fileName: string;
+  separator: string;
+  totalRows: number;
+  headers: string[];
+  columnMap: string[];
+  rows: ImportPreviewRow[];
+};
+
+type ImportResult = {
+  fileName: string;
+  imported: number;
+  incomplete: number;
+  skipped: number;
+  rows: ImportPreviewRow[];
+};
+
+const normalizeImportHeader = (value: string) => value
+  .replace(/^\uFEFF/, '')
+  .trim()
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-z0-9\u0600-\u06ff]/g, '');
+
+const normalizeImportValue = (value: string) => value.replace(/^\uFEFF/, '').trim();
+
+const normalizeImportDate = (value: string) => {
+  const raw = normalizeImportValue(value);
+  if (!raw) return '';
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(raw)) {
+    const [year, month, day] = raw.split('-').map(Number);
+    return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+  }
+  if (/^\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{4}$/.test(raw)) {
+    const [first, second, year] = raw.split(/[\/.\-]/).map(Number);
+    const day = second > 12 ? second : first;
+    const month = second > 12 ? first : second;
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+      return `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+    }
+  }
+  const serial = Number(raw.replace(',', '.'));
+  if (Number.isFinite(serial) && serial > 20000 && serial < 70000) {
+    const date = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+    if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10);
+};
+
+const normalizeImportGender = (value: string): 'Garçon' | 'Fille' => {
+  const normalized = normalizeImportHeader(value);
+  return ['fille', 'female', 'girl', 'f', 'انثى', 'بنت'].some(token => normalized.includes(token)) ? 'Fille' : 'Garçon';
+};
+
+const normalizeImportGroup = (value: string): 'Bébés' | 'Moyens' | 'Grands' => {
+  const normalized = normalizeImportHeader(value);
+  if (['grand', 'grands', 'older', 'preschool', 'كبر'].some(token => normalized.includes(token))) return 'Grands';
+  if (['moyen', 'moyens', 'middle', 'toddler', 'متوسط'].some(token => normalized.includes(token))) return 'Moyens';
+  return 'Bébés';
+};
+
+const createImportId = (prefix: string, rowNumber: number) => {
+  const randomId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}_${rowNumber}_${Math.random().toString(36).slice(2, 8)}`;
+  return `${prefix}_${randomId}`;
+};
+
 function getDocumentsRequis(enfant?: Partial<Enfant> | null): Record<DocumentKey, boolean> {
   const documents = enfant?.documentsRequis;
   const source = documents && typeof documents === 'object' && !Array.isArray(documents)
@@ -100,6 +190,8 @@ export default function Enfants() {
   const [admissionLinkCopied, setAdmissionLinkCopied] = useState(false);
   const [admissionActionId, setAdmissionActionId] = useState<string | null>(null);
   const [importingCsv, setImportingCsv] = useState(false);
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
 
   const [formData, setFormData] = useState({
     nom: '',
@@ -255,65 +347,142 @@ export default function Enfants() {
     return values;
   };
 
+  const findImportColumn = (headers: string[], aliases: string[]) => {
+    const normalizedAliases = aliases.map(normalizeImportHeader);
+    const exactIndex = headers.findIndex(header => normalizedAliases.includes(header));
+    if (exactIndex >= 0) return exactIndex;
+    return headers.findIndex(header => normalizedAliases.some(alias => alias.length >= 4 && (header.includes(alias) || alias.includes(header))));
+  };
+
+  const buildImportPreview = (fileName: string, text: string): ImportPreview => {
+    const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    if (lines.length < 2) throw new Error('empty');
+    if (lines.length > 10001) throw new Error('too_many_rows');
+    const separator = (lines[0].match(/;/g) || []).length > (lines[0].match(/,/g) || []).length ? ';' : ',';
+    const rawHeaders = parseCsvLine(lines[0], separator);
+    const headers = rawHeaders.map(normalizeImportHeader);
+    const columns = {
+      nom: findImportColumn(headers, ['nom', 'lastname', 'surname', 'nomenfant', 'nomdelenfant']),
+      prenom: findImportColumn(headers, ['prenom', 'firstname', 'givenname', 'prenomenfant', 'prenomenfant']),
+      dateNaissance: findImportColumn(headers, ['datenaissance', 'datebirth', 'birthdate', 'naissance', 'ddn']),
+      genre: findImportColumn(headers, ['genre', 'sexe', 'gender']),
+      groupeAge: findImportColumn(headers, ['groupeage', 'groupe', 'section', 'classe', 'niveau']),
+      parentNom: findImportColumn(headers, ['parentnom', 'nomparent', 'nompere', 'nommere', 'nomresponsable']),
+      parentPrenom: findImportColumn(headers, ['parentprenom', 'prenomparent', 'prenomresponsable']),
+      parentTelephone: findImportColumn(headers, ['parenttelephone', 'telephoneparent', 'telephone', 'tel', 'mobile', 'gsm']),
+      parentEmail: findImportColumn(headers, ['parentemail', 'emailparent', 'email', 'courriel']),
+    };
+    const labelByField: Record<string, string> = {
+      nom: 'Nom',
+      prenom: 'Prénom',
+      dateNaissance: 'Date de naissance',
+      genre: 'Genre',
+      groupeAge: 'Groupe / classe',
+      parentNom: 'Nom du parent',
+      parentPrenom: 'Prénom du parent',
+      parentTelephone: 'Téléphone du parent',
+      parentEmail: 'E-mail du parent',
+    };
+    const columnMap = Object.entries(columns).map(([field, index]) => `${labelByField[field]} : ${index >= 0 ? rawHeaders[index] : 'colonne absente'}`);
+    const rows: ImportPreviewRow[] = [];
+    for (let rowIndex = 1; rowIndex < lines.length; rowIndex += 1) {
+      const row = parseCsvLine(lines[rowIndex], separator).map(normalizeImportValue);
+      const valueAt = (index: number) => index >= 0 ? (row[index] || '') : '';
+      const rawDate = valueAt(columns.dateNaissance);
+      const dateNaissance = normalizeImportDate(rawDate);
+      const nom = valueAt(columns.nom);
+      const prenom = valueAt(columns.prenom);
+      const parentNom = valueAt(columns.parentNom);
+      const parentPrenom = valueAt(columns.parentPrenom);
+      const parentTelephone = valueAt(columns.parentTelephone);
+      const parentEmail = valueAt(columns.parentEmail);
+      const missing: string[] = [];
+      if (!nom) missing.push('Nom');
+      if (!prenom) missing.push('Prénom');
+      if (!dateNaissance) missing.push(rawDate ? 'Date de naissance non reconnue' : 'Date de naissance');
+      if (!valueAt(columns.genre)) missing.push('Genre');
+      if (!valueAt(columns.groupeAge)) missing.push('Groupe / classe');
+      if (!parentNom) missing.push('Nom du parent');
+      if (!parentPrenom) missing.push('Prénom du parent');
+      if (!parentTelephone) missing.push('Téléphone du parent');
+      const warnings: string[] = [];
+      if (rawDate && !dateNaissance) warnings.push('Date à vérifier');
+      if (parentEmail && !parentEmail.includes('@')) warnings.push('E-mail à vérifier');
+      const hasData = row.some(Boolean);
+      const invalid = !hasData;
+      const draft: ImportChildDraft = {
+        nom: nom || 'À compléter',
+        prenom: prenom || 'À compléter',
+        dateNaissance,
+        genre: normalizeImportGender(valueAt(columns.genre)),
+        groupeAge: normalizeImportGroup(valueAt(columns.groupeAge)),
+        parentNom: parentNom || 'À compléter',
+        parentPrenom: parentPrenom || 'À compléter',
+        parentTelephone,
+        parentEmail: parentEmail && parentEmail.includes('@') ? parentEmail : '',
+      };
+      rows.push({ rowNumber: rowIndex + 1, draft, missing, warnings, invalid });
+    }
+    return { fileName, separator, totalRows: rows.length, headers: rawHeaders, columnMap, rows };
+  };
+
   const handleCsvImport = async (file?: File) => {
     if (!file) return;
     setImportingCsv(true);
+    setImportResult(null);
     try {
       const text = (await file.text()).replace(/^\uFEFF/, '');
-      const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-      if (lines.length < 2) throw new Error('empty');
-      const separator = (lines[0].match(/;/g) || []).length > (lines[0].match(/,/g) || []).length ? ';' : ',';
-      const headers = parseCsvLine(lines[0], separator).map(header => header.toLowerCase().replace(/[éèêë]/g, 'e').replace(/[^a-z0-9]/g, ''));
-      const column = (...names: string[]) => names.map(name => headers.indexOf(name)).find(index => index >= 0) ?? -1;
-      const columns = {
-        nom: column('nom', 'lastname', 'nomenfant'),
-        prenom: column('prenom', 'firstname', 'prenomenfant'),
-        dateNaissance: column('datenaissance', 'naissance', 'birthdate'),
-        genre: column('genre', 'sexe'),
-        groupeAge: column('groupeage', 'groupe', 'section'),
-        parentNom: column('parentnom', 'nomparent', 'nompere', 'nommere'),
-        parentPrenom: column('parentprenom', 'prenomparent'),
-        parentTelephone: column('parenttelephone', 'telephoneparent', 'telephone', 'tel'),
-        parentEmail: column('parentemail', 'emailparent', 'email'),
-      };
-      if (columns.nom < 0 || columns.prenom < 0 || columns.dateNaissance < 0 || columns.parentTelephone < 0) {
-        throw new Error('columns');
-      }
-      let imported = 0;
-      let rejected = 0;
-      for (let rowIndex = 1; rowIndex < lines.length; rowIndex += 1) {
-        const row = parseCsvLine(lines[rowIndex], separator);
-        const valueAt = (index: number) => index >= 0 ? (row[index] || '').trim() : '';
-        const nom = valueAt(columns.nom);
-        const prenom = valueAt(columns.prenom);
-        const dateNaissance = valueAt(columns.dateNaissance);
-        const parentTelephone = valueAt(columns.parentTelephone);
-        if (!nom || !prenom || !dateNaissance || !parentTelephone) {
-          rejected += 1;
-          continue;
-        }
-        const genreValue = valueAt(columns.genre).toLowerCase();
-        const groupeValue = valueAt(columns.groupeAge).toLowerCase();
-        const enfant: Enfant = {
-          id: `csv_${Date.now()}_${rowIndex}`,
-          crecheId: isDirecteur ? user?.id : undefined,
-          nom,
-          prenom,
-          dateNaissance,
-          genre: genreValue.includes('fille') || genreValue.includes('f') ? 'Fille' : 'Garçon',
-          groupeAge: groupeValue.includes('grand') ? 'Grands' : groupeValue.includes('moyen') ? 'Moyens' : 'Bébés',
-          dateInscription: new Date().toISOString().split('T')[0],
-          statut: 'Actif',
-          contactsUrgence: [{ id: `csv_contact_${Date.now()}_${rowIndex}`, nom: `${valueAt(columns.parentPrenom)} ${valueAt(columns.parentNom)}`.trim(), telephone: parentTelephone, lien: 'Mère' }],
-          parents: [{ id: `csv_parent_${Date.now()}_${rowIndex}`, nom: valueAt(columns.parentNom), prenom: valueAt(columns.parentPrenom), lien: 'Mère', telephone: parentTelephone, email: valueAt(columns.parentEmail) || undefined }],
-          documentsRequis: { certificatMedical: false, carnetVaccination: false, justificatifDomicile: false, photoIdentite: false },
-        };
-        await addEnfant(enfant);
-        imported += 1;
-      }
-      alert(isArabic ? `تم استيراد ${imported} طفل${rejected ? `، تم تجاهل ${rejected}` : ''}.` : `${imported} enfant(s) importé(s).${rejected ? ` ${rejected} ligne(s) ignorée(s).` : ''}`);
+      setImportPreview(buildImportPreview(file.name, text));
     } catch (error) {
-      alert(isArabic ? 'تحقق من ملف CSV. الأعمدة المطلوبة: nom, prenom, dateNaissance, parentTelephone.' : 'Vérifiez le fichier CSV. Colonnes obligatoires : nom, prenom, dateNaissance, parentTelephone.');
+      const message = error instanceof Error && error.message === 'too_many_rows'
+        ? (isArabic ? 'الملف يحتوي على أكثر من 10000 سطر.' : 'Le fichier dépasse la limite de 10 000 lignes.')
+        : (isArabic ? 'تعذر قراءة الملف. استخدم CSV مفصولاً بفاصلة أو فاصلة منقوطة.' : 'Impossible de lire ce fichier. Utilisez un CSV séparé par une virgule ou un point-virgule.');
+      alert(message);
+    } finally {
+      setImportingCsv(false);
+    }
+  };
+
+  const confirmCsvImport = async () => {
+    if (!importPreview) return;
+    setImportingCsv(true);
+    try {
+      const rowsToImport = importPreview.rows.filter(row => !row.invalid);
+      let imported = 0;
+      for (let start = 0; start < rowsToImport.length; start += 10) {
+        const batch = rowsToImport.slice(start, start + 10);
+        await Promise.all(batch.map(async row => {
+          const draft = row.draft;
+          const parentDisplayName = `${draft.parentPrenom} ${draft.parentNom}`.trim();
+          const enfant = {
+            id: createImportId('csv_child', row.rowNumber),
+            crecheId: isDirecteur ? user?.id : undefined,
+            nom: draft.nom,
+            prenom: draft.prenom,
+            dateNaissance: draft.dateNaissance,
+            genre: draft.genre,
+            groupeAge: draft.groupeAge,
+            dateInscription: new Date().toISOString().split('T')[0],
+            statut: 'Actif',
+            contactsUrgence: [{ id: createImportId('csv_contact', row.rowNumber), nom: parentDisplayName, telephone: draft.parentTelephone, lien: 'Mère' }],
+            parents: [{ id: createImportId('csv_parent', row.rowNumber), nom: draft.parentNom, prenom: draft.parentPrenom, lien: 'Mère', telephone: draft.parentTelephone, email: draft.parentEmail || undefined }],
+            documentsRequis: { ...DEFAULT_DOCUMENTS_REQUIS },
+          } as Omit<Enfant, 'id'>;
+          await addEnfant(enfant);
+        }));
+        imported += batch.length;
+      }
+      const importResultData: ImportResult = {
+        fileName: importPreview.fileName,
+        imported,
+        incomplete: rowsToImport.filter(row => row.missing.length > 0).length,
+        skipped: importPreview.rows.filter(row => row.invalid).length,
+        rows: rowsToImport,
+      };
+      setImportResult(importResultData);
+      setImportPreview(null);
+    } catch {
+      alert(isArabic ? 'تعذر حفظ بعض السجلات. يرجى المحاولة مرة أخرى.' : 'L’import a rencontré un problème. Vérifiez votre connexion puis réessayez.');
     } finally {
       setImportingCsv(false);
     }
@@ -521,6 +690,36 @@ export default function Enfants() {
           <span>{t('children.add')}</span>
         </button>
       </div>
+
+      {importResult && (
+        <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+              <div>
+                <p className="text-sm font-black">{isArabic ? 'اكتمل استيراد الأطفال' : 'Import terminé'}</p>
+                <p className="mt-1 text-xs font-semibold text-emerald-800">
+                  {isArabic ? `${importResult.imported} ملف مستورد` : `${importResult.imported} fiche(s) importée(s)`}
+                  {importResult.incomplete > 0 && (isArabic ? ` • ${importResult.incomplete} تحتاج إلى استكمال` : ` • ${importResult.incomplete} avec des informations manquantes`)}
+                  {importResult.skipped > 0 && (isArabic ? ` • ${importResult.skipped} سطر فارغ تم تجاهله` : ` • ${importResult.skipped} ligne(s) vide(s) ignorée(s)`)}
+                </p>
+                {importResult.incomplete > 0 && (
+                  <p className="mt-2 text-xs font-bold text-amber-700">{isArabic ? 'تم حفظ السجلات الناقصة ويمكن استكمالها من قائمة الأطفال.' : 'Les fiches incomplètes sont enregistrées et peuvent être complétées depuis la liste des enfants.'}</p>
+                )}
+              </div>
+            </div>
+            <button type="button" onClick={() => setImportResult(null)} className="self-end rounded-lg p-1 text-emerald-700 hover:bg-emerald-100 sm:self-start" aria-label={isArabic ? 'إغلاق' : 'Fermer'}><X className="h-4 w-4" /></button>
+          </div>
+          {importResult.incomplete > 0 && (
+            <div className="mt-3 max-h-40 space-y-1.5 overflow-y-auto rounded-xl border border-amber-200 bg-amber-50 p-3">
+              {importResult.rows.filter(row => row.missing.length > 0).slice(0, 30).map(row => (
+                <p key={row.rowNumber} className="text-[11px] font-semibold text-amber-900"><span className="font-black">Ligne {row.rowNumber} — {row.draft.prenom} {row.draft.nom} :</span> {row.missing.join(', ')}</p>
+              ))}
+              {importResult.incomplete > 30 && <p className="text-[11px] font-bold text-amber-700">+ {importResult.incomplete - 30} autre(s) ligne(s) incomplète(s)</p>}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="min-w-0 overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-950 via-indigo-900 to-violet-800 p-4 text-white shadow-xl shadow-indigo-900/10 sm:p-7">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -1445,6 +1644,70 @@ export default function Enfants() {
                   className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold text-sm transition cursor-pointer"
                 >
                   {isArabic ? 'تأكيد' : 'Confirmer'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {importPreview && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6" onClick={() => !importingCsv && setImportPreview(null)}>
+            <motion.div
+              initial={{ opacity: 0, y: 18, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 18, scale: 0.98 }}
+              onClick={event => event.stopPropagation()}
+              className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl"
+            >
+              <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-5 sm:p-6">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-indigo-700"><FileSpreadsheet className="h-5 w-5" /><span className="text-xs font-black uppercase tracking-wider">{isArabic ? 'استيراد الأطفال' : 'Import des enfants'}</span></div>
+                  <h2 className="mt-1 truncate text-lg font-black text-slate-900 sm:text-xl">{isArabic ? 'مراجعة الملف قبل الحفظ' : 'Vérifier le fichier avant l’enregistrement'}</h2>
+                  <p className="mt-1 truncate text-xs font-semibold text-slate-500">{importPreview.fileName} • séparateur « {importPreview.separator} »</p>
+                </div>
+                <button type="button" disabled={importingCsv} onClick={() => setImportPreview(null)} className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40" aria-label={isArabic ? 'إغلاق' : 'Fermer'}><X className="h-5 w-5" /></button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 border-b border-slate-100 bg-slate-50 p-4 sm:grid-cols-4 sm:gap-3 sm:p-5">
+                <div className="rounded-2xl bg-white p-3 shadow-sm"><p className="text-[10px] font-black uppercase text-slate-400">Lignes</p><p className="mt-1 text-xl font-black text-slate-900">{importPreview.totalRows}</p></div>
+                <div className="rounded-2xl bg-emerald-50 p-3"><p className="text-[10px] font-black uppercase text-emerald-600">À importer</p><p className="mt-1 text-xl font-black text-emerald-700">{importPreview.rows.filter(row => !row.invalid).length}</p></div>
+                <div className="rounded-2xl bg-amber-50 p-3"><p className="text-[10px] font-black uppercase text-amber-600">À compléter</p><p className="mt-1 text-xl font-black text-amber-700">{importPreview.rows.filter(row => !row.invalid && row.missing.length > 0).length}</p></div>
+                <div className="rounded-2xl bg-slate-100 p-3"><p className="text-[10px] font-black uppercase text-slate-500">Lignes vides</p><p className="mt-1 text-xl font-black text-slate-700">{importPreview.rows.filter(row => row.invalid).length}</p></div>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+                <div className="mb-4 rounded-2xl border border-indigo-100 bg-indigo-50 p-3 text-xs font-semibold leading-5 text-indigo-900">
+                  {isArabic ? 'سيتم حفظ الأسطر حتى لو كانت ناقصة. سيتم وضع علامة على المعلومات الناقصة ويمكنك إكمالها لاحقاً من قائمة الأطفال.' : 'Les lignes seront enregistrées même si certaines informations manquent. Les champs incomplets sont signalés et pourront être complétés plus tard depuis la liste des enfants.'}
+                </div>
+                <div className="mb-5 flex flex-wrap gap-2">
+                  {importPreview.columnMap.map(mapping => <span key={mapping} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold text-slate-600">{mapping}</span>)}
+                </div>
+                <div className="space-y-2">
+                  {importPreview.rows.slice(0, 200).map(row => (
+                    <div key={row.rowNumber} className={`rounded-2xl border p-3 ${row.invalid ? 'border-slate-200 bg-slate-50 opacity-60' : row.missing.length > 0 ? 'border-amber-200 bg-amber-50/70' : 'border-emerald-200 bg-emerald-50/50'}`}>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-slate-800"><span className="text-slate-400">Ligne {row.rowNumber}</span> · {row.draft.prenom} {row.draft.nom}</p>
+                          <p className="mt-1 text-[11px] font-semibold text-slate-600">{row.draft.dateNaissance || 'Date de naissance non renseignée'} · {row.draft.parentTelephone || 'Téléphone parent non renseigné'}</p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black ${row.invalid ? 'bg-slate-200 text-slate-600' : row.missing.length > 0 ? 'bg-amber-200 text-amber-800' : 'bg-emerald-200 text-emerald-800'}`}>
+                          {row.invalid ? 'Ligne vide ignorée' : row.missing.length > 0 ? 'Sera importée · à compléter' : 'Prête à importer'}
+                        </span>
+                      </div>
+                      {!row.invalid && row.missing.length > 0 && <p className="mt-2 text-[11px] font-bold text-amber-800">Manquants : {row.missing.join(', ')}</p>}
+                      {!row.invalid && row.warnings.length > 0 && <p className="mt-1 text-[11px] font-bold text-orange-700">À vérifier : {row.warnings.join(', ')}</p>}
+                    </div>
+                  ))}
+                  {importPreview.rows.length > 200 && <p className="pt-3 text-center text-[11px] font-bold text-slate-500">+ {importPreview.rows.length - 200} autres lignes seront importées après confirmation</p>}
+                </div>
+              </div>
+
+              <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-white p-4 sm:flex-row sm:justify-end sm:p-5">
+                <button type="button" disabled={importingCsv} onClick={() => setImportPreview(null)} className="rounded-xl bg-slate-100 px-4 py-3 text-xs font-black text-slate-700 transition hover:bg-slate-200 disabled:opacity-50">{isArabic ? 'إلغاء' : 'Annuler'}</button>
+                <button type="button" disabled={importingCsv || importPreview.rows.every(row => row.invalid)} onClick={() => void confirmCsvImport()} className="rounded-xl bg-indigo-600 px-4 py-3 text-xs font-black text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+                  {importingCsv ? (isArabic ? 'جاري الحفظ...' : 'Enregistrement...') : `Importer ${importPreview.rows.filter(row => !row.invalid).length} fiche(s)`}
                 </button>
               </div>
             </motion.div>
