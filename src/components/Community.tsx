@@ -125,10 +125,18 @@ type PublicProfile = {
 function Avatar({ profile, size = 'md' }: { profile: PublicProfile; size?: 'sm' | 'md' | 'lg' }) {
   const sizes = { sm: 'h-9 w-9 text-xs', md: 'h-12 w-12 text-sm', lg: 'h-24 w-24 text-2xl' };
   const initials = profile.name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase() || 'R+';
+  const [avatarBroken, setAvatarBroken] = useState(false);
+  const [logoBroken, setLogoBroken] = useState(false);
+
+  useEffect(() => {
+    setAvatarBroken(false);
+    setLogoBroken(false);
+  }, [profile.avatarUrl, profile.logoUrl]);
+
   return (
     <div className={`${sizes[size]} relative flex shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-500 font-black text-white shadow-sm`}>
-      {profile.avatarUrl ? <img src={profile.avatarUrl} alt={profile.name} className="h-full w-full object-cover" /> : initials}
-      {profile.logoUrl && <img src={profile.logoUrl} alt="Logo de la crèche" className="absolute bottom-0 right-0 h-5 w-5 rounded-md border-2 border-white bg-white object-contain" />}
+      {profile.avatarUrl && !avatarBroken ? <img src={profile.avatarUrl} alt={profile.name} onError={() => setAvatarBroken(true)} className="h-full w-full object-cover" /> : initials}
+      {profile.logoUrl && !logoBroken && <img src={profile.logoUrl} alt="Logo de la crèche" onError={() => setLogoBroken(true)} className="absolute bottom-0 right-0 h-5 w-5 rounded-md border-2 border-white bg-white object-contain" />}
     </div>
   );
 }
@@ -141,6 +149,7 @@ export default function Community() {
     communityComments,
     communityReactions,
     enfants,
+    comptes,
     addCommunityPost,
     repostCommunityPost,
     updateCommunityPost,
@@ -210,8 +219,24 @@ export default function Community() {
     isCurrent: true,
   }), [user, creche, isCurrentUserCertified, certificationChildrenCount]);
 
+  const profileFromAccount = (account: UserAccount, fallback?: CommunityPost): PublicProfile => ({
+    id: account.id,
+    name: fullName(account),
+    avatarUrl: account.avatarUrl,
+    logoUrl: account.logoUrl,
+    bio: account.bio,
+    nomCreche: account.nomCreche || fallback?.nomCreche,
+    ville: account.ville || fallback?.authorVille || fallback?.ville,
+    siteWeb: account.siteWeb,
+    telephone: account.telephone,
+    estCertifie: Boolean(account.estCertifie) || (account.certificationEnfants || 0) >= 30,
+    certificationEnfants: Math.max(account.certificationEnfants || 0, fallback?.authorCertificationEnfants || 0),
+  });
+
   const profileFromPost = (post: CommunityPost): PublicProfile => {
     if (post.authorId === user?.id) return currentProfile;
+    const account = comptes.find(item => item.id === post.authorId);
+    if (account) return profileFromAccount(account, post);
     return {
       id: post.authorId,
       name: post.authorName || 'Directeur',
@@ -228,12 +253,15 @@ export default function Community() {
 
   const profiles = useMemo(() => {
     const map = new Map<string, PublicProfile>();
+    comptes.filter(account => account.role === 'directeur').forEach(account => {
+      map.set(account.id, account.id === user?.id ? currentProfile : profileFromAccount(account));
+    });
     if (user?.id) map.set(user.id, currentProfile);
     communityPosts.forEach(post => {
       if (!map.has(post.authorId)) map.set(post.authorId, profileFromPost(post));
     });
     return Array.from(map.values());
-  }, [communityPosts, currentProfile, user?.id]);
+  }, [comptes, communityPosts, currentProfile, user?.id]);
 
   const selectedProfile = selectedProfileId ? profiles.find(profile => profile.id === selectedProfileId) || null : null;
   const selectedProfilePosts = selectedProfile ? communityPosts.filter(post => post.authorId === selectedProfile.id) : [];
@@ -242,7 +270,7 @@ export default function Community() {
     const normalizedSearch = search.trim().toLowerCase();
     return [...communityPosts]
       .filter(post => activeCategory === 'tous' || post.categorie === activeCategory)
-      .filter(post => activeView !== 'profile' || post.authorId === user?.id)
+      .filter(post => activeView !== 'profile' || post.authorId === (selectedProfileId || user?.id))
       .filter(post => activeView !== 'reposts' || Boolean(post.originalPostId))
       .filter(post => {
         if (!normalizedSearch) return true;
@@ -251,7 +279,7 @@ export default function Community() {
           .some(value => String(value).toLowerCase().includes(normalizedSearch));
       })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [communityPosts, activeCategory, activeView, search, user?.id]);
+  }, [communityPosts, activeCategory, activeView, search, selectedProfileId, user?.id]);
 
   if (!user || (!isAdmin && user.role !== 'directeur')) return null;
 
@@ -375,13 +403,22 @@ export default function Community() {
     const profile = profileFromPost(post);
     const comments = getPostComments(post.id);
     const original = post.originalPost;
+    const originalProfile: PublicProfile | null = original
+      ? profiles.find(profile => profile.id === original.authorId) || {
+          id: original.authorId || '',
+          name: original.authorName || 'Directeur',
+          avatarUrl: original.authorAvatarUrl,
+          logoUrl: original.authorLogoUrl,
+          nomCreche: original.nomCreche,
+        }
+      : null;
     const category = categories.find(item => item.value === post.categorie);
     return (
       <article key={post.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
         {post.originalPostId && <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-5 py-3 text-xs font-semibold text-slate-500"><Repeat2 className="h-4 w-4 text-indigo-600" />{post.authorName} {isAr ? 'أعاد النشر' : 'a republié une publication'}</div>}
         <div className="p-5">
           <div className="flex items-start justify-between gap-3">
-            <button type="button" onClick={() => setSelectedProfileId(profile.id)} className="flex min-w-0 items-center gap-3 text-left">
+            <button type="button" onClick={() => { setSelectedProfileId(profile.id); setActiveView('profile'); }} className="flex min-w-0 items-center gap-3 text-left">
               <Avatar profile={profile} size="md" />
               <span className="min-w-0">
                 <span className="flex items-center gap-1.5 truncate text-sm font-black text-slate-900 hover:text-indigo-700">{profile.name}{profile.estCertifie ? <Check className="h-4 w-4 shrink-0 rounded-full bg-emerald-600 p-0.5 text-white" /> : <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-black text-slate-500">En cours</span>}</span>
@@ -404,7 +441,7 @@ export default function Community() {
           {post.contact && <div className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-600"><span className="font-black text-slate-800">Contact : </span>{post.contact}</div>}
 
           {original && <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-center gap-3"><Avatar profile={{ id: original.authorId || '', name: original.authorName || 'Directeur', avatarUrl: original.authorAvatarUrl, logoUrl: original.authorLogoUrl, nomCreche: original.nomCreche }} size="sm" /><div><p className="text-xs font-black text-slate-800">{original.authorName || 'Directeur'}</p><p className="text-[11px] font-semibold text-slate-500">{original.nomCreche || 'Crèche'}</p></div></div>
+            <div className="flex items-center gap-3"><Avatar profile={originalProfile!} size="sm" /><div><p className="text-xs font-black text-slate-800">{original.authorName || 'Directeur'}</p><p className="text-[11px] font-semibold text-slate-500">{original.nomCreche || 'Crèche'}</p></div></div>
             {original.titre && <p className="mt-3 text-sm font-black text-slate-800">{original.titre}</p>}
             <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">{original.contenu || ''}</p>
           </div>}
@@ -478,6 +515,32 @@ export default function Community() {
     </motion.section>
   );
 
+  const renderPublicProfile = (profile: PublicProfile) => {
+    const profilePosts = communityPosts
+      .filter(post => post.authorId === profile.id)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const repostCount = profilePosts.filter(post => Boolean(post.originalPostId)).length;
+    const isOwnProfile = profile.id === user.id;
+    const childCount = Math.min(profile.certificationEnfants || 0, 30);
+
+    return (
+      <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
+        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="h-32 bg-gradient-to-br from-slate-950 via-indigo-900 to-violet-700 md:h-44" />
+          <div className="px-5 pb-6 md:px-8">
+            <div className="-mt-12 flex flex-col gap-4 md:-mt-14 md:flex-row md:items-end md:justify-between">
+              <div className="flex items-end gap-4"><Avatar profile={profile} size="lg" /><div className="pb-1"><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-black text-slate-900">{profile.name}</h2>{profile.estCertifie ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700"><Check className="h-3 w-3" />Crèche certifiée</span> : <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-700">Certification en cours</span>}</div><p className="mt-1 flex items-center gap-1 text-sm font-semibold text-slate-500"><Building2 className="h-4 w-4" />{profile.nomCreche || 'Crèche'}{profile.ville ? ` · ${profile.ville}` : ''}</p></div></div>
+              {isOwnProfile && <button type="button" onClick={() => setShowProfileEditor(true)} className="rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-xs font-black text-indigo-700 hover:bg-indigo-50">Modifier mon profil</button>}
+            </div>
+            <div className="mt-5 grid gap-4 md:grid-cols-[1fr_220px]"><div className="rounded-2xl border border-slate-200 bg-slate-50 p-5"><h3 className="text-sm font-black text-slate-900">À propos</h3><p className="mt-2 text-sm leading-6 text-slate-600">{profile.bio || 'Ce directeur n’a pas encore ajouté de présentation.'}</p><div className="mt-4 space-y-2 text-xs font-semibold text-slate-500">{profile.ville && <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-indigo-500" />{profile.ville}</p>}{profile.telephone && <p className="flex items-center gap-2"><BriefcaseBusiness className="h-4 w-4 text-indigo-500" />{profile.telephone}</p>}{profile.siteWeb && <a href={profile.siteWeb} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-indigo-600 hover:underline"><Globe2 className="h-4 w-4" />{profile.siteWeb}</a>}</div></div><div className="rounded-2xl border border-slate-200 bg-slate-50 p-5"><p className="text-xs font-black uppercase tracking-wider text-slate-400">Certification</p><p className="mt-3 text-2xl font-black text-slate-900">{childCount} / 30</p><p className="text-xs font-semibold text-slate-500">enfants enregistrés</p><div className="mt-3 h-2 overflow-hidden rounded-full bg-white"><div className={`h-full rounded-full ${profile.estCertifie ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${Math.min(100, (childCount / 30) * 100)}%` }} /></div><p className="mt-4 text-xs font-semibold text-slate-500">{profile.estCertifie ? 'Badge vérifié actif' : `Encore ${Math.max(0, 30 - childCount)} enfant${30 - childCount > 1 ? 's' : ''} pour obtenir le badge`}</p><p className="mt-4 text-2xl font-black text-slate-900">{profilePosts.length}</p><p className="text-xs font-semibold text-slate-500">publication{profilePosts.length > 1 ? 's' : ''}</p><p className="mt-4 text-2xl font-black text-slate-900">{repostCount}</p><p className="text-xs font-semibold text-slate-500">republication{repostCount > 1 ? 's' : ''}</p></div></div>
+          </div>
+        </div>
+        <div className="flex items-center justify-between"><div><h2 className="text-lg font-black text-slate-900">Publications de {profile.name}</h2><p className="text-xs text-slate-500">{profilePosts.length} publication{profilePosts.length > 1 ? 's' : ''}</p></div><button type="button" onClick={() => { setSelectedProfileId(null); setActiveView('feed'); }} className="text-xs font-black text-indigo-600 hover:underline">Retour au fil</button></div>
+        <div className="space-y-4">{profilePosts.length ? profilePosts.map(renderPost) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">Aucune publication pour le moment.</div>}</div>
+      </motion.section>
+    );
+  };
+
   return (
     <div className="min-h-full bg-slate-50 pb-14" dir={isAr ? 'rtl' : 'ltr'}>
       <div className="mx-auto max-w-7xl px-4 py-5 md:px-6">
@@ -489,9 +552,10 @@ export default function Community() {
         <AnimatePresence initial={false}>{showProfileEditor && renderProfileEditor()}</AnimatePresence>
         <div className="mb-5 flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm"><button type="button" onClick={() => setActiveView('feed')} className={`rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'feed' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>Accueil</button><button type="button" onClick={() => { setActiveView('profile'); setSelectedProfileId(user.id); }} className={`rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'profile' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>Mon profil</button><button type="button" onClick={() => setActiveView('reposts')} className={`rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'reposts' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>Mes republications</button><div className="ml-auto hidden items-center gap-2 px-3 text-xs font-semibold text-slate-400 lg:flex"><Users className="h-4 w-4" />{profiles.length} profil{profiles.length > 1 ? 's' : ''} visible{profiles.length > 1 ? 's' : ''}</div></div>
 
+        {activeView === 'profile' && selectedProfile ? renderPublicProfile(selectedProfile) : (
         <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)_280px]">
           <aside className="space-y-4">
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="h-20 bg-gradient-to-br from-slate-950 via-indigo-900 to-violet-700" /><div className="px-4 pb-4"><div className="-mt-8"><Avatar profile={currentProfile} size="lg" /></div><h2 className="mt-3 flex items-center gap-2 text-base font-black text-slate-900">{currentProfile.name}{currentProfile.estCertifie && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700"><Check className="h-3 w-3" />Certifiée</span>}</h2><p className="mt-0.5 text-xs font-semibold text-slate-500">{currentProfile.nomCreche}</p><p className="mt-3 line-clamp-3 text-xs leading-5 text-slate-500">{currentProfile.bio || 'Ajoutez une présentation professionnelle à votre profil.'}</p><button type="button" onClick={() => setShowProfileEditor(true)} className="mt-4 w-full rounded-xl border border-indigo-200 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-50">Modifier mon profil</button></div></div>
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="h-20 bg-gradient-to-br from-slate-950 via-indigo-900 to-violet-700" /><div className="px-4 pb-4"><div className="-mt-8"><Avatar profile={currentProfile} size="lg" /></div><h2 className="mt-3 flex items-center gap-2 text-base font-black text-slate-900">{currentProfile.name}{currentProfile.estCertifie && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700"><Check className="h-3 w-3" />Certifiée</span>}</h2><p className="mt-0.5 text-xs font-semibold text-slate-500">{currentProfile.nomCreche}</p><p className="mt-3 line-clamp-3 text-xs leading-5 text-slate-500">{currentProfile.bio || 'Ajoutez une présentation professionnelle à votre profil.'}</p><button type="button" onClick={() => { setSelectedProfileId(user.id); setActiveView('profile'); setShowProfileEditor(true); }} className="mt-4 w-full rounded-xl border border-indigo-200 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-50">Modifier mon profil</button></div></div>
             <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-black uppercase tracking-wider text-emerald-700">Certification Rawdha+</p><p className="mt-1 text-sm font-black text-slate-900">{isCurrentUserCertified ? 'Compte certifié' : `${Math.min(certificationChildrenCount, 30)} / 30 enfants`}</p></div><ShieldCheck className={`h-5 w-5 ${isCurrentUserCertified ? 'text-emerald-600' : 'text-slate-400'}`} /></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.min(100, (certificationChildrenCount / 30) * 100)}%` }} /></div><p className="mt-2 text-[11px] font-semibold leading-4 text-emerald-800">{isCurrentUserCertified ? 'Votre badge vérifié est visible sur vos publications.' : `Ajoutez encore ${Math.max(0, 30 - certificationChildrenCount)} enfant${30 - certificationChildrenCount > 1 ? 's' : ''} enregistré${30 - certificationChildrenCount > 1 ? 's' : ''} pour débloquer le badge.`}</p></div>
             <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"><p className="px-2 pb-2 text-[11px] font-black uppercase tracking-wider text-slate-400">Explorer</p>{categories.map(category => <button type="button" key={category.value} onClick={() => { setActiveCategory(category.value); setActiveView('feed'); }} className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-black transition ${activeCategory === category.value && activeView === 'feed' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}><span className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${category.value === 'tous' ? 'bg-slate-400' : category.color.split(' ')[0].replace('bg-', 'bg-')}`} />{isAr ? category.ar : category.fr}</span><ChevronRight className="h-3.5 w-3.5 text-slate-300" /></button>)}</div>
           </aside>
@@ -503,17 +567,16 @@ export default function Community() {
           </main>
 
           <aside className="space-y-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between"><h3 className="text-sm font-black text-slate-900">Profils à découvrir</h3><Users className="h-4 w-4 text-indigo-500" /></div><div className="mt-3 space-y-3">{profiles.filter(profile => profile.id !== user.id).slice(0, 4).map(profile => <button type="button" key={profile.id} onClick={() => setSelectedProfileId(profile.id)} className="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-slate-50"><Avatar profile={profile} size="sm" /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-black text-slate-800">{profile.name}</span><span className="block truncate text-[11px] font-semibold text-slate-500">{profile.nomCreche || 'Crèche'}</span></span><ChevronRight className="h-4 w-4 text-slate-300" /></button>)}{profiles.length <= 1 && <p className="text-xs leading-5 text-slate-500">Les profils apparaîtront ici au fur et à mesure des publications de votre réseau.</p>}</div></div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between"><h3 className="text-sm font-black text-slate-900">Profils à découvrir</h3><Users className="h-4 w-4 text-indigo-500" /></div><div className="mt-3 space-y-3">{profiles.filter(profile => profile.id !== user.id).slice(0, 4).map(profile => <button type="button" key={profile.id} onClick={() => { setSelectedProfileId(profile.id); setActiveView('profile'); }} className="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-slate-50"><Avatar profile={profile} size="sm" /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-black text-slate-800">{profile.name}</span><span className="block truncate text-[11px] font-semibold text-slate-500">{profile.nomCreche || 'Crèche'}</span></span><ChevronRight className="h-4 w-4 text-slate-300" /></button>)}{profiles.length <= 1 && <p className="text-xs leading-5 text-slate-500">Les profils apparaîtront ici au fur et à mesure des publications de votre réseau.</p>}</div></div>
             <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-700 p-5 text-white shadow-lg shadow-indigo-700/20"><ShieldCheck className="h-6 w-6" /><h3 className="mt-3 text-base font-black">Réseau vérifié</h3><p className="mt-2 text-xs leading-5 text-indigo-100">Les directeurs peuvent présenter leur crèche, partager leurs pratiques et retrouver facilement les publications d’un auteur.</p></div>
           </aside>
-        </div>
+        </div>)}
       </div>
 
       <AnimatePresence>
-        {showComposer && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"><motion.form initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} onSubmit={handleSubmitPost} className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl md:p-7"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-wider text-indigo-600">Nouvelle publication</p><h2 className="mt-1 text-xl font-black text-slate-900">Partager avec votre réseau</h2></div><button type="button" onClick={() => setShowComposer(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100"><X className="h-5 w-5" /></button></div><div className="mt-5 flex items-center gap-3 rounded-xl bg-slate-50 p-3"><Avatar profile={currentProfile} size="sm" /><div><p className="text-sm font-black text-slate-800">{authorName}</p><p className="text-xs font-semibold text-slate-500">{crecheName}</p></div></div><div className="mt-5 grid gap-4 md:grid-cols-2"><label className="text-xs font-black text-slate-600">Catégorie<select value={form.categorie} onChange={event => setForm(current => ({ ...current, categorie: event.target.value as CommunityPostCategory }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500">{categories.filter(item => item.value !== 'tous').map(item => <option key={item.value} value={item.value}>{item.fr}</option>)}</select></label><label className="text-xs font-black text-slate-600">Titre<input value={form.titre} onChange={event => setForm(current => ({ ...current, titre: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="Titre de votre publication" /></label><label className="text-xs font-black text-slate-600 md:col-span-2">Votre message<textarea required rows={5} maxLength={3000} value={form.contenu} onChange={event => setForm(current => ({ ...current, contenu: event.target.value }))} className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none focus:border-indigo-500" placeholder="Partagez une idée, une activité, une opportunité..." /></label><label className="text-xs font-black text-slate-600">Ville<input value={form.ville} onChange={event => setForm(current => ({ ...current, ville: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="Alger" /></label><label className="text-xs font-black text-slate-600">Contact<input value={form.contact} onChange={event => setForm(current => ({ ...current, contact: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="Téléphone ou lien" /></label></div><div className="mt-6 flex justify-end gap-2"><button type="button" onClick={() => setShowComposer(false)} className="rounded-xl px-4 py-3 text-sm font-black text-slate-500 hover:bg-slate-100">Annuler</button><button type="submit" disabled={submitting || !form.contenu.trim()} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-50">{submitting ? 'Publication...' : 'Publier'}</button></div></motion.form></motion.div>}
+        {showComposer && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mx-auto mb-5 w-full max-w-2xl"><motion.form initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} onSubmit={handleSubmitPost} className="w-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-7"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-wider text-indigo-600">Nouvelle publication</p><h2 className="mt-1 text-xl font-black text-slate-900">Partager avec votre réseau</h2></div><button type="button" onClick={() => setShowComposer(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100"><X className="h-5 w-5" /></button></div><div className="mt-5 flex items-center gap-3 rounded-xl bg-slate-50 p-3"><Avatar profile={currentProfile} size="sm" /><div><p className="text-sm font-black text-slate-800">{authorName}</p><p className="text-xs font-semibold text-slate-500">{crecheName}</p></div></div><div className="mt-5 grid gap-4 md:grid-cols-2"><label className="text-xs font-black text-slate-600">Catégorie<select value={form.categorie} onChange={event => setForm(current => ({ ...current, categorie: event.target.value as CommunityPostCategory }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500">{categories.filter(item => item.value !== 'tous').map(item => <option key={item.value} value={item.value}>{item.fr}</option>)}</select></label><label className="text-xs font-black text-slate-600">Titre<input value={form.titre} onChange={event => setForm(current => ({ ...current, titre: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="Titre de votre publication" /></label><label className="text-xs font-black text-slate-600 md:col-span-2">Votre message<textarea required rows={5} maxLength={3000} value={form.contenu} onChange={event => setForm(current => ({ ...current, contenu: event.target.value }))} className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none focus:border-indigo-500" placeholder="Partagez une idée, une activité, une opportunité..." /></label><label className="text-xs font-black text-slate-600">Ville<input value={form.ville} onChange={event => setForm(current => ({ ...current, ville: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="Alger" /></label><label className="text-xs font-black text-slate-600">Contact<input value={form.contact} onChange={event => setForm(current => ({ ...current, contact: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="Téléphone ou lien" /></label></div><div className="mt-6 flex justify-end gap-2"><button type="button" onClick={() => setShowComposer(false)} className="rounded-xl px-4 py-3 text-sm font-black text-slate-500 hover:bg-slate-100">Annuler</button><button type="submit" disabled={submitting || !form.contenu.trim()} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-50">{submitting ? 'Publication...' : 'Publier'}</button></div></motion.form></motion.div>}
 
 
-        {selectedProfile && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"><motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-slate-50 shadow-2xl"><div className="relative h-32 bg-gradient-to-br from-slate-950 via-indigo-900 to-violet-700 md:h-44"><button type="button" onClick={() => setSelectedProfileId(null)} className="absolute right-4 top-4 rounded-xl bg-white/15 p-2 text-white hover:bg-white/25"><X className="h-5 w-5" /></button></div><div className="px-5 pb-6 md:px-8"><div className="-mt-12 flex flex-col gap-4 md:-mt-14 md:flex-row md:items-end md:justify-between"><div className="flex items-end gap-4"><Avatar profile={selectedProfile} size="lg" /><div className="pb-1"><div className="flex items-center gap-2"><h2 className="text-xl font-black text-slate-900">{selectedProfile.name}</h2>{selectedProfile.estCertifie ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700"><Check className="h-3 w-3" />Crèche certifiée</span> : <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-700">Certification en cours</span>}</div><p className="mt-1 flex items-center gap-1 text-sm font-semibold text-slate-500"><Building2 className="h-4 w-4" />{selectedProfile.nomCreche || 'Crèche'}{selectedProfile.ville ? ` · ${selectedProfile.ville}` : ''}</p></div></div>{selectedProfile.isCurrent && <button type="button" onClick={() => { setSelectedProfileId(null); setShowProfileEditor(true); }} className="rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-xs font-black text-indigo-700 hover:bg-indigo-50">Modifier mon profil</button>}</div><div className="mt-5 grid gap-4 md:grid-cols-[1fr_220px]"><div className="rounded-2xl border border-slate-200 bg-white p-5"><h3 className="text-sm font-black text-slate-900">À propos</h3><p className="mt-2 text-sm leading-6 text-slate-600">{selectedProfile.bio || 'Ce directeur n’a pas encore ajouté de présentation.'}</p><div className="mt-4 space-y-2 text-xs font-semibold text-slate-500">{selectedProfile.ville && <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-indigo-500" />{selectedProfile.ville}</p>}{selectedProfile.telephone && <p className="flex items-center gap-2"><BriefcaseBusiness className="h-4 w-4 text-indigo-500" />{selectedProfile.telephone}</p>}{selectedProfile.siteWeb && <a href={selectedProfile.siteWeb} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-indigo-600 hover:underline"><Globe2 className="h-4 w-4" />{selectedProfile.siteWeb}</a>}</div></div><div className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs font-black uppercase tracking-wider text-slate-400">Certification</p><p className="mt-3 text-2xl font-black text-slate-900">{Math.min(selectedProfile.certificationEnfants || 0, 30)} / 30</p><p className="text-xs font-semibold text-slate-500">enfants enregistrés</p><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${selectedProfile.estCertifie ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${Math.min(100, ((selectedProfile.certificationEnfants || 0) / 30) * 100)}%` }} /></div><p className="mt-4 text-xs font-semibold text-slate-500">{selectedProfile.estCertifie ? 'Badge vérifié actif' : `Encore ${Math.max(0, 30 - (selectedProfile.certificationEnfants || 0))} enfant${30 - (selectedProfile.certificationEnfants || 0) > 1 ? 's' : ''} pour obtenir le badge`}</p><p className="mt-4 text-2xl font-black text-slate-900">{selectedProfilePosts.length}</p><p className="text-xs font-semibold text-slate-500">publication{selectedProfilePosts.length > 1 ? 's' : ''}</p><p className="mt-4 text-2xl font-black text-slate-900">{selectedProfilePosts.filter(post => post.originalPostId).length}</p><p className="text-xs font-semibold text-slate-500">republication{selectedProfilePosts.filter(post => post.originalPostId).length > 1 ? 's' : ''}</p></div></div><div className="mt-5 flex items-center justify-between"><h3 className="text-lg font-black text-slate-900">Publications de {selectedProfile.name}</h3><button type="button" onClick={() => setSelectedProfileId(null)} className="text-xs font-black text-indigo-600">Retour au fil</button></div><div className="mt-3 space-y-4">{selectedProfilePosts.length ? selectedProfilePosts.map(renderPost) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">Aucune publication pour le moment.</div>}</div></div></motion.div></motion.div>}
       </AnimatePresence>
     </div>
   );
