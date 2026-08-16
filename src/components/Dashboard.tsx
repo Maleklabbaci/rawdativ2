@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { 
   Users, 
   Baby, 
@@ -48,6 +48,18 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
   };
   const now = new Date();
   const today = toDateKey(now);
+  const dailyRoutineClosedKey = isDirecteur && user?.id ? `rawdha:daily-routine:${user.id}:${today}:closed` : null;
+  const [dailyRoutineClosed, setDailyRoutineClosed] = useState(() => dailyRoutineClosedKey && typeof window !== 'undefined'
+    ? window.localStorage.getItem(dailyRoutineClosedKey) === '1'
+    : false);
+
+  useEffect(() => {
+    if (!dailyRoutineClosedKey || typeof window === 'undefined') {
+      setDailyRoutineClosed(false);
+      return;
+    }
+    setDailyRoutineClosed(window.localStorage.getItem(dailyRoutineClosedKey) === '1');
+  }, [dailyRoutineClosedKey]);
   const presencesAujourdhui = presencesData.filter(p => p.date === today && p.statut === 'Présent');
   const enfantsActifs = enfantsData.filter(e => e.statut === 'Actif');
 
@@ -260,24 +272,24 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
 
       <DirectorLaunchPanel onNavigate={onNavigate} />
 
-      {isDirecteur && (
+      {isDirecteur && !dailyRoutineClosed && (
         <section className="overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-r from-indigo-950 via-indigo-900 to-violet-800 p-4 text-white shadow-xl shadow-indigo-900/10 sm:p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-start gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-indigo-100"><PlayCircle className="h-6 w-6" /></div>
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-200">{isArabic ? 'روتين روضتي اليومي' : 'ROUTINE QUOTIDIEN RAWDHA+'}</p>
-                <h2 className="mt-1 text-lg font-black sm:text-xl">{isArabic ? 'ابدأ يومك بخطوات واضحة' : 'Démarrer ma journée'}</h2>
-                <p className="mt-1 max-w-2xl text-xs leading-5 text-indigo-100/80">{isArabic ? 'افتح الحضانة، تابع الحضور، راقب السلامة وأغلق اليوم من مكان واحد.' : 'Ouverture, présences, santé, repas, activités, départs et fermeture dans un seul parcours.'}</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-200">{isArabic ? 'إدارة يوم الحضانة' : 'PILOTAGE QUOTIDIEN RAWDHA+'}</p>
+                <h2 className="mt-1 text-lg font-black sm:text-xl">{isArabic ? 'أدر يوم الحضانة بخطوات واضحة' : 'Pilotez la journée en quelques étapes'}</h2>
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-indigo-100/80">{isArabic ? 'ابدأ العمل، تابع الحضور، راقب الصحة والسلامة، وأنهِ اليوم من مكان واحد.' : 'Ouverture, présences, santé, repas, activités, départs et fermeture réunis dans un seul parcours.'}</p>
               </div>
             </div>
-            <button type="button" onClick={() => setShowDailyRoutine(true)} className="flex w-full shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-xs font-black text-indigo-900 shadow-lg shadow-black/10 transition hover:bg-indigo-50 sm:w-auto sm:px-5"><PlayCircle className="h-4 w-4" />{isArabic ? 'ابدأ يومي' : 'Démarrer ma journée'}</button>
+            <button type="button" onClick={() => setShowDailyRoutine(true)} className="flex w-full shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-xs font-black text-indigo-900 shadow-lg shadow-black/10 transition hover:bg-indigo-50 sm:w-auto sm:px-5"><PlayCircle className="h-4 w-4" />{isArabic ? 'إدارة يوم الحضانة' : 'Piloter la journée'}</button>
           </div>
         </section>
       )}
 
       {showDailyRoutine && isDirecteur && (
-        <DailyRoutine onClose={() => setShowDailyRoutine(false)} onNavigate={onNavigate} />
+        <DailyRoutine onClose={() => setShowDailyRoutine(false)} onCompleted={() => { setDailyRoutineClosed(true); setShowDailyRoutine(false); }} />
       )}
 
       {isDirecteur && (
