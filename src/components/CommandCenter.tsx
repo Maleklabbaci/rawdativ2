@@ -118,12 +118,12 @@ function AlertRow({
       </div>
       <div className="min-w-0 flex-1 text-start">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className={`text-xs font-black ${tone.title}`}>{alert.title}</h3>
+          <h3 className={`break-words text-xs font-black leading-tight ${tone.title}`}>{alert.title}</h3>
           <span className={`rounded-full bg-white/70 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide ${tone.text}`}>
             {tone.label}
           </span>
         </div>
-        <p className={`mt-1 text-[11px] font-semibold leading-relaxed ${tone.text}`}>{alert.message}</p>
+        <p className={`mt-1 break-words text-[11px] font-semibold leading-relaxed ${tone.text}`}>{alert.message}</p>
       </div>
       <button
         type="button"
@@ -204,12 +204,12 @@ export default function CommandCenter({
     >
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
               <CircleAlert className="h-4 w-4" aria-hidden="true" />
             </div>
-            <div className="text-start">
-              <h2 id="command-center-title" className="text-sm font-black tracking-tight text-slate-900">
+            <div className="min-w-0 text-start">
+              <h2 id="command-center-title" className="break-words text-sm font-black leading-tight tracking-tight text-slate-900">
                 {isArabic ? 'مركز تحكم Rawdha+' : 'Rawdha Command Center'}
               </h2>
               <p className="text-[10px] font-bold text-slate-400">
@@ -227,17 +227,17 @@ export default function CommandCenter({
       <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
         <div className="rounded-xl bg-emerald-50/80 p-3 text-start">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] font-black uppercase tracking-wide text-emerald-700">{isArabic ? 'الحاضرون' : 'Présents'}</span>
+            <span className="break-words text-[10px] font-black uppercase leading-tight tracking-wide text-emerald-700">{isArabic ? 'الحاضرون' : 'Présents'}</span>
             <Users className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" />
           </div>
           <p className="mt-1 text-xl font-black text-emerald-900">{todaySummary.presents}</p>
         </div>
         <div className="rounded-xl bg-slate-50 p-3 text-start">
-          <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">{isArabic ? 'الغائبون' : 'Absents'}</span>
+          <span className="break-words text-[10px] font-black uppercase leading-tight tracking-wide text-slate-500">{isArabic ? 'الغائبون' : 'Absents'}</span>
           <p className="mt-1 text-xl font-black text-slate-800">{todaySummary.absents}</p>
         </div>
         <div className="rounded-xl bg-indigo-50/80 p-3 text-start">
-          <span className="text-[10px] font-black uppercase tracking-wide text-indigo-600">{isArabic ? 'المتوقعون' : 'Attendus'}</span>
+          <span className="break-words text-[10px] font-black uppercase leading-tight tracking-wide text-indigo-600">{isArabic ? 'المتوقعون' : 'Attendus'}</span>
           <p className="mt-1 text-xl font-black text-indigo-900">{todaySummary.expected}</p>
         </div>
       </div>
