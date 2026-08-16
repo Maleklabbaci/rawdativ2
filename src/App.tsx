@@ -1,6 +1,6 @@
 
 import { useState, useEffect, lazy, Suspense, type ComponentType } from 'react';
-import { School, LogOut, Menu, CircleHelp, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Network } from 'lucide-react';
+import { School, LogOut, Menu, CircleHelp, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
@@ -455,16 +455,6 @@ if (isSubscriptionExpired) {
                 )}
 
                 <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage('community')}
-                    title={language === 'ar' ? 'Rawdha Connect' : 'Ouvrir Rawdha Connect'}
-                    aria-label={language === 'ar' ? 'Rawdha Connect' : 'Ouvrir Rawdha Connect'}
-                    className={`flex h-10 w-10 sm:w-auto items-center justify-center gap-2 rounded-xl border px-0 sm:px-3 text-xs font-black transition cursor-pointer ${currentPage === 'community' ? 'border-violet-200 bg-violet-600 text-white shadow-lg shadow-violet-200/50' : 'border-violet-100 bg-gradient-to-r from-violet-50 to-fuchsia-50 text-violet-700 hover:from-violet-100 hover:to-fuchsia-100'}`}
-                  >
-                    <Network className="w-4 h-4" />
-                    <span className="hidden sm:inline">Rawdha Connect</span>
-                  </button>
                   <button
                     type="button"
                     onClick={() => setShowHelp(true)}

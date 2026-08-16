@@ -35,7 +35,7 @@ function normalizeAuthError(error: unknown): string | null {
  * La course est uniquement un garde-fou UI : Supabase continue sa requête en arrière-plan,
  * mais l’application récupère toujours la main et affiche une erreur exploitable.
  */
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number, message: string): Promise<T> {
   let timeoutId: number | undefined;
   return Promise.race([
     promise,

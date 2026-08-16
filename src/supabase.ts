@@ -39,7 +39,7 @@ function logError(error: unknown, operationType: OperationType, path: string | n
 // après ce délai et affiche les données disponibles ou un état vide exploitable.
 const READ_TIMEOUT_MS = 7_000;
 
-function withReadTimeout<T>(promise: Promise<T>, path: string): Promise<T> {
+function withReadTimeout<T>(promise: PromiseLike<T>, path: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   return Promise.race([
     promise,
