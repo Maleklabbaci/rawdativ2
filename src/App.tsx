@@ -171,6 +171,19 @@ function AppContent() {
     return <PublicAdmission />;
   }
 
+  // Attendre la restauration de la session avant de décider si l’utilisateur est déconnecté.
+  // Sans ce garde placé avant SignIn, chaque reload affichait brièvement l’écran de connexion.
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center gap-4">
+        <School className="w-12 h-12 text-indigo-600 animate-bounce" />
+        <p id="loading-text" className="text-sm font-bold text-slate-600 animate-pulse">
+          {language === 'ar' ? 'جاري استعادة جلسة روضتي...' : 'Restauration de votre session Rawdha+...'}
+        </p>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
     return <SignIn />;
   }
@@ -336,17 +349,6 @@ if (isSubscriptionExpired) {
 
         {/* Support Chat Bubble (Déjà présent et fonctionnel) */}
         <ChatBubble />
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center gap-4">
-        <School className="w-12 h-12 text-indigo-600 animate-bounce" />
-        <p id="loading-text" className="text-sm font-bold text-slate-600 animate-pulse">
-          {language === 'ar' ? 'جاري الاتصال بقاعدة البيانات روضتي...' : 'Connexion à la base de données Rawdha+ en cours...'}
-        </p>
       </div>
     );
   }

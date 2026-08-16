@@ -15,7 +15,14 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   if (import.meta.env.PROD) throw new Error('Supabase config missing!');
 }
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    // La session est conservée dans le stockage local du navigateur entre les reloads.
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+  },
+});
 
 export enum OperationType {
   CREATE = 'create',
