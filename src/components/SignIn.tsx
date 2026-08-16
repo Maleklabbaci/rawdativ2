@@ -140,13 +140,21 @@ export default function SignIn() {
     setLoading(true);
     setError('');
     setSuccess('');
-    const result = await loginWithCredentials(email, password);
-    if (result.error || !result.user) {
-      setError(formatAuthError(result.error, isFrench
-        ? 'Identifiants incorrects. Vérifiez votre adresse e-mail et votre mot de passe.'
-        : 'بيانات الاعتماد غير صحيحة.'));
+    try {
+      const result = await loginWithCredentials(email, password);
+      if (result.error || !result.user) {
+        setError(formatAuthError(result.error, isFrench
+          ? 'Identifiants incorrects. Vérifiez votre adresse e-mail et votre mot de passe.'
+          : 'بيانات الاعتماد غير صحيحة.'));
+      }
+    } catch (loginError) {
+      console.error('Erreur inattendue dans le formulaire de connexion:', loginError);
+      setError(isFrench
+        ? 'La connexion a échoué. Réessayez dans quelques instants.'
+        : 'تعذر تسجيل الدخول. حاول مرة أخرى بعد لحظات.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (

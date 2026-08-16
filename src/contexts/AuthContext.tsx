@@ -30,6 +30,25 @@ function normalizeAuthError(error: unknown): string | null {
   return String(error);
 }
 
+/**
+ * Les appels réseau ne doivent jamais laisser l’écran de connexion tourner sans fin.
+ * La course est uniquement un garde-fou UI : Supabase continue sa requête en arrière-plan,
+ * mais l’application récupère toujours la main et affiche une erreur exploitable.
+ */
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutId: number | undefined;
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    }),
+  ]).finally(() => {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  });
+}
+
+const AUTH_TIMEOUT_MS = 12_000;
+
 interface AuthContextType {
   isAuthenticated: boolean;
   user: UserAccount | null;
@@ -78,11 +97,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Charge le profil (table "comptes") associé à la session Auth active.
   const loadProfile = async (userId: string, authUserSnapshot?: AuthUserSnapshot): Promise<UserAccount | null> => {
-    const { data, error } = await supabase
-      .from('comptes')
-      .select('id, data')
-      .eq('id', userId)
-      .maybeSingle();
+    const { data, error } = await withTimeout(
+      supabase
+        .from('comptes')
+        .select('id, data')
+        .eq('id', userId)
+        .maybeSingle(),
+      AUTH_TIMEOUT_MS,
+      'Le chargement du profil Rawdha+ a dépassé le délai prévu.',
+    );
 
     if (error) {
       console.error('Erreur chargement profil:', error);
@@ -114,7 +137,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return;
     }
     try {
-      const settings = await getCollectionDocument<any>('parametres', `creche_${profile.id}`);
+      const settings = await withTimeout(
+        getCollectionDocument<any>('parametres', `creche_${profile.id}`),
+        AUTH_TIMEOUT_MS,
+        'Le chargement des paramètres de la crèche a dépassé le délai prévu.',
+      );
       setCreche({
         nom: settings?.crecheName || profile.nomCreche || DEFAULT_CRECHE.nom,
         adresse: settings?.addressLine || DEFAULT_CRECHE.adresse,
@@ -128,31 +155,63 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    // Vérifie s'il y a déjà une session active (persistée par Supabase automatiquement)
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        const profile = await loadProfile(session.user.id, session.user);
-        setUser(profile);
-        await loadCrecheSettings(profile);
-        if (profile) void recordLastActivity(profile.id);
+    let cancelled = false;
+
+    const hydrateSession = async (session: { user?: AuthUserSnapshot } | null) => {
+      if (!session?.user) {
+        if (!cancelled) {
+          setUser(null);
+          setCreche(DEFAULT_CRECHE);
+        }
+        return;
       }
-      setLoading(false);
+
+      try {
+        const profile = await loadProfile(session.user.id, session.user);
+        if (cancelled) return;
+        setUser(profile);
+        if (profile) {
+          void loadCrecheSettings(profile).catch((error) => {
+            console.error('Chargement différé des paramètres de crèche:', error);
+          });
+          void recordLastActivity(profile.id);
+        }
+      } catch (error) {
+        console.error('Erreur d’initialisation de la session Rawdha+:', error);
+        if (!cancelled) {
+          setUser(null);
+          setCreche(DEFAULT_CRECHE);
+        }
+      }
+    };
+
+    // Le premier écran ne doit jamais rester bloqué si la session Supabase est lente.
+    void withTimeout(
+      supabase.auth.getSession(),
+      AUTH_TIMEOUT_MS,
+      'La vérification de session a dépassé le délai prévu.',
+    )
+      .then(({ data: { session } }) => hydrateSession(session))
+      .catch((error) => {
+        console.error('Erreur vérification de session:', error);
+        if (!cancelled) {
+          setUser(null);
+          setCreche(DEFAULT_CRECHE);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    // Écoute les changements de session (login/logout dans un autre onglet, expiration, etc.).
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      void hydrateSession(session);
     });
 
-    // Écoute les changements de session (login/logout dans un autre onglet, expiration, etc.)
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        const profile = await loadProfile(session.user.id, session.user);
-        setUser(profile);
-        await loadCrecheSettings(profile);
-        if (profile) void recordLastActivity(profile.id);
-      } else {
-        setUser(null);
-        setCreche(DEFAULT_CRECHE);
-      }
-    });
-
-    return () => listener.subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      listener.subscription.unsubscribe();
+    };
   }, [loadCrecheSettings, recordLastActivity]);
 
   // Une activité de session est actualisée au retour dans l’onglet et toutes les
@@ -175,31 +234,45 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const isAuthenticated = !!user;
 
   const loginWithCredentials = async (email: string, motDePasse: string): Promise<{ user: UserAccount | null; error: string | null }> => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: email.toLowerCase().trim(),
-      password: motDePasse,
-    });
+    try {
+      const { data, error } = await withTimeout(
+        supabase.auth.signInWithPassword({
+          email: email.toLowerCase().trim(),
+          password: motDePasse,
+        }),
+        AUTH_TIMEOUT_MS,
+        'La connexion prend trop de temps. Vérifiez votre connexion Internet puis réessayez.',
+      );
 
-    if (error || !data.user) {
-      console.error('Erreur de connexion:', error?.message);
+      if (error || !data.user) {
+        console.error('Erreur de connexion:', error?.message);
+        return {
+          user: null,
+          error: normalizeAuthError(error) || 'Identifiants incorrects. Vérifiez votre adresse e-mail et votre mot de passe.',
+        };
+      }
+
+      const profile = await loadProfile(data.user.id, data.user);
+      if (!profile) {
+        return {
+          user: null,
+          error: 'Votre authentification est valide, mais votre compte n’est pas encore rattaché à Rawdha+.',
+        };
+      }
+      setUser(profile);
+      void loadCrecheSettings(profile).catch((error) => {
+        console.error('Chargement différé des paramètres de crèche:', error);
+      });
+      void recordLastActivity(profile.id);
+      return { user: profile, error: null };
+    } catch (error) {
+      console.error('Erreur de connexion Rawdha+:', error);
       return {
         user: null,
-        error: normalizeAuthError(error) || 'Identifiants incorrects. Vérifiez votre adresse e-mail et votre mot de passe.',
+        error: normalizeAuthError(error) || 'La connexion a dépassé le délai prévu. Réessayez dans quelques instants.',
       };
     }
-
-    const profile = await loadProfile(data.user.id, data.user);
-    if (!profile) {
-      return {
-        user: null,
-        error: 'Votre authentification est valide, mais votre compte n’est pas encore rattaché à Rawdha+.',
-      };
-    }
-    setUser(profile);
-    await loadCrecheSettings(profile);
-    void recordLastActivity(profile.id);
-    return { user: profile, error: null };
-    };
+  };
 
   const logout = async () => {
     await supabase.auth.signOut();

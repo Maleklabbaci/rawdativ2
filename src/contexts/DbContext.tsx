@@ -287,9 +287,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   // ✅ FIX PERF (v2) : chargement en 2 vagues au lieu d'attendre les 10 tables d'un coup.
   //
   // VAGUE 1 (bloquante, mais courte) : uniquement ce qui est nécessaire pour afficher
-  // le Dashboard tout de suite -> comptes (vérif abonnement) + enfants + presences +
-  // paiements + personnel. Dès que ça arrive, on coupe "loading" et l'utilisateur
-  // voit son tableau de bord.
+  // le Dashboard tout de suite -> profil courant + enfants + présences + paiements + personnel.
+  // L’admin reçoit sa liste complète de comptes ; un directeur ne charge jamais les profils
+  // et les photos de toutes les crèches pendant le démarrage.
   //
   // VAGUE 2 (en arrière-plan, NE bloque plus rien) : classes, activites, repas,
   // messages, avis. Elles arrivent pendant que l'utilisateur est déjà en train de
@@ -325,7 +325,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       // --- VAGUE 1 : critique pour le Dashboard, on attend ---
       const [dbComptes, dbEnfants, dbPresences, dbPresenceJournees, dbPaiements, dbPersonnel, dbDemandesDirecteur] = await Promise.all([
-        getCollectionData<UserAccount>('comptes'),
+        user?.role === 'admin'
+          ? getCollectionData<UserAccount>('comptes')
+          : Promise.resolve([user] as UserAccount[]),
         getCollectionData<Enfant>('enfants'),
         getCollectionData<Presence>('presences'),
         getCollectionData<PresenceJournee>('presence_journees'),
@@ -335,7 +337,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       ]);
 
       // ✅ FIX: Don't create hardcoded admin - security risk!
-      if (dbComptes.length === 0) {
+      if (user?.role === 'admin' && dbComptes.length === 0) {
         console.warn(
           '⚠️ NO ADMIN ACCOUNT FOUND\n' +
           'Please create an admin account manually in Supabase Dashboard:\n' +

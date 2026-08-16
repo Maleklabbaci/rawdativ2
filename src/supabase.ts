@@ -34,6 +34,23 @@ function logError(error: unknown, operationType: OperationType, path: string | n
   }));
 }
 
+// Une table indisponible ne doit jamais bloquer toute l’application.
+// Les appels réels peuvent continuer en arrière-plan, mais l’UI récupère la main
+// après ce délai et affiche les données disponibles ou un état vide exploitable.
+const READ_TIMEOUT_MS = 7_000;
+
+function withReadTimeout<T>(promise: Promise<T>, path: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`Délai dépassé pour ${path}`)), READ_TIMEOUT_MS);
+    }),
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 function generateId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID();
@@ -48,7 +65,10 @@ function generateId(): string {
  */
 export async function getCollectionData<T>(collectionName: string): Promise<T[]> {
   try {
-    const { data, error } = await supabase.from(collectionName).select('id, data');
+    const { data, error } = await withReadTimeout(
+      supabase.from(collectionName).select('id, data'),
+      collectionName,
+    );
     if (error) throw error;
     return (data || []).map(row => ({ ...(row.data as object), id: row.id })) as T[];
   } catch (err) {
@@ -59,11 +79,14 @@ export async function getCollectionData<T>(collectionName: string): Promise<T[]>
 
 export async function getCollectionDocument<T>(collectionName: string, id: string): Promise<T | null> {
   try {
-    const { data, error } = await supabase
-      .from(collectionName)
-      .select('id, data')
-      .eq('id', id)
-      .maybeSingle();
+    const { data, error } = await withReadTimeout(
+      supabase
+        .from(collectionName)
+        .select('id, data')
+        .eq('id', id)
+        .maybeSingle(),
+      `${collectionName}/${id}`,
+    );
     if (error) throw error;
     if (!data) return null;
     return { ...(data.data as object), id: data.id } as T;
