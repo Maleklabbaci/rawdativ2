@@ -66,7 +66,7 @@ export default function Parametres() {
     phoneNumbers: '+213 555 12 34 56',
     addressLine: '',
     workingHours: '07:30 - 17:30',
-    tuitionFeeRate: '4500',
+    tuitionFeeRate: '3500',
     mealPricePerDay: '250',
     currencyType: 'DA (Dinar Algérien)',
     sendSmsAlerts: true,

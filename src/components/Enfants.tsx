@@ -30,6 +30,7 @@ import {
   Copy,
   Download,
   ExternalLink,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -98,6 +99,7 @@ export default function Enfants() {
   const [admissionQrDataUrl, setAdmissionQrDataUrl] = useState('');
   const [admissionLinkCopied, setAdmissionLinkCopied] = useState(false);
   const [admissionActionId, setAdmissionActionId] = useState<string | null>(null);
+  const [importingCsv, setImportingCsv] = useState(false);
 
   const [formData, setFormData] = useState({
     nom: '',
@@ -227,6 +229,94 @@ export default function Enfants() {
       }));
     };
     reader.readAsDataURL(file);
+  };
+
+  const parseCsvLine = (line: string, separator: string) => {
+    const values: string[] = [];
+    let value = '';
+    let quoted = false;
+    for (let index = 0; index < line.length; index += 1) {
+      const character = line[index];
+      if (character === '"') {
+        if (quoted && line[index + 1] === '"') {
+          value += '"';
+          index += 1;
+        } else {
+          quoted = !quoted;
+        }
+      } else if (character === separator && !quoted) {
+        values.push(value.trim());
+        value = '';
+      } else {
+        value += character;
+      }
+    }
+    values.push(value.trim());
+    return values;
+  };
+
+  const handleCsvImport = async (file?: File) => {
+    if (!file) return;
+    setImportingCsv(true);
+    try {
+      const text = (await file.text()).replace(/^\uFEFF/, '');
+      const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      if (lines.length < 2) throw new Error('empty');
+      const separator = (lines[0].match(/;/g) || []).length > (lines[0].match(/,/g) || []).length ? ';' : ',';
+      const headers = parseCsvLine(lines[0], separator).map(header => header.toLowerCase().replace(/[éèêë]/g, 'e').replace(/[^a-z0-9]/g, ''));
+      const column = (...names: string[]) => names.map(name => headers.indexOf(name)).find(index => index >= 0) ?? -1;
+      const columns = {
+        nom: column('nom', 'lastname', 'nomenfant'),
+        prenom: column('prenom', 'firstname', 'prenomenfant'),
+        dateNaissance: column('datenaissance', 'naissance', 'birthdate'),
+        genre: column('genre', 'sexe'),
+        groupeAge: column('groupeage', 'groupe', 'section'),
+        parentNom: column('parentnom', 'nomparent', 'nompere', 'nommere'),
+        parentPrenom: column('parentprenom', 'prenomparent'),
+        parentTelephone: column('parenttelephone', 'telephoneparent', 'telephone', 'tel'),
+        parentEmail: column('parentemail', 'emailparent', 'email'),
+      };
+      if (columns.nom < 0 || columns.prenom < 0 || columns.dateNaissance < 0 || columns.parentTelephone < 0) {
+        throw new Error('columns');
+      }
+      let imported = 0;
+      let rejected = 0;
+      for (let rowIndex = 1; rowIndex < lines.length; rowIndex += 1) {
+        const row = parseCsvLine(lines[rowIndex], separator);
+        const valueAt = (index: number) => index >= 0 ? (row[index] || '').trim() : '';
+        const nom = valueAt(columns.nom);
+        const prenom = valueAt(columns.prenom);
+        const dateNaissance = valueAt(columns.dateNaissance);
+        const parentTelephone = valueAt(columns.parentTelephone);
+        if (!nom || !prenom || !dateNaissance || !parentTelephone) {
+          rejected += 1;
+          continue;
+        }
+        const genreValue = valueAt(columns.genre).toLowerCase();
+        const groupeValue = valueAt(columns.groupeAge).toLowerCase();
+        const enfant: Enfant = {
+          id: `csv_${Date.now()}_${rowIndex}`,
+          crecheId: isDirecteur ? user?.id : undefined,
+          nom,
+          prenom,
+          dateNaissance,
+          genre: genreValue.includes('fille') || genreValue.includes('f') ? 'Fille' : 'Garçon',
+          groupeAge: groupeValue.includes('grand') ? 'Grands' : groupeValue.includes('moyen') ? 'Moyens' : 'Bébés',
+          dateInscription: new Date().toISOString().split('T')[0],
+          statut: 'Actif',
+          contactsUrgence: [{ id: `csv_contact_${Date.now()}_${rowIndex}`, nom: `${valueAt(columns.parentPrenom)} ${valueAt(columns.parentNom)}`.trim(), telephone: parentTelephone, lien: 'Mère' }],
+          parents: [{ id: `csv_parent_${Date.now()}_${rowIndex}`, nom: valueAt(columns.parentNom), prenom: valueAt(columns.parentPrenom), lien: 'Mère', telephone: parentTelephone, email: valueAt(columns.parentEmail) || undefined }],
+          documentsRequis: { certificatMedical: false, carnetVaccination: false, justificatifDomicile: false, photoIdentite: false },
+        };
+        await addEnfant(enfant);
+        imported += 1;
+      }
+      alert(isArabic ? `تم استيراد ${imported} طفل${rejected ? `، تم تجاهل ${rejected}` : ''}.` : `${imported} enfant(s) importé(s).${rejected ? ` ${rejected} ligne(s) ignorée(s).` : ''}`);
+    } catch (error) {
+      alert(isArabic ? 'تحقق من ملف CSV. الأعمدة المطلوبة: nom, prenom, dateNaissance, parentTelephone.' : 'Vérifiez le fichier CSV. Colonnes obligatoires : nom, prenom, dateNaissance, parentTelephone.');
+    } finally {
+      setImportingCsv(false);
+    }
   };
 
   const handleAjouter = () => {
@@ -388,6 +478,11 @@ export default function Enfants() {
             {filteredEnfants.length} {t('children.enrolled')}
           </p>
         </div>
+        <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 sm:w-auto">
+          <FileSpreadsheet size={16} />
+          <span>{importingCsv ? (isArabic ? 'جاري الاستيراد...' : 'Import...') : (isArabic ? 'استيراد CSV' : 'Importer CSV')}</span>
+          <input type="file" accept=".csv,text/csv" className="hidden" disabled={importingCsv} onChange={event => { const file = event.target.files?.[0]; void handleCsvImport(file); event.currentTarget.value = ''; }} />
+        </label>
         <button 
           onClick={() => {
             setEditingEnfantId(null);

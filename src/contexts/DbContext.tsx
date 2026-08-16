@@ -1276,7 +1276,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
           const echeanceEffective = Math.min(enfant.jourEcheanceMensuel!, daysInCurrentMonth);
           await addPaiement({
             enfantId: enfant.id,
-            montant: creche?.tuitionFeeRate || 4500,
+            montant: creche?.tuitionFeeRate || 3500,
             statut: 'En attente',
             moisConcerne: currentMoisConcerne,
             dateEcheance: new Date(today.getFullYear(), today.getMonth(), echeanceEffective).toISOString().split('T')[0],

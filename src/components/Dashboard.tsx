@@ -18,8 +18,9 @@ import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/format';
 import { useLanguage } from '../contexts/LanguageContext';
+import DirectorLaunchPanel from './DirectorLaunchPanel';
 
-export default function Dashboard() {
+export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) => void }) {
   const { enfants: allEnfantsData, presences: allPresencesData, paiements: allPaiementsData, personnel: allPersonnelData, classes: allClassesData } = useDb();
   const { user } = useAuth();
   const isDirecteur = user?.role === 'directeur';
@@ -219,6 +220,8 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      <DirectorLaunchPanel onNavigate={onNavigate} />
 
       <div className="grid grid-cols-1 min-[380px]:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 animate-fade-in">
         {statsCards.map((stat, index) => {

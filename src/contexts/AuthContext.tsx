@@ -68,7 +68,7 @@ const DEFAULT_CRECHE: CrecheInfo = {
   nom: 'RAWDHA+',
   adresse: 'Plateforme de Gestion | منصة التسيير',
   logoUrl: null,
-  tuitionFeeRate: 4500,
+  tuitionFeeRate: 3500,
 };
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {

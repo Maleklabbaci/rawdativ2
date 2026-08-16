@@ -354,7 +354,7 @@ if (isSubscriptionExpired) {
   const renderPage = () => {
     const page = (() => {
       switch (currentPage) {
-        case 'dashboard': return <Dashboard />;
+        case 'dashboard': return <Dashboard onNavigate={setCurrentPage} />;
         case 'enfants': return <Enfants />;
         case 'admissions': return <Admissions />;
         case 'community': return <Community />;

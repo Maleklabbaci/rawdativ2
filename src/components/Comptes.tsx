@@ -185,7 +185,7 @@ export default function Comptes() {
       setNomCreche('');
       setTelephoneCreche('');
       setAdresseCreche('');
-      setTarifCreche('4500');
+      setTarifCreche('3500');
       setSiteWebCreche('');
       setDateFinAbonnement(getDefaultDate());
       setAbonnementActif(true);
