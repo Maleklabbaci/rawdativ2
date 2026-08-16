@@ -7,7 +7,7 @@ import {
   HeartHandshake,
   School,
   ShieldCheck,
-  Sparkles,
+  BadgeCheck,
   Users,
   X,
 } from 'lucide-react';
@@ -112,7 +112,7 @@ export default function WelcomeDirectorModal({
             <div className="relative flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
               <div className="max-w-2xl">
                 <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1.5 text-xs font-bold tracking-wide backdrop-blur-sm">
-                  <Sparkles className="h-3.5 w-3.5" />
+                  <BadgeCheck className="h-3.5 w-3.5" />
                   {content.eyebrow}
                 </div>
                 <h1 id="welcome-director-title" className="mt-4 text-2xl font-black tracking-tight leading-tight sm:mt-5 sm:text-4xl">

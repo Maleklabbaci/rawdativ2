@@ -1,4 +1,5 @@
-import { ArrowRight, CheckCircle2, Circle, HelpCircle, Sparkles } from 'lucide-react';
+import { useEffect } from 'react';
+import { ArrowRight, CheckCircle2, Circle, HelpCircle, ListChecks } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useDb } from '../contexts/DbContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -15,16 +16,14 @@ export default function DirectorLaunchPanel({ onNavigate }: DirectorLaunchPanelP
   const { language } = useLanguage();
   const isArabic = language === 'ar';
 
-  if (!user || user.role !== 'directeur') return null;
-
   const isProfileReady = Boolean(
-    user.nom?.trim() &&
-    user.prenom?.trim() &&
-    (user.nomCreche?.trim() || (creche.nom && creche.nom !== 'RAWDHA+')),
+    user?.nom?.trim() &&
+    user?.prenom?.trim() &&
+    (user?.nomCreche?.trim() || (creche?.nom && creche.nom !== 'RAWDHA+')),
   );
-  const visibleEnfants = enfants.filter((item) => item.crecheId === user.id);
-  const visibleClasses = classes.filter((item) => item.crecheId === user.id);
-  const visiblePersonnel = personnel.filter((item) => item.crecheId === user.id);
+  const visibleEnfants = enfants.filter((item) => item.crecheId === user?.id);
+  const visibleClasses = classes.filter((item) => item.crecheId === user?.id);
+  const visiblePersonnel = personnel.filter((item) => item.crecheId === user?.id);
   const visiblePresences = presences.filter((item) => visibleEnfants.some((enfant) => enfant.id === item.enfantId));
 
   const steps = [
@@ -66,14 +65,28 @@ export default function DirectorLaunchPanel({ onNavigate }: DirectorLaunchPanelP
   ];
   const completed = steps.filter((step) => step.done).length;
   const progress = Math.round((completed / steps.length) * 100);
+  const completionStorageKey = user?.id ? `rawdha:director-launch-complete:${user.id}` : null;
+  const isDismissed = Boolean(
+    completionStorageKey &&
+    typeof window !== 'undefined' &&
+    window.localStorage.getItem(completionStorageKey) === '1',
+  );
+
+  useEffect(() => {
+    if (progress === 100 && completionStorageKey && typeof window !== 'undefined') {
+      window.localStorage.setItem(completionStorageKey, '1');
+    }
+  }, [completionStorageKey, progress]);
+
+  if (!user || user.role !== 'directeur' || progress === 100 || isDismissed) return null;
 
   return (
     <section className="overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-950 via-indigo-900 to-violet-800 p-4 text-white shadow-xl shadow-indigo-900/10 sm:p-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <div className="rounded-2xl bg-white/10 p-3"><Sparkles className="h-5 w-5 text-indigo-200" /></div>
+          <div className="rounded-2xl bg-white/10 p-3"><ListChecks className="h-5 w-5 text-indigo-200" /></div>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-200">RAWDHA+ • {isArabic ? 'بداية سريعة' : 'Démarrage rapide'}</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-200">RAWDHA+ • {isArabic ? 'الإعداد الأولي' : 'Configuration initiale'}</p>
             <h2 className="mt-1 text-lg font-black sm:text-xl">{isArabic ? 'جهز فضاء حضانتك' : 'Préparez votre espace directeur'}</h2>
             <p className="mt-1 max-w-2xl text-xs leading-5 text-indigo-100/80">{isArabic ? 'أكمل هذه الخطوات وابدأ العمل بدون تعقيد.' : 'Suivez ces étapes pour commencer à travailler sans vous perdre dans les menus.'}</p>
           </div>

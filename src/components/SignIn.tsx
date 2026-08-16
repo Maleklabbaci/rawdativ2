@@ -18,7 +18,7 @@ import {
   Phone,
   Send,
   ShieldCheck,
-  Sparkles,
+  BadgeCheck,
   UserRound,
 } from 'lucide-react';
 
@@ -175,7 +175,7 @@ export default function SignIn() {
 
         <div className="relative my-auto space-y-4 sm:space-y-6 max-w-md py-8 sm:py-16">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/15 backdrop-blur-md text-xs font-semibold rounded-full border border-white/20">
-            <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+            <BadgeCheck className="w-3.5 h-3.5 text-amber-200" />
             <span>Gestion de crèche de nouvelle génération</span>
           </div>
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight leading-none font-display">

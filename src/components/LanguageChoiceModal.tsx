@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { ArrowLeft, ArrowRight, Languages, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BadgeCheck, Languages } from 'lucide-react';
 
 interface LanguageChoiceModalProps {
   onChoose: (language: 'fr' | 'ar') => void;
@@ -21,7 +21,7 @@ export default function LanguageChoiceModal({ onChoose }: LanguageChoiceModalPro
             <Languages className="h-8 w-8" />
           </div>
           <div className="relative mt-5 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1.5 text-xs font-bold backdrop-blur-sm">
-            <Sparkles className="h-3.5 w-3.5" />
+            <BadgeCheck className="h-3.5 w-3.5" />
             RAWDHA+
           </div>
           <h1 id="language-choice-title" className="relative mt-4 text-xl font-black tracking-tight sm:text-3xl">
