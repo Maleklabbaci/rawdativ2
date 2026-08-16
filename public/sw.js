@@ -1,4 +1,5 @@
-const CACHE_NAME = 'rawdha-static-v1';
+// Incrémenté pour invalider les anciens bundles PWA après les correctifs critiques.
+const CACHE_NAME = 'rawdha-static-v2';
 
 self.addEventListener('install', () => {
   self.skipWaiting();
