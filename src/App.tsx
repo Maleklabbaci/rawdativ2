@@ -92,23 +92,34 @@ function AppContent() {
       const welcomeKey = `rawdha_welcome_seen_${user.id}`;
       const languageKey = `rawdha_language_selected_${user.id}`;
       const introCompletedKey = `rawdha_director_intro_completed_v2_${user.id}`;
-      const welcomeSeen = localStorage.getItem(welcomeKey) === '1';
-      const accountLanguageSelected = localStorage.getItem(languageKey) === '1';
+      const readStoredFlag = (key: string) => {
+        const value = localStorage.getItem(key)?.trim().toLowerCase();
+        return value === '1' || value === 'true' || value === 'yes' || value === 'done';
+      };
+      const welcomeSeen = readStoredFlag(welcomeKey) || readStoredFlag('rawdha_welcome_seen');
+      const accountLanguageSelected = readStoredFlag(languageKey);
       // Les anciennes versions stockaient la langue sans identifiant de compte.
-      // Une valeur valide dans cette clé globale signifie que cet ancien
-      // compte a déjà dépassé l’écran de choix de langue.
-      const globalLanguage = localStorage.getItem('rawdha_language');
+      // Cette valeur est aussi la preuve que l’ancien onboarding a déjà été
+      // franchi : elle doit donc fermer les deux fenêtres, pas uniquement celle
+      // du choix de langue.
+      const globalLanguage = localStorage.getItem('rawdha_language')?.trim().toLowerCase();
       const globalLanguageSelected = globalLanguage === 'fr' || globalLanguage === 'ar';
+      const globalIntroCompleted = readStoredFlag('rawdha_director_intro_completed');
       const languageSelected = accountLanguageSelected || globalLanguageSelected;
-      const introCompleted = localStorage.getItem(introCompletedKey) === '1' || (welcomeSeen && languageSelected);
+      const introCompleted = readStoredFlag(introCompletedKey)
+        || globalIntroCompleted
+        || (welcomeSeen && languageSelected);
 
-      // Migration des anciennes clés : on recopie l’état global sur le compte
-      // courant afin que la fenêtre ne réapparaisse plus à la prochaine connexion.
+      // Migration vers les marqueurs par compte et vers le marqueur global de
+      // compatibilité. La langue seule ferme uniquement le choix de langue ;
+      // le bouton « Commencer maintenant » reste responsable de la fin d’accueil.
       if (globalLanguageSelected && !accountLanguageSelected) {
         localStorage.setItem(languageKey, '1');
       }
       if (introCompleted) {
         localStorage.setItem(introCompletedKey, '1');
+        localStorage.setItem('rawdha_director_intro_completed', '1');
+        localStorage.setItem('rawdha_welcome_seen', '1');
       }
       setShowWelcome(!introCompleted && !welcomeSeen);
       setShowLanguageChoice(!introCompleted && !languageSelected);
@@ -123,6 +134,10 @@ function AppContent() {
     if (user?.id) {
       localStorage.setItem(`rawdha_language_selected_${user.id}`, '1');
     }
+    // Double écriture volontaire : la clé globale est conservée pour les
+    // anciens comptes et la clé par compte pour les prochaines connexions.
+    localStorage.setItem('rawdha_language', selectedLanguage);
+    localStorage.setItem('rawdha_language_selected', '1');
     setShowLanguageChoice(false);
   };
 
@@ -131,6 +146,8 @@ function AppContent() {
       localStorage.setItem(`rawdha_welcome_seen_${user.id}`, '1');
       localStorage.setItem(`rawdha_language_selected_${user.id}`, '1');
       localStorage.setItem(`rawdha_director_intro_completed_v2_${user.id}`, '1');
+      localStorage.setItem('rawdha_welcome_seen', '1');
+      localStorage.setItem('rawdha_director_intro_completed', '1');
     }
     setShowWelcome(false);
     setShowLanguageChoice(false);
