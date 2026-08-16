@@ -19,9 +19,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/format';
 import { useLanguage } from '../contexts/LanguageContext';
 import DirectorLaunchPanel from './DirectorLaunchPanel';
+import CommandCenter from './CommandCenter';
 
 export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) => void }) {
-  const { enfants: allEnfantsData, presences: allPresencesData, paiements: allPaiementsData, personnel: allPersonnelData, classes: allClassesData } = useDb();
+  const { enfants: allEnfantsData, presences: allPresencesData, paiements: allPaiementsData, personnel: allPersonnelData, classes: allClassesData, loading } = useDb();
   const { user } = useAuth();
   const isDirecteur = user?.role === 'directeur';
   const enfantsData = isDirecteur ? allEnfantsData.filter(e => e.crecheId === user!.id) : allEnfantsData;
@@ -222,6 +223,18 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
       </div>
 
       <DirectorLaunchPanel onNavigate={onNavigate} />
+
+      {isDirecteur && (
+        <CommandCenter
+          enfants={enfantsActifs}
+          presences={presencesData}
+          paiements={paiementsData}
+          personnel={personnelData}
+          classes={classesData}
+          loading={loading}
+          onNavigate={onNavigate}
+        />
+      )}
 
       <div className="grid grid-cols-1 min-[380px]:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 animate-fade-in">
         {statsCards.map((stat, index) => {
