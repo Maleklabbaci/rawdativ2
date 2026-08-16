@@ -91,8 +91,18 @@ function AppContent() {
     if (user?.role === 'directeur') {
       const welcomeKey = `rawdha_welcome_seen_${user.id}`;
       const languageKey = `rawdha_language_selected_${user.id}`;
-      setShowWelcome(localStorage.getItem(welcomeKey) !== '1');
-      setShowLanguageChoice(localStorage.getItem(languageKey) !== '1');
+      const introCompletedKey = `rawdha_director_intro_completed_v2_${user.id}`;
+      const welcomeSeen = localStorage.getItem(welcomeKey) === '1';
+      const languageSelected = localStorage.getItem(languageKey) === '1';
+      const introCompleted = localStorage.getItem(introCompletedKey) === '1' || (welcomeSeen && languageSelected);
+
+      // Migration des anciennes clés : si les deux écrans ont déjà été vus,
+      // on les considère définitivement terminés pour éviter leur réapparition.
+      if (introCompleted) {
+        localStorage.setItem(introCompletedKey, '1');
+      }
+      setShowWelcome(!introCompleted && !welcomeSeen);
+      setShowLanguageChoice(!introCompleted && !languageSelected);
     } else {
       setShowWelcome(false);
       setShowLanguageChoice(false);
@@ -110,8 +120,11 @@ function AppContent() {
   const closeWelcome = () => {
     if (user?.id) {
       localStorage.setItem(`rawdha_welcome_seen_${user.id}`, '1');
+      localStorage.setItem(`rawdha_language_selected_${user.id}`, '1');
+      localStorage.setItem(`rawdha_director_intro_completed_v2_${user.id}`, '1');
     }
     setShowWelcome(false);
+    setShowLanguageChoice(false);
   };
 
   useEffect(() => {

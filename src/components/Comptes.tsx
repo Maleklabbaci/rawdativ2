@@ -592,7 +592,7 @@ export default function Comptes() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-                        {isFrench ? 'Fin de la période (essai gratuit 7j par défaut) *' : 'نهاية الفترة (تجربة مجانية 7 أيام افتراضياً) *'}
+                        {isFrench ? 'Fin de la période (essai gratuit de 15 jours par défaut) *' : 'نهاية الفترة (تجربة مجانية لمدة 15 يوماً افتراضياً) *'}
                       </label>
                       <div className="relative">
                         <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
