@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
+  CheckSquare2,
+  ListFilter,
+  Search,
   Baby,
   CalendarCheck2,
   Check,
@@ -76,6 +79,12 @@ const readStoredObject = <T extends object>(key: string, fallback: T): T => {
   }
 };
 
+const runInBatches = async <T,>(items: T[], worker: (item: T) => Promise<void>, batchSize = 10) => {
+  for (let index = 0; index < items.length; index += batchSize) {
+    await Promise.all(items.slice(index, index + batchSize).map(worker));
+  }
+};
+
 export default function DailyRoutine({ onClose, onNavigate }: DailyRoutineProps) {
   const { user } = useAuth();
   const { language } = useLanguage();
@@ -108,6 +117,11 @@ export default function DailyRoutine({ onClose, onNavigate }: DailyRoutineProps)
   const [departures, setDepartures] = useState<DepartureMap>(() => storagePrefix ? readStoredObject<DepartureMap>(`${storagePrefix}:departures`, {}) : {});
   const [departureSelections, setDepartureSelections] = useState<DepartureMap>({});
   const [closed, setClosed] = useState<boolean>(() => storagePrefix ? window.localStorage.getItem(`${storagePrefix}:closed`) === '1' : false);
+  const [selectedChildIds, setSelectedChildIds] = useState<string[]>([]);
+  const [presenceSearch, setPresenceSearch] = useState('');
+  const [presenceFilter, setPresenceFilter] = useState<'tous' | 'a-pointer' | 'presents' | 'absents'>('tous');
+  const [batchAbsenceDraft, setBatchAbsenceDraft] = useState<{ statut: AbsenceDraft['statut']; motif: string } | null>(null);
+  const [isSavingBatch, setIsSavingBatch] = useState(false);
 
   const enfants = useMemo(() => {
     if (!isDirecteur || !user?.id) return allEnfants;
@@ -206,9 +220,32 @@ export default function DailyRoutine({ onClose, onNavigate }: DailyRoutineProps)
 
   const getPresence = (childId: string) => todayPresences.get(childId);
   const isPointingLocked = isDayValidated;
+  const normalizedPresenceSearch = presenceSearch.trim().toLocaleLowerCase();
+  const isPresenceVisible = (child: Enfant) => {
+    const presence = getPresence(child.id);
+    const matchesSearch = !normalizedPresenceSearch || `${child.prenom} ${child.nom}`.toLocaleLowerCase().includes(normalizedPresenceSearch);
+    const matchesFilter = presenceFilter === 'tous'
+      || (presenceFilter === 'a-pointer' && !presence)
+      || (presenceFilter === 'presents' && presence?.statut === 'Présent')
+      || (presenceFilter === 'absents' && Boolean(presence?.statut?.startsWith('Absent')));
+    return matchesSearch && matchesFilter;
+  };
+  const toggleChildSelection = (childId: string) => {
+    setSelectedChildIds((previous) => previous.includes(childId)
+      ? previous.filter((id) => id !== childId)
+      : [...previous, childId]);
+  };
+  const toggleChildrenSelection = (childIds: string[]) => {
+    setSelectedChildIds((previous) => {
+      const allSelected = childIds.length > 0 && childIds.every((id) => previous.includes(id));
+      return allSelected ? previous.filter((id) => !childIds.includes(id)) : Array.from(new Set([...previous, ...childIds]));
+    });
+  };
 
-  const savePresent = async (child: Enfant) => {
+  const savePresent = async (child: Enfant, silent = false) => {
     if (isPointingLocked) {
+      if (silent) return;
+
       showToast(text('La journée est validée. Rouvrez-la depuis Présences pour modifier un pointage.', 'تم اعتماد اليوم. افتحه من صفحة الحضور قبل التعديل.'), 'error');
       return;
     }
@@ -222,31 +259,83 @@ export default function DailyRoutine({ onClose, onNavigate }: DailyRoutineProps)
       temperature: existing?.temperature || '36.5',
       repas: existing?.repas || 'Tout',
       humeur: existing?.humeur || 'Souriant',
+      motifAbsence: '',
     };
     if (existing) await updatePresence(existing.id, payload);
     else await addPresence(payload);
   };
 
-  const saveAbsence = async () => {
-    if (!absenceDraft) return;
-    if (!absenceDraft.motif.trim()) {
-      showToast(text('Ajoutez un motif pour conserver un registre fiable.', 'أدخل سبب الغياب للحفاظ على سجل واضح.'), 'error');
-      return;
-    }
+  const saveAbsenceForChild = async (enfantId: string, statut: AbsenceDraft['statut'], motif: string, silent = false) => {
     if (isPointingLocked) {
-      showToast(text('La journée est validée. Rouvrez-la depuis Présences pour modifier un pointage.', 'تم اعتماد اليوم. افتحه من صفحة الحضور قبل التعديل.'), 'error');
-      return;
+      if (!silent) showToast(text('La journée est validée. Rouvrez-la depuis Présences pour modifier un pointage.', 'تم اعتماد اليوم. افتحه من صفحة الحضور قبل التعديل.'), 'error');
+      return false;
     }
-    const existing = getPresence(absenceDraft.enfantId);
+    const existing = getPresence(enfantId);
     const payload = {
-      enfantId: absenceDraft.enfantId,
+      enfantId,
       date: today,
-      statut: absenceDraft.statut,
-      motifAbsence: absenceDraft.motif.trim(),
+      statut,
+      motifAbsence: motif.trim() || text('Absence signalée', 'تم تسجيل الغياب'),
+      heureArrivee: '',
+      heureDepart: '',
+      temperature: '',
+      repas: '',
+      humeur: '',
+      personneRecuperation: '',
     };
     if (existing) await updatePresence(existing.id, payload);
     else await addPresence(payload);
-    setAbsenceDraft(null);
+    return true;
+  };
+
+  const saveAbsence = async () => {
+    if (!absenceDraft) return;
+    const saved = await saveAbsenceForChild(absenceDraft.enfantId, absenceDraft.statut, absenceDraft.motif);
+    if (saved) setAbsenceDraft(null);
+  };
+
+  const saveSelectedPresent = async () => {
+    if (selectedChildIds.length === 0) {
+      showToast(text('Sélectionnez au moins un enfant.', 'اختر طفلاً واحداً على الأقل.'), 'error');
+      return;
+    }
+    if (isPointingLocked) {
+      showToast(text('La journée est validée. Rouvrez-la depuis Présences avant de modifier un pointage.', 'تم اعتماد اليوم. افتحه من صفحة الحضور قبل تعديل التسجيل.'), 'error');
+      return;
+    }
+    setIsSavingBatch(true);
+    try {
+      await runInBatches<Enfant>(enfants.filter((item) => selectedChildIds.includes(item.id)), async (child: Enfant) => { await savePresent(child, true); });
+      showToast(text(`${selectedChildIds.length} enfant${selectedChildIds.length > 1 ? 's' : ''} marqué${selectedChildIds.length > 1 ? 's' : ''} présent${selectedChildIds.length > 1 ? 's' : ''}.`, `تم تسجيل حضور ${selectedChildIds.length} طفل.`), 'success');
+      setSelectedChildIds([]);
+    } finally {
+      setIsSavingBatch(false);
+    }
+  };
+
+  const openBatchAbsence = () => {
+    if (selectedChildIds.length === 0) {
+      showToast(text('Sélectionnez au moins un enfant.', 'اختر طفلاً واحداً على الأقل.'), 'error');
+      return;
+    }
+    if (isPointingLocked) {
+      showToast(text('La journée est validée. Rouvrez-la depuis Présences avant de modifier un pointage.', 'تم اعتماد اليوم. افتحه من صفحة الحضور قبل تعديل التسجيل.'), 'error');
+      return;
+    }
+    setBatchAbsenceDraft({ statut: 'Absent non justifié', motif: '' });
+  };
+
+  const saveBatchAbsence = async () => {
+    if (!batchAbsenceDraft || selectedChildIds.length === 0) return;
+    setIsSavingBatch(true);
+    try {
+      await runInBatches<string>(selectedChildIds, async (childId: string) => { await saveAbsenceForChild(childId, batchAbsenceDraft.statut, batchAbsenceDraft.motif, true); });
+      showToast(text(`${selectedChildIds.length} absence${selectedChildIds.length > 1 ? 's' : ''} enregistrée${selectedChildIds.length > 1 ? 's' : ''}.`, `تم تسجيل غياب ${selectedChildIds.length} طفل.`), 'success');
+      setSelectedChildIds([]);
+      setBatchAbsenceDraft(null);
+    } finally {
+      setIsSavingBatch(false);
+    }
   };
 
   const validatePresences = async () => {
@@ -391,10 +480,26 @@ export default function DailyRoutine({ onClose, onNavigate }: DailyRoutineProps)
         <div className="space-y-5">
           <div className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-xs sm:flex-row sm:items-center sm:justify-between sm:p-6"><div><p className="text-xs font-black uppercase tracking-widest text-indigo-600">{text('Pointage en direct', 'التسجيل المباشر')}</p><h2 className="mt-1 text-2xl font-black text-slate-900">{text('Qui est présent aujourd’hui ?', 'من حاضر اليوم؟')}</h2><p className="mt-1 text-sm text-slate-500">{text('Touchez un enfant pour le marquer présent ou absent. Validez ensuite la journée.', 'اضغط على الطفل لتسجيل حضوره أو غيابه، ثم اعتمد اليوم.')}</p></div><div className="grid grid-cols-3 gap-2 text-center"><div className="rounded-xl bg-emerald-50 px-3 py-2"><p className="text-xl font-black text-emerald-700">{presentCount}</p><p className="text-[10px] font-bold text-emerald-700">{text('Présents', 'حاضر')}</p></div><div className="rounded-xl bg-rose-50 px-3 py-2"><p className="text-xl font-black text-rose-700">{absentCount}</p><p className="text-[10px] font-bold text-rose-700">{text('Absents', 'غائب')}</p></div><div className="rounded-xl bg-slate-100 px-3 py-2"><p className="text-xl font-black text-slate-700">{unpointedCount}</p><p className="text-[10px] font-bold text-slate-700">{text('À pointer', 'لم يسجل')}</p></div></div></div>
           {isDayValidated && <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800"><LockKeyhole className="h-5 w-5 shrink-0" />{text('La journée est validée. Les modifications se font depuis la page Présences après réouverture.', 'تم اعتماد اليوم. يتم التعديل من صفحة الحضور بعد إعادة الفتح.')}</div>}
+          <div className="rounded-3xl border border-indigo-100 bg-indigo-50/70 p-3 sm:p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-center gap-2 text-sm font-black text-indigo-950"><CheckSquare2 className="h-4 w-4 text-indigo-600" />{text(`${selectedChildIds.length} sélectionné${selectedChildIds.length > 1 ? 's' : ''}`, `${selectedChildIds.length} محدد`)}</div>
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                <button type="button" onClick={() => toggleChildrenSelection(enfants.filter(isPresenceVisible).map((child) => child.id))} className="rounded-xl bg-white px-3 py-2 text-[11px] font-black text-indigo-700 shadow-xs hover:bg-indigo-100">{text('Tout sélectionner', 'تحديد الكل')}</button>
+                <button type="button" onClick={() => setSelectedChildIds([])} className="rounded-xl bg-white px-3 py-2 text-[11px] font-black text-slate-600 shadow-xs hover:bg-slate-100">{text('Effacer', 'مسح')}</button>
+                <button type="button" disabled={selectedChildIds.length === 0 || isSavingBatch || isPointingLocked} onClick={() => void saveSelectedPresent()} className="rounded-xl bg-emerald-600 px-3 py-2 text-[11px] font-black text-white disabled:cursor-not-allowed disabled:opacity-50">{text('Marquer présents', 'تسجيل الحضور')}</button>
+                <button type="button" disabled={selectedChildIds.length === 0 || isSavingBatch || isPointingLocked} onClick={openBatchAbsence} className="rounded-xl bg-rose-600 px-3 py-2 text-[11px] font-black text-white disabled:cursor-not-allowed disabled:opacity-50">{text('Marquer absents', 'تسجيل الغياب')}</button>
+              </div>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_180px]">
+              <label className="relative block"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 rtl:left-auto rtl:right-3" /><input value={presenceSearch} onChange={(event) => setPresenceSearch(event.target.value)} placeholder={text('Rechercher un enfant par nom…', 'ابحث عن طفل بالاسم…')} className="w-full rounded-xl border border-indigo-100 bg-white py-2.5 pl-9 pr-3 text-xs font-bold text-slate-700 outline-none focus:border-indigo-400 rtl:pl-3 rtl:pr-9" /></label>
+              <label className="relative block"><ListFilter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 rtl:left-auto rtl:right-3" /><select value={presenceFilter} onChange={(event) => setPresenceFilter(event.target.value as typeof presenceFilter)} className="w-full appearance-none rounded-xl border border-indigo-100 bg-white py-2.5 pl-9 pr-3 text-xs font-bold text-slate-700 outline-none focus:border-indigo-400 rtl:pl-3 rtl:pr-9"><option value="tous">{text('Tous les enfants', 'كل الأطفال')}</option><option value="a-pointer">{text('À pointer', 'بانتظار التسجيل')}</option><option value="presents">{text('Présents', 'الحاضرون')}</option><option value="absents">{text('Absents', 'الغائبون')}</option></select></label>
+            </div>
+            {batchAbsenceDraft && <div className="mt-3 grid gap-2 rounded-2xl border border-rose-200 bg-white p-3 sm:grid-cols-[180px_1fr_auto]"><select value={batchAbsenceDraft.statut} onChange={(event) => setBatchAbsenceDraft({ ...batchAbsenceDraft, statut: event.target.value as AbsenceDraft['statut'] })} className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-bold text-slate-700 outline-none"><option value="Absent non justifié">{text('Absence non justifiée', 'غياب غير مبرر')}</option><option value="Absent justifié">{text('Absence justifiée', 'غياب مبرر')}</option></select><input value={batchAbsenceDraft.motif} onChange={(event) => setBatchAbsenceDraft({ ...batchAbsenceDraft, motif: event.target.value })} placeholder={text('Motif commun (facultatif)', 'سبب مشترك (اختياري)')} className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-rose-400" /><button type="button" disabled={isSavingBatch} onClick={() => void saveBatchAbsence()} className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-black text-white disabled:opacity-50">{text('Confirmer', 'تأكيد')}</button></div>}
+          </div>
           <div className="space-y-4">
-            {groups.length === 0 ? <EmptyState icon={Users} text={text('Aucun enfant actif à pointer.', 'لا يوجد أطفال نشطون لتسجيل حضورهم.')} actionLabel={text('Ajouter un enfant', 'إضافة طفل')} onAction={() => openPage('enfants')} /> : groups.map(({ classe, children }) => (
-              <section key={classe.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xs"><div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-4 py-3 sm:px-5"><div><p className="text-sm font-black text-slate-900">{classe.nom}</p><p className="text-xs font-semibold text-slate-400">{children.length} {text('enfant(s)', 'طفل')}</p></div><span className="rounded-xl bg-white px-3 py-1 text-xs font-black text-indigo-600 shadow-xs">{children.filter((child) => getPresence(child.id)?.statut === 'Présent').length}/{children.length}</span></div><div className="divide-y divide-slate-100">{children.map((child) => { const presence = getPresence(child.id); const isPresent = presence?.statut === 'Présent'; const isAbsent = presence?.statut?.startsWith('Absent'); const absenceOpen = absenceDraft?.enfantId === child.id; return <div key={child.id} className="p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-sm font-black text-indigo-600">{child.prenom.charAt(0)}{child.nom.charAt(0)}</div><div className="min-w-0"><p className="truncate text-sm font-black text-slate-900">{child.prenom} {child.nom}</p><p className="text-xs font-semibold text-slate-400">{child.groupeAge}{presence?.heureArrivee ? ` • ${presence.heureArrivee}` : ''}</p></div></div><div className="flex gap-2"><button type="button" disabled={isPointingLocked} onClick={() => void savePresent(child)} className={`flex-1 rounded-xl px-3 py-2 text-xs font-black transition active:scale-[0.98] sm:flex-none ${isPresent ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'} disabled:cursor-not-allowed disabled:opacity-50`}><Check className="mr-1 inline h-3.5 w-3.5" />{text('Présent', 'حاضر')}</button><button type="button" disabled={isPointingLocked} onClick={() => setAbsenceDraft({ enfantId: child.id, statut: presence?.statut === 'Absent justifié' ? 'Absent justifié' : 'Absent non justifié', motif: presence?.motifAbsence || '' })} className={`flex-1 rounded-xl px-3 py-2 text-xs font-black transition active:scale-[0.98] sm:flex-none ${isAbsent ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'} disabled:cursor-not-allowed disabled:opacity-50`}>{text('Absent', 'غائب')}</button></div></div>{absenceOpen && <div className="mt-3 rounded-2xl border border-rose-100 bg-rose-50/60 p-3"><div className="grid gap-2 sm:grid-cols-[180px_1fr_auto]"><select value={absenceDraft.statut} onChange={(event) => setAbsenceDraft({ ...absenceDraft, statut: event.target.value as AbsenceDraft['statut'] })} className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none"><option value="Absent non justifié">{text('Absence non justifiée', 'غياب غير مبرر')}</option><option value="Absent justifié">{text('Absence justifiée', 'غياب مبرر')}</option></select><input value={absenceDraft.motif} onChange={(event) => setAbsenceDraft({ ...absenceDraft, motif: event.target.value })} placeholder={text('Motif de l’absence', 'سبب الغياب')} className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-rose-400" /><button type="button" onClick={() => void saveAbsence()} className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-black text-white">{text('Enregistrer', 'حفظ')}</button></div></div>}</div>; })}</div></section>
-            ))}
+            {groups.length === 0 ? <EmptyState icon={Users} text={text('Aucun enfant actif à pointer.', 'لا يوجد أطفال نشطون لتسجيل حضورهم.')} actionLabel={text('Ajouter un enfant', 'إضافة طفل')} onAction={() => openPage('enfants')} /> : groups.map(({ classe, children }) => { const visibleChildren = children.filter(isPresenceVisible); const visibleIds = visibleChildren.map((child) => child.id); const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedChildIds.includes(id)); if (visibleChildren.length === 0) return null; return (
+              <section key={classe.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xs"><div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-4 py-3 sm:px-5"><div><p className="text-sm font-black text-slate-900">{classe.nom}</p><p className="text-xs font-semibold text-slate-400">{visibleChildren.length} {text('enfant(s)', 'طفل')}</p></div><button type="button" onClick={() => toggleChildrenSelection(visibleIds)} className="rounded-xl bg-white px-3 py-1 text-[10px] font-black text-indigo-600 shadow-xs hover:bg-indigo-100">{allVisibleSelected ? text('Désélectionner', 'إلغاء التحديد') : text('Tout le groupe', 'كل المجموعة')}</button><span className="rounded-xl bg-white px-3 py-1 text-xs font-black text-indigo-600 shadow-xs">{visibleChildren.filter((child) => getPresence(child.id)?.statut === 'Présent').length}/{visibleChildren.length}</span></div><div className="divide-y divide-slate-100">{visibleChildren.map((child) => { const presence = getPresence(child.id); const isPresent = presence?.statut === 'Présent'; const isAbsent = presence?.statut?.startsWith('Absent'); const absenceOpen = absenceDraft?.enfantId === child.id; return <div key={child.id} className="p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3"><button type="button" onClick={() => toggleChildSelection(child.id)} aria-label={text(`Sélectionner ${child.prenom} ${child.nom}`, `تحديد ${child.prenom} ${child.nom}`)} className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition ${selectedChildIds.includes(child.id) ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-transparent hover:border-indigo-300'}`}><Check className="h-4 w-4" /></button><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-sm font-black text-indigo-600">{child.prenom.charAt(0)}{child.nom.charAt(0)}</div><div className="min-w-0"><p className="truncate text-sm font-black text-slate-900">{child.prenom} {child.nom}</p><p className="text-xs font-semibold text-slate-400">{child.groupeAge}{presence?.heureArrivee ? ` • ${presence.heureArrivee}` : ''}</p></div></div><div className="flex gap-2"><button type="button" disabled={isPointingLocked} onClick={() => void savePresent(child)} className={`flex-1 rounded-xl px-3 py-2 text-xs font-black transition active:scale-[0.98] sm:flex-none ${isPresent ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'} disabled:cursor-not-allowed disabled:opacity-50`}><Check className="mr-1 inline h-3.5 w-3.5" />{text('Présent', 'حاضر')}</button><button type="button" disabled={isPointingLocked} onClick={() => setAbsenceDraft({ enfantId: child.id, statut: presence?.statut === 'Absent justifié' ? 'Absent justifié' : 'Absent non justifié', motif: presence?.motifAbsence || '' })} className={`flex-1 rounded-xl px-3 py-2 text-xs font-black transition active:scale-[0.98] sm:flex-none ${isAbsent ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'} disabled:cursor-not-allowed disabled:opacity-50`}>{text('Absent', 'غائب')}</button></div></div>{absenceOpen && <div className="mt-3 rounded-2xl border border-rose-100 bg-rose-50/60 p-3"><div className="grid gap-2 sm:grid-cols-[180px_1fr_auto]"><select value={absenceDraft.statut} onChange={(event) => setAbsenceDraft({ ...absenceDraft, statut: event.target.value as AbsenceDraft['statut'] })} className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none"><option value="Absent non justifié">{text('Absence non justifiée', 'غياب غير مبرر')}</option><option value="Absent justifié">{text('Absence justifiée', 'غياب مبرر')}</option></select><input value={absenceDraft.motif} onChange={(event) => setAbsenceDraft({ ...absenceDraft, motif: event.target.value })} placeholder={text('Motif de l’absence', 'سبب الغياب')} className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-rose-400" /><button type="button" onClick={() => void saveAbsence()} className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-black text-white">{text('Enregistrer', 'حفظ')}</button></div></div>}</div>; })}</div></section>
+            ); })}
           </div>
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between"><button type="button" onClick={() => openPage('presences')} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-black text-slate-600 hover:bg-slate-50">{text('Ouvrir la page Présences', 'فتح صفحة الحضور')}</button><button type="button" disabled={unpointedCount > 0 || loading} onClick={() => void validatePresences()} className="flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">{text('Valider les présences', 'اعتماد الحضور')}<ArrowRight className="h-4 w-4 rtl:rotate-180" /></button></div>
         </div>
