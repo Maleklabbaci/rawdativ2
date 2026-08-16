@@ -191,12 +191,12 @@ export default function ChatBubble() {
     <>
       <AnimatePresence>
         {showAvisPopup && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4 font-sans" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-900/60 p-3 backdrop-blur-md sm:items-center sm:p-4 font-sans" dir={language === 'ar' ? 'rtl' : 'ltr'}>
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl relative"
+              className="relative my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-3xl bg-white p-5 shadow-2xl sm:p-8"
             >
               <button onClick={closeAvisPopup} className="absolute top-4 right-4 rtl:left-4 rtl:right-auto text-slate-400 hover:text-slate-600 transition" aria-label={isFrench ? 'Fermer' : 'إغلاق'}>
                 <X className="w-5 h-5" />
@@ -228,7 +228,7 @@ export default function ChatBubble() {
         )}
       </AnimatePresence>
 
-      <div className={`fixed bottom-6 ${language === 'ar' ? 'left-6' : 'right-6'} z-40 font-sans`} dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      <div className={`fixed bottom-4 z-40 font-sans sm:bottom-6 ${language === 'ar' ? 'left-4 sm:left-6' : 'right-4 sm:right-6'}`} style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))' }} dir={language === 'ar' ? 'rtl' : 'ltr'}>
         <motion.button
           onClick={() => setIsOpen(value => !value)}
           whileHover={{ scale: 1.05 }}
@@ -251,15 +251,15 @@ export default function ChatBubble() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.97 }}
               transition={{ duration: 0.2 }}
-              className={`absolute bottom-20 ${language === 'ar' ? 'left-0' : 'right-0'} w-[min(92vw,420px)] h-[600px] bg-white border border-slate-200 rounded-3xl shadow-2xl flex flex-col overflow-hidden`}
+              className={`absolute bottom-16 ${language === 'ar' ? 'left-0' : 'right-0'} h-[min(70dvh,600px)] max-h-[calc(100dvh-5.5rem)] w-[calc(100vw-2rem)] max-w-[420px] overscroll-contain rounded-3xl border border-slate-200 bg-white shadow-2xl flex flex-col overflow-hidden sm:bottom-20`}
             >
               <div className="p-4 bg-gradient-to-r from-slate-800 to-slate-900 text-white flex items-center justify-between shadow-md z-10">
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 items-center gap-3">
                   <div className="w-10 h-10 bg-white/10 border border-white/20 text-white rounded-xl flex items-center justify-center font-bold">
                     {activeTab === 'chat' ? <ShieldCheck className="w-5 h-5" /> : activeTab === 'avis' ? <Star className="w-5 h-5 fill-amber-400 text-amber-400" /> : <Flag className="w-5 h-5 text-rose-300" />}
                   </div>
-                  <div>
-                    <h4 className="text-sm font-black tracking-wide">
+                  <div className="min-w-0">
+                    <h4 className="truncate text-sm font-black tracking-wide">
                       {activeTab === 'chat'
                         ? (isFrench ? 'Support RAWDHA+' : 'الدعم الفني')
                         : activeTab === 'avis'
