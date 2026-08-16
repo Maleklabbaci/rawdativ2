@@ -12,7 +12,8 @@ import {
   ShieldCheck,
   Coffee,
   Zap,
-  School
+  School,
+  PlayCircle
 } from 'lucide-react';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -20,6 +21,7 @@ import { formatCurrency } from '../utils/format';
 import { useLanguage } from '../contexts/LanguageContext';
 import DirectorLaunchPanel from './DirectorLaunchPanel';
 import CommandCenter from './CommandCenter';
+import DailyRoutine from './DailyRoutine';
 
 export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) => void }) {
   const { enfants: allEnfantsData, presences: allPresencesData, paiements: allPaiementsData, personnel: allPersonnelData, classes: allClassesData, loading } = useDb();
@@ -34,6 +36,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
   const { language } = useLanguage();
   const isArabic = language === 'ar';
   const [periodeSelectionnee, setPeriodeSelectionnee] = useState<'semaine' | 'mois'>('semaine');
+  const [showDailyRoutine, setShowDailyRoutine] = useState(false);
 
   // Utilise la date locale (et non UTC) afin que la présence corresponde bien au jour
   // affiché à la directrice, même le soir ou lors d'un changement de fuseau horaire.
@@ -256,6 +259,26 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
       </div>
 
       <DirectorLaunchPanel onNavigate={onNavigate} />
+
+      {isDirecteur && (
+        <section className="overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-r from-indigo-950 via-indigo-900 to-violet-800 p-4 text-white shadow-xl shadow-indigo-900/10 sm:p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-indigo-100"><PlayCircle className="h-6 w-6" /></div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-200">{isArabic ? 'روتين روضتي اليومي' : 'ROUTINE QUOTIDIEN RAWDHA+'}</p>
+                <h2 className="mt-1 text-lg font-black sm:text-xl">{isArabic ? 'ابدأ يومك بخطوات واضحة' : 'Démarrer ma journée'}</h2>
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-indigo-100/80">{isArabic ? 'افتح الحضانة، تابع الحضور، راقب السلامة وأغلق اليوم من مكان واحد.' : 'Ouverture, présences, santé, repas, activités, départs et fermeture dans un seul parcours.'}</p>
+              </div>
+            </div>
+            <button type="button" onClick={() => setShowDailyRoutine(true)} className="flex w-full shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-xs font-black text-indigo-900 shadow-lg shadow-black/10 transition hover:bg-indigo-50 sm:w-auto sm:px-5"><PlayCircle className="h-4 w-4" />{isArabic ? 'ابدأ يومي' : 'Démarrer ma journée'}</button>
+          </div>
+        </section>
+      )}
+
+      {showDailyRoutine && isDirecteur && (
+        <DailyRoutine onClose={() => setShowDailyRoutine(false)} onNavigate={onNavigate} />
+      )}
 
       {isDirecteur && (
         <CommandCenter

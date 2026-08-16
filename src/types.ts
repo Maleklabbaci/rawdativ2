@@ -71,6 +71,8 @@ export interface Presence {
   temperature?: string;
   repas?: string;
   humeur?: string;
+  // Personne ayant récupéré l’enfant lors du départ quotidien.
+  personneRecuperation?: string;
 }
 
 export interface PresenceJournee {
