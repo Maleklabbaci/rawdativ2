@@ -405,13 +405,15 @@ if (isSubscriptionExpired) {
                   </div>
                 </div>
               </div>
-              <div className="flex min-w-0 items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto">
+              <div className="flex min-w-0 flex-wrap items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto">
                 {/* Statut essai/abonnement — uniquement pour les directeurs */}
                 {user?.role === 'directeur' && (
-                  <SubscriptionStatusBadge
+                  <div className="min-w-0 max-w-full basis-full sm:basis-auto">
+                    <SubscriptionStatusBadge
                     dateFinAbonnement={liveUser?.dateFinAbonnement}
                     abonnementActif={liveUser?.abonnementActif}
-                  />
+                    />
+                  </div>
                 )}
 
                 {/* Cloche de notifications — uniquement pour les directeurs */}
@@ -425,10 +427,10 @@ if (isSubscriptionExpired) {
                     onClick={() => setCurrentPage('community')}
                     title={language === 'ar' ? 'Rawdha Connect' : 'Ouvrir Rawdha Connect'}
                     aria-label={language === 'ar' ? 'Rawdha Connect' : 'Ouvrir Rawdha Connect'}
-                    className={`hidden sm:flex h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-black transition cursor-pointer ${currentPage === 'community' ? 'border-violet-200 bg-violet-600 text-white shadow-lg shadow-violet-200/50' : 'border-violet-100 bg-gradient-to-r from-violet-50 to-fuchsia-50 text-violet-700 hover:from-violet-100 hover:to-fuchsia-100'}`}
+                    className={`flex h-10 w-10 sm:w-auto items-center justify-center gap-2 rounded-xl border px-0 sm:px-3 text-xs font-black transition cursor-pointer ${currentPage === 'community' ? 'border-violet-200 bg-violet-600 text-white shadow-lg shadow-violet-200/50' : 'border-violet-100 bg-gradient-to-r from-violet-50 to-fuchsia-50 text-violet-700 hover:from-violet-100 hover:to-fuchsia-100'}`}
                   >
                     <Network className="w-4 h-4" />
-                    <span>Rawdha Connect</span>
+                    <span className="hidden sm:inline">Rawdha Connect</span>
                   </button>
                   <button
                     type="button"

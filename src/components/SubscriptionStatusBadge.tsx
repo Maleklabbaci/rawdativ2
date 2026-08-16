@@ -38,12 +38,12 @@ export default function SubscriptionStatusBadge({ dateFinAbonnement, abonnementA
   return (
     <div
       title={isFrench ? `Fin le ${dateFormatee}` : `ينتهي في ${dateFormatee}`}
-      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-semibold whitespace-nowrap ${
+      className={`flex min-w-0 max-w-full items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-semibold whitespace-nowrap overflow-hidden ${
         urgent ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-slate-50 text-slate-600 border border-slate-200'
       }`}
     >
       {urgent ? <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" /> : <Clock className="w-3.5 h-3.5 flex-shrink-0" />}
-      {texte}
+      <span className="min-w-0 truncate">{texte}</span>
     </div>
   );
 }

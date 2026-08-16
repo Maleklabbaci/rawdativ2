@@ -16,6 +16,8 @@ import {
   Bell,
   MessageSquareQuote,
   BarChart3,
+  ClipboardList,
+  Network,
   X,
   PanelLeftClose,
   PanelLeftOpen,
@@ -38,6 +40,8 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
     items = [
       { key: 'dashboard', label: 'dashboard', icon: LayoutDashboard, color: 'text-indigo-500' },
       { key: 'enfants', label: 'children', icon: Baby, color: 'text-rose-500' },
+      { key: 'admissions', label: 'admissions', icon: ClipboardList, color: 'text-cyan-400' },
+      { key: 'community', label: 'community', icon: Network, color: 'text-violet-400' },
       { key: 'classes', label: 'classes', icon: School, color: 'text-amber-500' },
       { key: 'presences', label: 'attendance', icon: CalendarCheck, color: 'text-emerald-500' },
       { key: 'paiements', label: 'invoices', icon: CreditCard, color: 'text-cyan-500' },
@@ -58,6 +62,12 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
     }
     if (key === 'communication') {
       return language === 'ar' ? 'الرسائل والتقييمات والملاحظات' : 'Messages, Avis & Retours';
+    }
+    if (key === 'admissions') {
+      return language === 'ar' ? 'طلبات التسجيل' : 'Demandes d’admission';
+    }
+    if (key === 'community') {
+      return language === 'ar' ? 'Rawdha Connect' : 'Rawdha Connect';
     }
     return t(originalLabel);
   };

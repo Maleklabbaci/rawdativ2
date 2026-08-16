@@ -83,14 +83,14 @@ export default function NotificationPopup({ onNavigate }: { onNavigate?: (page: 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+        className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-slate-950/60 p-3 backdrop-blur-sm sm:items-center sm:p-4"
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.9, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 20 }}
           transition={{ type: 'spring', damping: 22, stiffness: 300 }}
-          className="w-full max-w-sm rounded-3xl shadow-2xl p-7 text-center"
+          className="my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-sm overflow-y-auto rounded-3xl p-5 text-center shadow-2xl sm:p-7"
           style={{ backgroundColor: bgColor, color: textColor }}
         >
           <div className="text-5xl mb-4">{current.icon || '📢'}</div>
