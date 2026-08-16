@@ -427,13 +427,13 @@ export default function Enfants() {
         </button>
       </div>
 
-      <section className="overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-950 via-indigo-900 to-violet-800 p-5 text-white shadow-xl shadow-indigo-900/10 sm:p-7">
+      <section className="min-w-0 overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-950 via-indigo-900 to-violet-800 p-4 text-white shadow-xl shadow-indigo-900/10 sm:p-7">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-start gap-3">
+          <div className="flex min-w-0 items-start gap-3">
             <div className="rounded-2xl bg-white/10 p-3"><QrCode className="h-6 w-6 text-indigo-200" /></div>
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-200">RAWDHA+ • {isArabic ? 'قبول الأطفال' : 'Admission enfant'}</p>
-              <h2 className="mt-1 text-xl font-black">{isArabic ? 'رمز QR داخل صفحة الأطفال' : 'Admission par QR, directement dans Enfants'}</h2>
+              <h2 className="mt-1 break-words text-lg sm:text-xl font-black">{isArabic ? 'رمز QR داخل صفحة الأطفال' : 'Admission par QR, directement dans Enfants'}</h2>
               <p className="mt-1 max-w-2xl text-xs leading-5 text-indigo-100/75">{isArabic ? 'رمز QR دائم يتم إنشاؤه تلقائياً لهذه الروضة. شاركه مع الأولياء لاستقبال طلبات التسجيل.' : 'Un seul QR permanent est créé automatiquement pour cette crèche. Partagez-le aux parents pour recevoir leurs demandes.'}</p>
             </div>
           </div>
@@ -495,7 +495,7 @@ export default function Enfants() {
         )}
       </section>
 
-      <div className="bg-white p-3 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex flex-col md:flex-row gap-3 items-center">
+      <div className="min-w-0 bg-white p-3 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex flex-col md:flex-row gap-3 items-center">
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
@@ -507,7 +507,7 @@ export default function Enfants() {
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 scrollbar-none flex-nowrap shrink-0">
+        <div className="mobile-scroll-x flex items-center gap-2 w-full md:w-auto pb-1 md:pb-0 scrollbar-none flex-nowrap shrink-0">
           {/* Toggle View Mode Buttons */}
           <div className="flex bg-slate-100 p-1 rounded-xl mr-2 rtl:ml-2">
             <button
@@ -564,8 +564,8 @@ export default function Enfants() {
         viewMode === 'list' ? (
           /* ================= LIST VIEW ================= */
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden animate-slide-up">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+            <div className="mobile-scroll-x">
+              <table className="min-w-[680px] w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50/70 border-b border-slate-100 text-[11px] font-black uppercase tracking-wider text-slate-400">
                     <th className="p-4">{isArabic ? 'الطفل' : 'Enfant'}</th>
@@ -892,19 +892,19 @@ export default function Enfants() {
       <AnimatePresence>
         {showModal && (
           <div 
-            className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[9999] flex items-start justify-center p-4 pt-24 font-sans overflow-y-auto"
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[9999] flex items-start justify-center p-2 sm:p-4 pt-2 sm:pt-24 font-sans overflow-y-auto"
             onClick={() => setShowModal(false)}
           >
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-3xl flex flex-col overflow-hidden font-sans cursor-default mb-10"
+              className="mobile-safe-modal bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-3xl max-h-[calc(100dvh-1rem)] flex flex-col overflow-hidden font-sans cursor-default mb-2 sm:mb-10"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
+              <div className="p-4 sm:p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center gap-3 flex-shrink-0">
                 <div>
-                  <h3 className="text-xl font-black">
+                  <h3 className="text-base sm:text-xl font-black">
                     {editingEnfantId 
                       ? (isArabic ? 'تعديل ملف التلميذ' : 'Modifier le Dossier de l\'Élève') 
                       : (isArabic ? 'تسجيل طفل جديد وتكوين الملف' : 'Dossier d\'Admission Enfant')}
@@ -923,7 +923,7 @@ export default function Enfants() {
                 </button>
               </div>
 
-              <div className="p-6 space-y-5 overflow-y-auto flex-1">
+              <div className="p-4 sm:p-6 space-y-5 overflow-y-auto flex-1 min-h-0">
                 
                 <div>
                   <h4 className="text-xs font-black text-indigo-600 uppercase tracking-widest mb-3.5 pb-1 border-b border-slate-100 flex items-center gap-1.5">

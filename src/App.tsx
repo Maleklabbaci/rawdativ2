@@ -347,7 +347,7 @@ if (isSubscriptionExpired) {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc]" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen min-w-0 overflow-x-hidden bg-[#f8fafc]" dir={language === 'ar' ? 'rtl' : 'ltr'}>
       {/* Sidebar */}
       <Sidebar 
         currentPage={currentPage} 
@@ -372,12 +372,12 @@ if (isSubscriptionExpired) {
       </AnimatePresence>
 
       {/* Main Content */}
-      <div className={`transition-all duration-300 ${isSidebarCollapsed ? 'lg:ltr:pl-20 lg:rtl:pr-20' : 'lg:ltr:pl-72 lg:rtl:pr-72'}`}>
+      <div className={`min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'lg:ltr:pl-20 lg:rtl:pr-20' : 'lg:ltr:pl-72 lg:rtl:pr-72'}`}>
         {/* Header */}
         <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 sticky top-0 z-30 shadow-xs">
-          <div className="px-4 sm:px-6 lg:px-10 py-3 sm:py-4">
-            <div className="flex flex-col sm:flex-row gap-4 justify-between sm:items-center">
-              <div className="flex items-center gap-3">
+          <div className="min-w-0 px-3 sm:px-6 lg:px-10 py-3 sm:py-4">
+            <div className="flex min-w-0 flex-col sm:flex-row gap-3 sm:gap-4 justify-between sm:items-center">
+              <div className="flex min-w-0 items-center gap-3">
                 {/* Mobile Menu Button */}
                 <button
                   id="mobile-sidebar-toggle"
@@ -388,7 +388,7 @@ if (isSubscriptionExpired) {
                   <Menu className="w-5 h-5" />
                 </button>
 
-                <div className="flex items-center gap-2 sm:gap-4">
+                <div className="flex min-w-0 items-center gap-2 sm:gap-4">
                   <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl hidden sm:flex items-center justify-center flex-shrink-0 w-10 h-10 overflow-hidden">
                     {creche?.logoUrl ? (
                       <img src={creche.logoUrl} alt="Logo" className="w-full h-full object-contain" />
@@ -397,15 +397,15 @@ if (isSubscriptionExpired) {
                     )}
                   </div>
                   <div>
-                    <h1 className="text-sm sm:text-base md:text-lg lg:text-xl font-extrabold text-slate-950 tracking-tight flex items-center gap-1.5 leading-tight">
+                    <h1 className="min-w-0 max-w-[58vw] truncate text-sm sm:max-w-none sm:text-base md:text-lg lg:text-xl font-extrabold text-slate-950 tracking-tight flex items-center gap-1.5 leading-tight">
                       {creche?.nom}
                       <span className="px-1.5 py-0.5 text-[9px] font-bold bg-indigo-100 text-indigo-700 rounded-md uppercase tracking-wider">PRO</span>
                     </h1>
-                    <p className="text-[10px] sm:text-xs text-slate-500 font-medium leading-none mt-0.5">{creche?.adresse}</p>
+                    <p className="max-w-[58vw] truncate text-[10px] sm:max-w-none sm:text-xs text-slate-500 font-medium leading-none mt-0.5">{creche?.adresse}</p>
                   </div>
                 </div>
               </div>
-              <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+              <div className="flex min-w-0 items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto">
                 {/* Statut essai/abonnement — uniquement pour les directeurs */}
                 {user?.role === 'directeur' && (
                   <SubscriptionStatusBadge
@@ -419,7 +419,7 @@ if (isSubscriptionExpired) {
                   <NotificationBell onNavigateToPaiements={() => setCurrentPage('paiements')} />
                 )}
 
-                <div className="flex items-center gap-1">
+                <div className="flex shrink-0 items-center gap-1">
                   <button
                     type="button"
                     onClick={() => setCurrentPage('community')}
@@ -457,7 +457,7 @@ if (isSubscriptionExpired) {
                 </div>
 
                 {/* Language Selector */}
-                <div className="flex gap-1 p-1 bg-slate-100/80 rounded-xl border border-slate-200/50">
+                <div className="flex shrink-0 gap-1 p-1 bg-slate-100/80 rounded-xl border border-slate-200/50">
                   <button
                     onClick={() => setLanguage('fr')}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 cursor-pointer ${
@@ -483,10 +483,10 @@ if (isSubscriptionExpired) {
                 {/* Logout Button */}
                 <button
                   onClick={logout}
-                  className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-all font-bold text-xs flex items-center gap-2 cursor-pointer border border-rose-100/50"
+                  className="shrink-0 px-3 sm:px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-all font-bold text-xs flex items-center gap-2 cursor-pointer border border-rose-100/50"
                 >
                   <LogOut className="w-4 h-4" />
-                  <span>{t('nav.logout')}</span>
+                  <span className="hidden sm:inline">{t('nav.logout')}</span>
                 </button>
               </div>
             </div>
@@ -494,7 +494,7 @@ if (isSubscriptionExpired) {
         </header>
 
         {/* Page Content */}
-<main className="p-3 sm:p-6 lg:p-10 max-w-[1600px] mx-auto">
+<main className="min-w-0 overflow-x-hidden p-3 sm:p-6 lg:p-10 max-w-[1600px] mx-auto">
   {showLanguageChoice && user?.role === 'directeur' && (
     <LanguageChoiceModal onChoose={chooseInitialLanguage} />
   )}

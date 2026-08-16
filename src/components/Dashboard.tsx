@@ -176,8 +176,8 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="space-y-5 sm:space-y-8 font-sans">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4">
+    <div className="min-w-0 space-y-5 sm:space-y-8 font-sans">
+      <div className="flex min-w-0 flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4">
         <div>
           <span className="text-[10px] sm:text-xs font-bold text-indigo-600 uppercase tracking-widest block mb-0.5 flex items-center gap-1">
             <Zap className="w-3 h-3 sm:w-3.5 sm:h-3.5 animate-bounce" />
@@ -220,7 +220,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 animate-fade-in">
+      <div className="grid grid-cols-1 min-[380px]:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 animate-fade-in">
         {statsCards.map((stat, index) => {
           const Icon = stat.icon;
           return (
@@ -253,7 +253,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 p-6 shadow-xs flex flex-col justify-between">
+        <div className="lg:col-span-2 min-w-0 bg-white rounded-2xl border border-slate-100 p-4 sm:p-6 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -305,7 +305,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-slate-100 grid grid-cols-3 gap-4 text-center">
+          <div className="mt-8 pt-6 border-t border-slate-100 grid grid-cols-1 min-[390px]:grid-cols-3 gap-4 text-center">
             <div>
               <p className="text-xl font-black text-emerald-600">{presencesAujourdhui.length}</p>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Présents</p>
@@ -326,7 +326,7 @@ export default function Dashboard() {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-gradient-to-tr from-indigo-700 via-indigo-800 to-violet-800 rounded-2xl shadow-xl p-6 text-white relative overflow-hidden">
+          <div className="bg-gradient-to-tr from-indigo-700 via-indigo-800 to-violet-800 rounded-2xl shadow-xl p-4 sm:p-6 text-white relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-xl pointer-events-none" />
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2.5 bg-white/10 rounded-xl">
@@ -335,7 +335,7 @@ export default function Dashboard() {
               <h3 className="text-sm font-black uppercase tracking-wider">{isArabic ? 'معدل حجز المقاعد' : 'Remplissage Salles'}</h3>
             </div>
             <div className="text-center py-4">
-              <p className="text-6xl font-black mb-1">{tauxOccupation}%</p>
+              <p className="text-5xl sm:text-6xl font-black mb-1">{tauxOccupation}%</p>
               <p className="text-indigo-100 text-xs font-semibold">
                 {placesOccupees} / {capaciteTotale > 0 ? capaciteTotale : '—'} {isArabic ? 'مقاعد مشغولة' : 'places occupées'}
               </p>
@@ -364,7 +364,7 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-50 flex items-center justify-between">
+          <div className="p-4 sm:p-6 border-b border-slate-50 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center">
                 <AlertCircle className="w-5 h-5" />
@@ -379,7 +379,7 @@ export default function Dashboard() {
             </span>
           </div>
 
-          <div className="p-6 space-y-4 max-h-96 overflow-y-auto divide-y divide-slate-100/70">
+          <div className="p-4 sm:p-6 space-y-4 max-h-96 overflow-y-auto divide-y divide-slate-100/70">
             {paiementsEnAttente.slice(0, 3).map((paiement) => {
               const enfant = enfantsData.find(e => e.id === paiement.enfantId);
               return (
@@ -418,7 +418,7 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-50 flex items-center justify-between">
+          <div className="p-4 sm:p-6 border-b border-slate-50 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
                 <Users className="w-5 h-5" />

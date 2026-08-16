@@ -76,3 +76,58 @@ body {
 .animate-fade-in {
   animation: fadeIn 0.3s ease-out both;
 }
+
+
+/* Mobile safety: preserve the existing design while preventing viewport overflow. */
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 0;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 639px) {
+  .mobile-safe-wrap {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .mobile-scroll-x {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .mobile-safe-modal {
+    max-height: calc(100dvh - 1rem);
+    margin: 0.5rem;
+  }
+}
+
+@supports (padding: max(0px)) {
+  @media (max-width: 639px) {
+    body {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+  }
+}

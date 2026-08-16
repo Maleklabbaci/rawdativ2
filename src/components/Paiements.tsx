@@ -163,9 +163,9 @@ export default function Paiements() {
   });
 
   return (
-    <div className="space-y-4 sm:space-y-8">
+    <div className="min-w-0 space-y-4 sm:space-y-8">
       {/* Statistiques financières */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 min-[380px]:grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-2.5 sm:gap-4 hover:shadow-md transition">
           <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
             <DollarSign className="w-5 h-5" />
@@ -233,7 +233,7 @@ export default function Paiements() {
       </div>
 
       {/* Barre de Recherche et Filtres */}
-      <div className="bg-white p-3 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex flex-col md:flex-row gap-3 items-center">
+      <div className="min-w-0 bg-white p-3 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex flex-col md:flex-row gap-3 items-center">
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
@@ -244,7 +244,7 @@ export default function Paiements() {
             className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition-all text-xs sm:text-sm font-medium text-slate-800"
           />
         </div>
-        <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 scrollbar-none flex-nowrap shrink-0">
+        <div className="mobile-scroll-x flex gap-2 w-full md:w-auto pb-1 md:pb-0 scrollbar-none flex-nowrap shrink-0">
           {[
             { key: 'Tous', label: isArabic ? 'الكل' : 'Tous', color: 'text-slate-500 hover:text-slate-800' },
             { key: 'Payé', label: isArabic ? 'مدفوعة' : 'Payées', color: 'text-slate-500 hover:text-emerald-600' },
@@ -268,8 +268,8 @@ export default function Paiements() {
 
       {/* Tableau des factures */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+        <div className="mobile-scroll-x">
+          <table className="min-w-[760px] w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/70 border-b border-slate-100 text-[11px] font-black uppercase tracking-wider text-slate-400">
                 <th className="p-5">{isArabic ? 'الطفل' : 'Enfant'}</th>
@@ -424,7 +424,7 @@ export default function Paiements() {
       <AnimatePresence>
         {showModal && (
           <div 
-            className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-center justify-center z-[999] p-4 cursor-pointer"
+            className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-start sm:items-center justify-center z-[999] p-2 sm:p-4 pt-2 sm:pt-4 cursor-pointer overflow-y-auto"
             onClick={() => {
               setShowModal(false);
               setEditingPaiementId(null);
@@ -434,10 +434,10 @@ export default function Paiements() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-xl max-h-[85vh] mt-16 flex flex-col overflow-hidden font-sans cursor-default"
+              className="mobile-safe-modal bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-xl max-h-[calc(100dvh-1rem)] mt-0 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
+              <div className="p-4 sm:p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center gap-3 flex-shrink-0">
                 <div>
                   <h3 className="text-xl font-black">
                     {editingPaiementId 
@@ -602,7 +602,7 @@ export default function Paiements() {
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
                     {isArabic ? 'حالة الفاتورة والتحصيل *' : 'Statut d\'Émission *'}
                   </label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 min-[380px]:grid-cols-3 gap-2">
                     {[
                       { key: 'Payé', label: isArabic ? 'تم الدفع بالكامل' : 'Déjà Réglé', activeBg: 'bg-emerald-600 text-white border-transparent' },
                       { key: 'En attente', label: isArabic ? 'قيد الانتظار' : 'En attente', activeBg: 'bg-amber-500 text-white border-transparent' },
@@ -689,17 +689,17 @@ export default function Paiements() {
           
           return (
             <div 
-              className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-center justify-center z-[999] p-4 cursor-pointer"
+              className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-start sm:items-center justify-center z-[999] p-2 sm:p-4 pt-2 sm:pt-4 cursor-pointer overflow-y-auto"
               onClick={() => setSelectedPaiement(null)}
             >
               <motion.div 
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[85vh] mt-16 flex flex-col overflow-hidden font-sans cursor-default"
+                className="mobile-safe-modal bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[calc(100dvh-1rem)] mt-0 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="p-6 bg-slate-50 border-b border-dashed border-slate-200 text-slate-800 relative flex-shrink-0">
+                <div className="p-4 sm:p-6 bg-slate-50 border-b border-dashed border-slate-200 text-slate-800 relative flex-shrink-0">
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">{isArabic ? 'تفاصيل السداد الرسمية' : 'REÇU DE FACTURATION'}</span>
@@ -716,7 +716,7 @@ export default function Paiements() {
                   <div className="absolute -bottom-2 -right-2 w-4 h-4 bg-slate-950 rounded-full" />
                 </div>
 
-                <div className="p-6 space-y-5 overflow-y-auto flex-1">
+                <div className="p-4 sm:p-6 space-y-5 overflow-y-auto flex-1 min-h-0">
                   <div>
                     <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider block mb-2">{isArabic ? 'المستلم والمعلومات العائلية' : 'Bénéficiaire / Élève'}</span>
                     <div className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-100 rounded-2xl">

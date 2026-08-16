@@ -65,7 +65,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
   return (
     <>
       <aside 
-        className={`w-72 ${isCollapsed ? 'lg:w-20' : 'lg:w-72'} bg-slate-900 text-slate-100 fixed h-screen top-0 shadow-2xl z-40 flex flex-col justify-between overflow-hidden select-none transition-all duration-300 ${
+        className={`w-[min(18rem,88vw)] ${isCollapsed ? 'lg:w-20' : 'lg:w-72'} bg-slate-900 text-slate-100 fixed h-[100dvh] top-0 shadow-2xl z-40 flex flex-col justify-between overflow-hidden overscroll-contain select-none transition-all duration-300 ${
           language === 'ar'
             ? 'right-0 border-l border-slate-800 ' + (isOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0')
             : 'left-0 border-r border-slate-800 ' + (isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0')
@@ -74,7 +74,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
         <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
         <div className="absolute bottom-16 left-0 w-32 h-32 bg-pink-500/10 rounded-full blur-2xl pointer-events-none" />
 
-        <div className={`border-b border-slate-800 transition-all duration-300 ${isCollapsed ? 'p-4 lg:p-3' : 'p-6'}`}>
+        <div className={`border-b border-slate-800 transition-all duration-300 ${isCollapsed ? 'p-4 lg:p-3' : 'p-4 lg:p-6'}`}>
           <div className={`flex items-center justify-between gap-3.5 ${isCollapsed ? 'lg:justify-center' : ''}`}>
             <div className="flex items-center gap-3.5 overflow-hidden">
               <div className="p-2.5 bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 rounded-2xl shadow-lg shadow-indigo-500/20 text-white flex-shrink-0 w-11 h-11 flex items-center justify-center overflow-hidden">
@@ -115,7 +115,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
           </div>
         </div>
 
-        <nav className={`flex-1 py-6 space-y-1.5 overflow-y-auto ${isCollapsed ? 'px-2 lg:px-2' : 'px-4'}`}>
+        <nav className={`flex-1 min-h-0 py-4 lg:py-6 space-y-1.5 overflow-y-auto ${isCollapsed ? 'px-2 lg:px-2' : 'px-3 lg:px-4'}`}>
           {items.map((item) => {
             const IconComponent = item.icon;
             const isActive = currentPage === item.key;
@@ -125,7 +125,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
                 id={`sidebar-tab-${item.key}`}
                 key={item.key} 
                 aria-label={getTabLabel(item.key, item.label)}
-                className={`relative group w-full flex items-center justify-between p-3.5 rounded-xl transition duration-150 cursor-pointer ${isCollapsed ? 'lg:justify-center' : ''} ${
+                className={`relative group w-full flex items-center justify-between p-3 lg:p-3.5 rounded-xl transition duration-150 cursor-pointer ${isCollapsed ? 'lg:justify-center' : ''} ${
                   isActive 
                     ? 'text-white' 
                     : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/40'
