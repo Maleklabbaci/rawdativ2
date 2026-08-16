@@ -69,7 +69,7 @@ import LanguageChoiceModal from './components/LanguageChoiceModal';
 import HelpCenterModal from './components/HelpCenterModal';
 
 function AppContent() {
-  const { isAuthenticated, user, creche, logout } = useAuth();
+  const { isAuthenticated, user, creche, logout, loading: authLoading } = useAuth();
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -78,7 +78,7 @@ function AppContent() {
   const [couponCode, setCouponCode] = useState('');
   const [showCouponInput, setShowCouponInput] = useState(false); // ✅ champ coupon replié par défaut, pour ne pas distraire du CTA principal // ✅ champ code coupon sur l'écran d'abonnement expiré
   const { language, setLanguage, t } = useLanguage();
-  const { loading, comptes } = useDb();
+  const { loading: dbLoading, comptes } = useDb();
   const isPublicAdmission = window.location.pathname.replace(/\/+$/, '') === '/admission';
 
   // ✅ Onboarding premier login : on vérifie une fois si le directeur a déjà rempli
@@ -173,12 +173,16 @@ function AppContent() {
 
   // Attendre la restauration de la session avant de décider si l’utilisateur est déconnecté.
   // Sans ce garde placé avant SignIn, chaque reload affichait brièvement l’écran de connexion.
-  if (loading) {
+  // La restauration Auth doit être terminée avant tout rendu de SignIn.
+  // Les données métier peuvent ensuite continuer à charger sans faire clignoter le login.
+  if (authLoading || (isAuthenticated && dbLoading)) {
     return (
       <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center gap-4">
         <School className="w-12 h-12 text-indigo-600 animate-bounce" />
         <p id="loading-text" className="text-sm font-bold text-slate-600 animate-pulse">
-          {language === 'ar' ? 'جاري استعادة جلسة روضتي...' : 'Restauration de votre session Rawdha+...'}
+          {authLoading
+            ? (language === 'ar' ? 'جاري استعادة جلسة روضتي...' : 'Restauration de votre session Rawdha+...')
+            : (language === 'ar' ? 'جاري تحميل بيانات روضتي...' : 'Chargement des données Rawdha+...')}
         </p>
       </div>
     );
