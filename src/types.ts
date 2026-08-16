@@ -248,6 +248,8 @@ export interface UserAccount {
   ville?: string;
   bio?: string;
   avatarUrl?: string;
+  /** Logo public de la crèche affiché dans Rawdha Connect. */
+  logoUrl?: string;
   siteWeb?: string;
   enfantId?: string;
 }
@@ -281,7 +283,10 @@ export interface CommunityPost {
   authorId: string;
   authorName: string;
   authorAvatarUrl?: string;
+  authorLogoUrl?: string;
   authorBio?: string;
+  authorVille?: string;
+  authorSiteWeb?: string;
   crecheId: string;
   nomCreche: string;
   categorie: CommunityPostCategory;
@@ -291,6 +296,23 @@ export interface CommunityPost {
   prix?: number;
   contact?: string;
   imageUrls?: string[];
+  /** Identifiant du post d’origine lorsqu’il s’agit d’une republication. */
+  originalPostId?: string;
+  /** Instantané minimal du post source pour garder une republication lisible. */
+  originalPost?: {
+    authorId?: string;
+    authorName?: string;
+        authorAvatarUrl?: string;
+        authorLogoUrl?: string;
+        authorVille?: string;
+        authorSiteWeb?: string;
+        nomCreche?: string;
+    categorie?: CommunityPostCategory;
+    titre?: string;
+    contenu?: string;
+    createdAt?: string;
+  };
+  repostComment?: string;
   statut: CommunityPostStatus;
   likesCount: number;
   createdAt: string;
@@ -303,6 +325,7 @@ export interface CommunityComment {
   authorId: string;
   authorName: string;
   authorAvatarUrl?: string;
+  authorLogoUrl?: string;
   authorBio?: string;
   crecheId: string;
   nomCreche: string;

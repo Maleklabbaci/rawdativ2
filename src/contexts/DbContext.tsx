@@ -101,7 +101,10 @@ function normalizeCommunityPost(post: Partial<CommunityPost> | null | undefined,
     authorId,
     authorName,
     authorAvatarUrl: optionalText(candidate.authorAvatarUrl),
+    authorLogoUrl: optionalText(candidate.authorLogoUrl),
     authorBio: optionalText(candidate.authorBio),
+    authorVille: optionalText(candidate.authorVille),
+    authorSiteWeb: optionalText(candidate.authorSiteWeb),
     crecheId: typeof candidate.crecheId === 'string' ? candidate.crecheId : authorId,
     nomCreche: typeof candidate.nomCreche === 'string' && candidate.nomCreche.trim() ? candidate.nomCreche : 'Crèche',
     categorie,
@@ -114,6 +117,9 @@ function normalizeCommunityPost(post: Partial<CommunityPost> | null | undefined,
     likesCount,
     createdAt,
     updatedAt: optionalText(candidate.updatedAt),
+    originalPostId: optionalText(candidate.originalPostId),
+    originalPost: candidate.originalPost && typeof candidate.originalPost === 'object' ? candidate.originalPost as CommunityPost['originalPost'] : undefined,
+    repostComment: optionalText(candidate.repostComment),
   } as CommunityPost;
 }
 
@@ -185,6 +191,7 @@ interface DbContextType {
   deleteSignalement: (id: string) => Promise<void>;
 
   addCommunityPost: (post: Omit<CommunityPost, 'id'>) => Promise<string>;
+  repostCommunityPost: (post: CommunityPost, comment?: string) => Promise<string>;
   updateCommunityPost: (id: string, post: Partial<CommunityPost>) => Promise<void>;
   deleteCommunityPost: (id: string) => Promise<void>;
   addCommunityComment: (comment: Omit<CommunityComment, 'id'>) => Promise<string>;
@@ -953,6 +960,42 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const repostCommunityPost = async (sourcePost: CommunityPost, comment?: string) => {
+    if (!user) throw new Error('Session requise');
+    const repostData: Omit<CommunityPost, 'id'> = {
+      authorId: user.id,
+      authorName: `${user.prenom || ''} ${user.nom || ''}`.trim() || user.email,
+      authorAvatarUrl: user.avatarUrl || undefined,
+      authorLogoUrl: user.logoUrl || undefined,
+      authorBio: user.bio || undefined,
+      authorVille: user.ville || undefined,
+      authorSiteWeb: user.siteWeb || undefined,
+      crecheId: user.id,
+      nomCreche: user.nomCreche || 'Crèche',
+      categorie: sourcePost.categorie,
+      contenu: comment?.trim() || `Je republie la publication de ${sourcePost.authorName}.`,
+      statut: 'publie',
+      likesCount: 0,
+      createdAt: new Date().toISOString(),
+      originalPostId: sourcePost.originalPostId || sourcePost.id,
+      originalPost: {
+        authorId: sourcePost.originalPost?.authorId || sourcePost.authorId,
+        authorName: sourcePost.originalPost?.authorName || sourcePost.authorName,
+        authorAvatarUrl: sourcePost.originalPost?.authorAvatarUrl || sourcePost.authorAvatarUrl,
+        authorLogoUrl: sourcePost.originalPost?.authorLogoUrl || sourcePost.authorLogoUrl,
+        authorVille: sourcePost.originalPost?.authorVille || sourcePost.authorVille,
+        authorSiteWeb: sourcePost.originalPost?.authorSiteWeb || sourcePost.authorSiteWeb,
+        nomCreche: sourcePost.originalPost?.nomCreche || sourcePost.nomCreche,
+        categorie: sourcePost.originalPost?.categorie || sourcePost.categorie,
+        titre: sourcePost.originalPost?.titre || sourcePost.titre,
+        contenu: sourcePost.originalPost?.contenu || sourcePost.contenu,
+        createdAt: sourcePost.originalPost?.createdAt || sourcePost.createdAt,
+      },
+      repostComment: comment?.trim() || undefined,
+    };
+    return addCommunityPost(repostData);
+  };
+
   const updateCommunityPost = async (id: string, data: Partial<CommunityPost>) => {
     const previous = communityPosts.find(item => item.id === id);
     setCommunityPosts(prev => prev.map(item => item.id === id ? normalizeCommunityPost({ ...item, ...data }) : item));
@@ -1269,6 +1312,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       updateSignalement,
       deleteSignalement,
       addCommunityPost,
+      repostCommunityPost,
       updateCommunityPost,
       deleteCommunityPost,
       addCommunityComment,
