@@ -149,7 +149,10 @@ export default function CommandCenter({
     });
 
     const presents = activeChildren.filter(enfant => statusByChild.get(enfant.id) === 'Présent').length;
-    const absents = Math.max(0, activeChildren.length - presents);
+    const absents = activeChildren.filter(enfant => {
+      const status = statusByChild.get(enfant.id);
+      return status === 'Absent justifié' || status === 'Absent non justifié';
+    }).length;
     const attendanceRate = activeChildren.length > 0 ? Math.round((presents / activeChildren.length) * 100) : 0;
 
     return {
