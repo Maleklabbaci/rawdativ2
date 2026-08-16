@@ -1,5 +1,5 @@
 
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy, Suspense, type ComponentType } from 'react';
 import { School, LogOut, Menu, CircleHelp, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Network } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -10,20 +10,53 @@ import Dashboard from './components/Dashboard';
 import Sidebar from './components/Sidebar';
 // ✅ FIX (bundle size): ces pages ne sont chargées que quand l'utilisateur y navigue
 // réellement, au lieu d'être toutes téléchargées dès le login (chunk unique 962 Ko avant).
-const Enfants = lazy(() => import('./components/Enfants'));
-const Classes = lazy(() => import('./components/Classes'));
-const Presences = lazy(() => import('./components/Presences'));
-const Paiements = lazy(() => import('./components/Paiements'));
-const Personnel = lazy(() => import('./components/Personnel'));
-const Activites = lazy(() => import('./components/Activites'));
-const Repas = lazy(() => import('./components/Repas'));
-const Parametres = lazy(() => import('./components/Parametres'));
-const Comptes = lazy(() => import('./components/Comptes'));
-const Notifications = lazy(() => import('./components/Notifications'));
-const CommunicationAdmin = lazy(() => import('./components/CommunicationAdmin'));
-const Rapports = lazy(() => import('./components/Rapports'));
-const Admissions = lazy(() => import('./components/Admissions'));
-const Community = lazy(() => import('./components/Community'));
+// ✅ Récupération des chunks périmés : un onglet ouvert avant un déploiement peut
+// conserver l'ancien index.js et demander un fichier hashé qui n'existe plus.
+const CHUNK_RELOAD_KEY = 'rawdha_chunk_reload_once';
+
+const reloadForStaleChunk = () => {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (sessionStorage.getItem(CHUNK_RELOAD_KEY) === '1') return false;
+    sessionStorage.setItem(CHUNK_RELOAD_KEY, '1');
+    const refreshedUrl = new URL(window.location.href);
+    refreshedUrl.searchParams.set('__rawdha_refresh', String(Date.now()));
+    window.location.replace(refreshedUrl.toString());
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const lazyWithRecovery = <T extends ComponentType<any>>(loader: () => Promise<{ default: T }>) =>
+  lazy(async () => {
+    try {
+      const module = await loader();
+      if (typeof window !== 'undefined') sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+      return module;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('Failed to fetch dynamically imported module') && reloadForStaleChunk()) {
+        return new Promise<{ default: T }>(() => {});
+      }
+      throw error;
+    }
+  });
+
+const Enfants = lazyWithRecovery(() => import('./components/Enfants'));
+const Classes = lazyWithRecovery(() => import('./components/Classes'));
+const Presences = lazyWithRecovery(() => import('./components/Presences'));
+const Paiements = lazyWithRecovery(() => import('./components/Paiements'));
+const Personnel = lazyWithRecovery(() => import('./components/Personnel'));
+const Activites = lazyWithRecovery(() => import('./components/Activites'));
+const Repas = lazyWithRecovery(() => import('./components/Repas'));
+const Parametres = lazyWithRecovery(() => import('./components/Parametres'));
+const Comptes = lazyWithRecovery(() => import('./components/Comptes'));
+const Notifications = lazyWithRecovery(() => import('./components/Notifications'));
+const CommunicationAdmin = lazyWithRecovery(() => import('./components/CommunicationAdmin'));
+const Rapports = lazyWithRecovery(() => import('./components/Rapports'));
+const Admissions = lazyWithRecovery(() => import('./components/Admissions'));
+const Community = lazyWithRecovery(() => import('./components/Community'));
 import PublicAdmission from './components/PublicAdmission';
 import NotificationBell from './components/NotificationBell';
 import SubscriptionStatusBadge from './components/SubscriptionStatusBadge';
