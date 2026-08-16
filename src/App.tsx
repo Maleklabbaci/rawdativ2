@@ -93,11 +93,20 @@ function AppContent() {
       const languageKey = `rawdha_language_selected_${user.id}`;
       const introCompletedKey = `rawdha_director_intro_completed_v2_${user.id}`;
       const welcomeSeen = localStorage.getItem(welcomeKey) === '1';
-      const languageSelected = localStorage.getItem(languageKey) === '1';
+      const accountLanguageSelected = localStorage.getItem(languageKey) === '1';
+      // Les anciennes versions stockaient la langue sans identifiant de compte.
+      // Une valeur valide dans cette clé globale signifie que cet ancien
+      // compte a déjà dépassé l’écran de choix de langue.
+      const globalLanguage = localStorage.getItem('rawdha_language');
+      const globalLanguageSelected = globalLanguage === 'fr' || globalLanguage === 'ar';
+      const languageSelected = accountLanguageSelected || globalLanguageSelected;
       const introCompleted = localStorage.getItem(introCompletedKey) === '1' || (welcomeSeen && languageSelected);
 
-      // Migration des anciennes clés : si les deux écrans ont déjà été vus,
-      // on les considère définitivement terminés pour éviter leur réapparition.
+      // Migration des anciennes clés : on recopie l’état global sur le compte
+      // courant afin que la fenêtre ne réapparaisse plus à la prochaine connexion.
+      if (globalLanguageSelected && !accountLanguageSelected) {
+        localStorage.setItem(languageKey, '1');
+      }
       if (introCompleted) {
         localStorage.setItem(introCompletedKey, '1');
       }

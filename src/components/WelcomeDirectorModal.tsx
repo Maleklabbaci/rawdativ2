@@ -85,7 +85,7 @@ export default function WelcomeDirectorModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[110] bg-slate-950/65 backdrop-blur-md flex items-start sm:items-center justify-center overflow-y-auto p-2 sm:p-6"
+        className="fixed inset-0 z-[110] flex items-stretch justify-center overflow-hidden bg-slate-950/65 backdrop-blur-md sm:items-center sm:overflow-y-auto sm:p-6"
         dir={isArabic ? 'rtl' : 'ltr'}
         role="dialog"
         aria-modal="true"
@@ -95,7 +95,7 @@ export default function WelcomeDirectorModal({
           initial={{ opacity: 0, y: 24, scale: 0.97 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-          className="relative my-2 w-full max-w-4xl max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-[1.5rem] bg-white shadow-2xl shadow-indigo-950/30 sm:my-0 sm:max-h-[94vh] sm:rounded-[2rem]"
+          className="relative my-0 h-[100dvh] max-h-[100dvh] w-full max-w-4xl overflow-y-auto rounded-none bg-white shadow-2xl shadow-indigo-950/30 sm:my-0 sm:h-auto sm:max-h-[94vh] sm:rounded-[2rem]"
         >
           <button
             type="button"
@@ -106,7 +106,7 @@ export default function WelcomeDirectorModal({
             <X className="w-5 h-5" />
           </button>
 
-          <div className="relative overflow-hidden bg-gradient-to-br from-indigo-700 via-violet-600 to-fuchsia-600 px-4 py-6 sm:px-10 sm:py-10 text-white">
+          <div className="relative overflow-hidden bg-gradient-to-br from-indigo-700 via-violet-600 to-fuchsia-600 px-4 pb-5 pt-[max(1.25rem,env(safe-area-inset-top))] sm:px-10 sm:py-10 text-white">
             <div className="absolute -top-20 ltr:-right-10 rtl:-left-10 w-56 h-56 rounded-full bg-white/10" />
             <div className="absolute -bottom-28 ltr:left-1/3 rtl:right-1/3 w-72 h-72 rounded-full bg-fuchsia-300/10" />
             <div className="relative flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
@@ -140,7 +140,7 @@ export default function WelcomeDirectorModal({
               </div>
             </div>
 
-            <div className="relative mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-white/20 bg-white/12 p-4 backdrop-blur-sm">
+            <div className="relative mt-5 flex flex-col gap-3 rounded-2xl border border-white/20 bg-white/12 p-3.5 backdrop-blur-sm sm:mt-8 sm:flex-row sm:items-center sm:justify-between sm:p-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-300 text-amber-900 shadow-lg shadow-amber-950/10">
                   <CalendarDays className="h-5 w-5" />
@@ -157,7 +157,7 @@ export default function WelcomeDirectorModal({
             </div>
           </div>
 
-          <div className="space-y-6 p-4 sm:space-y-8 sm:p-8">
+          <div className="space-y-5 p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:space-y-8 sm:p-8">
             <section>
               <div className="mb-4 flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">

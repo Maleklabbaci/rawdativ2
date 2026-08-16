@@ -7,14 +7,14 @@ interface LanguageChoiceModalProps {
 
 export default function LanguageChoiceModal({ onChoose }: LanguageChoiceModalProps) {
   return (
-    <div className="fixed inset-0 z-[130] flex items-start justify-center overflow-y-auto bg-slate-950/80 p-3 backdrop-blur-md sm:items-center sm:p-4" dir="ltr" role="dialog" aria-modal="true" aria-labelledby="language-choice-title">
+    <div className="fixed inset-0 z-[130] flex items-stretch justify-center overflow-hidden bg-slate-950/80 backdrop-blur-md sm:items-center sm:overflow-y-auto sm:p-4" dir="ltr" role="dialog" aria-modal="true" aria-labelledby="language-choice-title">
       <motion.div
         initial={{ opacity: 0, y: 24, scale: 0.96 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-        className="my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-[1.5rem] bg-white shadow-2xl shadow-indigo-950/40 sm:rounded-[2rem]"
+        className="my-0 h-[100dvh] max-h-[100dvh] w-full max-w-2xl overflow-y-auto rounded-none bg-white shadow-2xl shadow-indigo-950/40 sm:my-auto sm:h-auto sm:max-h-[calc(100dvh-2rem)] sm:rounded-[2rem]"
       >
-        <div className="relative overflow-hidden bg-gradient-to-br from-indigo-700 via-violet-600 to-fuchsia-600 px-4 py-6 text-center text-white sm:px-10 sm:py-10">
+        <div className="relative overflow-hidden bg-gradient-to-br from-indigo-700 via-violet-600 to-fuchsia-600 px-4 pb-6 pt-[max(1.5rem,env(safe-area-inset-top))] text-center text-white sm:px-10 sm:py-10">
           <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/10" />
           <div className="absolute -bottom-32 -left-10 h-64 w-64 rounded-full bg-fuchsia-300/10" />
           <div className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-white/15 shadow-lg backdrop-blur-sm">
@@ -32,7 +32,7 @@ export default function LanguageChoiceModal({ onChoose }: LanguageChoiceModalPro
           </p>
         </div>
 
-        <div className="grid gap-3 p-4 sm:grid-cols-2 sm:gap-4 sm:p-8">
+        <div className="grid gap-3 p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:grid-cols-2 sm:gap-4 sm:p-8">
           <button
             type="button"
             onClick={() => onChoose('fr')}
