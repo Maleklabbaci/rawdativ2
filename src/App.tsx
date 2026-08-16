@@ -283,9 +283,7 @@ function AppContent() {
     const pageName = pageTitleKeys[currentPage]
       ? t(pageTitleKeys[currentPage])
       : fallbackPageTitles[currentPage] || 'RAWDHA+';
-    document.title = currentPage === 'dashboard'
-      ? (creche?.nom ? `${creche.nom} — RAWDHA+` : 'RAWDHA+')
-      : `${pageName} — RAWDHA+`;
+    document.title = `${pageName} — RAWDHA+`;
   }, [creche?.logoUrl, creche?.nom, currentPage, language, t]);
 
   if (isPublicAdmission) {
