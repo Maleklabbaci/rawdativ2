@@ -656,7 +656,7 @@ export default function PresencesPage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md overflow-hidden cursor-default"
+              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-h-none sm:overflow-hidden cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
@@ -674,7 +674,7 @@ export default function PresencesPage() {
               </div>
 
               {/* Form Body */}
-              <div className="p-6 space-y-4">
+              <div className="p-4 sm:p-6 space-y-4">
                 
                 {/* Type de justification */}
                 <div>
@@ -720,10 +720,10 @@ export default function PresencesPage() {
               </div>
 
               {/* Actions Footer */}
-              <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
+              <div className="p-4 sm:p-6 bg-slate-50 border-t border-slate-100 flex flex-col gap-3 sm:flex-row">
                 <button
                   onClick={() => setShowAbsenceModal(false)}
-                  className="flex-1 py-3 bg-slate-200 hover:bg-slate-300 rounded-xl font-bold text-slate-700 transition cursor-pointer text-xs"
+                  className="w-full sm:flex-1 py-3 bg-slate-200 hover:bg-slate-300 rounded-xl font-bold text-slate-700 transition cursor-pointer text-xs"
                 >
                   {t('common.cancel')}
                 </button>
@@ -753,11 +753,11 @@ export default function PresencesPage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md overflow-hidden cursor-default"
+              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-h-none sm:overflow-hidden cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="p-6 bg-emerald-600 text-white flex justify-between items-center">
+              <div className="p-4 sm:p-6 bg-emerald-600 text-white flex justify-between items-center">
                 <div>
                   <h3 className="text-lg font-black">{isArabic ? 'مؤشرات يوم الحضور' : 'Indicateurs de Présence'}</h3>
                   <p className="text-xs text-emerald-100 mt-0.5">{isArabic ? 'مراقبة المعايير الصحية والمزاج والأكل' : 'Saisir les observations santé, repas et humeur'}</p>
@@ -771,7 +771,7 @@ export default function PresencesPage() {
               </div>
 
               {/* Form Body */}
-              <div className="p-6 space-y-4">
+              <div className="p-4 sm:p-6 space-y-4">
                 
                 {/* Température */}
                 <div>
@@ -786,7 +786,7 @@ export default function PresencesPage() {
                 </div>
 
                 {/* Heures Arrivée & Départ */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{isArabic ? 'وقت الدخول' : 'Heure d\'arrivée'}</label>
                     <input
@@ -810,7 +810,7 @@ export default function PresencesPage() {
                 </div>
 
                 {/* Repas & Humeur */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{isArabic ? 'الوجبة' : 'Repas mangé'}</label>
                     <select
@@ -842,10 +842,10 @@ export default function PresencesPage() {
               </div>
 
               {/* Actions Footer */}
-              <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
+              <div className="p-4 sm:p-6 bg-slate-50 border-t border-slate-100 flex flex-col gap-3 sm:flex-row">
                 <button
                   onClick={() => setShowPresenceDetailsModal(false)}
-                  className="flex-1 py-3 bg-slate-200 hover:bg-slate-300 rounded-xl font-bold text-slate-700 transition cursor-pointer text-xs"
+                  className="w-full sm:flex-1 py-3 bg-slate-200 hover:bg-slate-300 rounded-xl font-bold text-slate-700 transition cursor-pointer text-xs"
                 >
                   {t('common.cancel')}
                 </button>

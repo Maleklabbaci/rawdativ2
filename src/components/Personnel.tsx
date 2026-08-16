@@ -290,17 +290,17 @@ export default function Personnel() {
       <AnimatePresence>
         {showModal && (
           <div 
-            className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-center justify-center z-[999] p-4 cursor-pointer"
+            className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-start sm:items-center justify-center z-[999] p-2 sm:p-4 overflow-y-auto cursor-pointer"
             onClick={() => setShowModal(false)}
           >
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[85vh] mt-16 flex flex-col overflow-hidden font-sans cursor-default"
+              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[calc(100dvh-1rem)] sm:max-h-[85vh] mt-2 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
+              <div className="p-4 sm:p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
                 <div>
                   <h3 className="text-xl font-black">{isArabic ? 'إضافة عضو جديد وتعيينه' : 'Nouveau Dossier Personnel'}</h3>
                   <p className="text-xs text-indigo-100 mt-0.5">{isArabic ? 'تعبئة معلومات الحساب، بطاقة الاتصال، المسؤولية والبيانات الصحية للموظف' : 'Fiche d\'embauche, coordonnées, poste et groupe sanguin'}</p>
@@ -313,10 +313,10 @@ export default function Personnel() {
                 </button>
               </div>
 
-              <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
                 
                 {/* Last Name & First Name (Row 1) */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
                       {isArabic ? 'اللقب *' : 'Nom de famille *'}
@@ -516,7 +516,7 @@ export default function Personnel() {
       <AnimatePresence>
         {selectedPersonnel && (
           <div 
-            className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-center justify-center z-[999] p-4 cursor-pointer"
+            className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-start sm:items-center justify-center z-[999] p-2 sm:p-4 overflow-y-auto cursor-pointer"
             onClick={() => setSelectedPersonnel(null)}
           >
             <motion.div 
@@ -545,7 +545,7 @@ export default function Personnel() {
                 </button>
               </div>
 
-              <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
                 {/* Contact Coordinates */}
                 <div>
                   <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider block mb-2">{isArabic ? 'معلومات الاتصال المباشرة' : 'Coordonnées de l\'employé'}</span>
@@ -568,7 +568,7 @@ export default function Personnel() {
                 </div>
 
                 {/* Assignment & Health specs */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
                   <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
                     <span className="text-[9px] font-bold text-slate-400 uppercase block tracking-wider mb-1">{isArabic ? 'القسم المسؤول' : 'Classe Affectée'}</span>
                     <span className="font-extrabold text-slate-800 text-xs">{selectedPersonnel.classeAssignee}</span>

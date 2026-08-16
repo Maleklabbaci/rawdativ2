@@ -85,7 +85,7 @@ export default function WelcomeDirectorModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[110] bg-slate-950/65 backdrop-blur-md flex items-center justify-center p-3 sm:p-6"
+        className="fixed inset-0 z-[110] bg-slate-950/65 backdrop-blur-md flex items-start sm:items-center justify-center overflow-y-auto p-2 sm:p-6"
         dir={isArabic ? 'rtl' : 'ltr'}
         role="dialog"
         aria-modal="true"
@@ -95,7 +95,7 @@ export default function WelcomeDirectorModal({
           initial={{ opacity: 0, y: 24, scale: 0.97 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-          className="relative w-full max-w-4xl max-h-[94vh] overflow-y-auto rounded-[2rem] bg-white shadow-2xl shadow-indigo-950/30"
+          className="relative my-2 w-full max-w-4xl max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-[1.5rem] bg-white shadow-2xl shadow-indigo-950/30 sm:my-0 sm:max-h-[94vh] sm:rounded-[2rem]"
         >
           <button
             type="button"
@@ -106,7 +106,7 @@ export default function WelcomeDirectorModal({
             <X className="w-5 h-5" />
           </button>
 
-          <div className="relative overflow-hidden bg-gradient-to-br from-indigo-700 via-violet-600 to-fuchsia-600 px-6 py-8 sm:px-10 sm:py-10 text-white">
+          <div className="relative overflow-hidden bg-gradient-to-br from-indigo-700 via-violet-600 to-fuchsia-600 px-4 py-6 sm:px-10 sm:py-10 text-white">
             <div className="absolute -top-20 ltr:-right-10 rtl:-left-10 w-56 h-56 rounded-full bg-white/10" />
             <div className="absolute -bottom-28 ltr:left-1/3 rtl:right-1/3 w-72 h-72 rounded-full bg-fuchsia-300/10" />
             <div className="relative flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
@@ -115,7 +115,7 @@ export default function WelcomeDirectorModal({
                   <Sparkles className="h-3.5 w-3.5" />
                   {content.eyebrow}
                 </div>
-                <h1 id="welcome-director-title" className="mt-5 text-3xl sm:text-4xl font-black tracking-tight leading-tight">
+                <h1 id="welcome-director-title" className="mt-4 text-2xl font-black tracking-tight leading-tight sm:mt-5 sm:text-4xl">
                   {content.title}
                 </h1>
                 <p className="mt-3 max-w-xl text-sm sm:text-base leading-relaxed text-indigo-100">
@@ -157,7 +157,7 @@ export default function WelcomeDirectorModal({
             </div>
           </div>
 
-          <div className="space-y-8 p-5 sm:p-8">
+          <div className="space-y-6 p-4 sm:space-y-8 sm:p-8">
             <section>
               <div className="mb-4 flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
@@ -211,7 +211,7 @@ export default function WelcomeDirectorModal({
               <button
                 type="button"
                 onClick={onDone}
-                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 cursor-pointer"
+                className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white sm:w-auto shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 cursor-pointer"
               >
                 {content.cta}
                 <ArrowRight className="h-4 w-4 rtl:rotate-180" />

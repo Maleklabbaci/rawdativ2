@@ -131,3 +131,30 @@ textarea {
     }
   }
 }
+
+/* Touch targets for the phone experience: compact but reliable, without changing desktop. */
+button,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+@media (max-width: 639px) {
+  button,
+  [role="button"] {
+    min-height: 2.5rem;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  .mobile-icon-button {
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}

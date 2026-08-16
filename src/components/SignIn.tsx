@@ -33,7 +33,7 @@ function formatAuthError(message: string | null, fallback: string): string {
   return message;
 }
 
-const inputClass = 'w-full px-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all font-medium text-slate-800 bg-white';
+const inputClass = 'w-full px-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all font-medium text-base sm:text-sm text-slate-800 bg-white';
 const iconInputClass = `${inputClass} pl-10`;
 
 export default function SignIn() {
@@ -150,8 +150,8 @@ export default function SignIn() {
   };
 
   return (
-    <div className="min-h-screen bg-[#fcfdff] flex flex-col lg:flex-row font-sans">
-      <div className="lg:w-[46%] bg-gradient-to-tr from-amber-400 via-rose-400 to-indigo-600 relative overflow-hidden flex flex-col justify-between p-8 lg:p-16 text-white select-none">
+    <div className="min-h-[100dvh] w-full min-w-0 overflow-x-hidden bg-[#fcfdff] flex flex-col lg:flex-row font-sans">
+      <div className="lg:w-[46%] bg-gradient-to-tr from-amber-400 via-rose-400 to-indigo-600 relative overflow-hidden flex flex-col justify-between p-5 sm:p-8 lg:p-16 text-white select-none">
         <div className="absolute -top-12 -left-12 w-64 h-64 bg-white/10 rounded-full blur-2xl" />
         <div className="absolute -bottom-20 -right-20 w-96 h-96 bg-white/15 rounded-full blur-3xl animate-pulse" />
 
@@ -165,15 +165,15 @@ export default function SignIn() {
           </div>
         </div>
 
-        <div className="relative my-auto space-y-6 max-w-md py-16">
+        <div className="relative my-auto space-y-4 sm:space-y-6 max-w-md py-8 sm:py-16">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/15 backdrop-blur-md text-xs font-semibold rounded-full border border-white/20">
             <Sparkles className="w-3.5 h-3.5 text-amber-200" />
             <span>Gestion de crèche de nouvelle génération</span>
           </div>
-          <h1 className="text-4xl lg:text-5xl font-extrabold tracking-tight leading-none font-display">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight leading-none font-display">
             L’excellence dans la gestion de votre crèche.
           </h1>
-          <p className="text-white/90 text-lg leading-relaxed">
+          <p className="text-white/90 text-sm sm:text-lg leading-relaxed">
             Présences, enfants, équipe, activités, repas et facturation réunis dans un espace clair et sécurisé.
           </p>
           <div className="grid gap-3 text-sm text-white/90">
@@ -189,17 +189,17 @@ export default function SignIn() {
         </div>
       </div>
 
-      <div className="lg:w-[54%] flex items-center justify-center p-6 sm:p-8 lg:p-16">
-        <div className="w-full max-w-xl space-y-7 animate-slide-up">
+      <div className="lg:w-[54%] min-w-0 flex items-center justify-center p-4 sm:p-8 lg:p-16">
+        <div className="w-full max-w-xl min-w-0 space-y-5 sm:space-y-7 animate-slide-up">
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-indigo-600 font-bold text-sm">
               <Building className="w-4 h-4" />
               <span>ESPACE DIRECTEUR ET GESTION</span>
             </div>
-            <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
               {view === 'signin' ? 'Connectez-vous' : 'Demander un accès Rawdha+'}
             </h2>
-            <p className="text-slate-500 leading-relaxed">
+            <p className="text-sm sm:text-base text-slate-500 leading-relaxed">
               {view === 'signin'
                 ? 'Utilisez l’adresse e-mail et le mot de passe choisis lors de votre inscription.'
                 : 'Créez vos identifiants dès maintenant. L’administrateur ne fera ensuite que valider ou refuser votre demande.'}
@@ -255,7 +255,7 @@ export default function SignIn() {
             </form>
           ) : (
             <form onSubmit={handleSubmitRequest} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Prénom *</label>
                   <div className="relative">
@@ -275,7 +275,7 @@ export default function SignIn() {
                   <input type="email" value={directorEmail} onChange={(event) => setDirectorEmail(event.target.value)} className={iconInputClass} placeholder="direction@creche.dz" required />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Nom de la crèche *</label>
                   <div className="relative">
@@ -298,7 +298,7 @@ export default function SignIn() {
                   <textarea value={directorAddress} onChange={(event) => setDirectorAddress(event.target.value)} rows={2} className={`${inputClass} pl-10 resize-none`} placeholder="Adresse complète" required />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Mot de passe *</label>
                   <div className="relative">
@@ -314,7 +314,7 @@ export default function SignIn() {
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Site web</label>
                   <div className="relative">
@@ -330,7 +330,7 @@ export default function SignIn() {
                   </div>
                 </div>
               </div>
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 leading-relaxed">
+              <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 leading-relaxed">
                 Votre mot de passe est géré de façon sécurisée par Supabase et n’est jamais envoyé à l’administrateur. Après acceptation, vous pourrez vous connecter immédiatement avec vos identifiants.
               </div>
               <button type="submit" disabled={loading} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-indigo-100 transition flex items-center justify-center gap-2 shadow-md disabled:opacity-50">

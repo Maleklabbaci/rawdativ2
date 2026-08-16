@@ -62,13 +62,13 @@ export default function OnboardingCrecheModal({ onDone }: { onDone: () => void }
   const labelClass = "text-xs font-semibold text-slate-600 mb-1 block";
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[calc(100dvh-1rem)] sm:max-h-[90vh] overflow-y-auto"
       >
-        <div className="p-6 border-b border-slate-100">
+        <div className="p-4 sm:p-6 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
               <Building2 className="w-5 h-5 text-indigo-600" />
@@ -84,8 +84,8 @@ export default function OnboardingCrecheModal({ onDone }: { onDone: () => void }
           </div>
         </div>
 
-        <div className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+        <div className="p-4 sm:p-6 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelClass}><User className="w-3.5 h-3.5 inline mr-1" />{isFrench ? 'Prénom *' : 'الاسم الأول *'}</label>
               <input className={inputClass} value={prenom} onChange={e => setPrenom(e.target.value)} />
@@ -101,7 +101,7 @@ export default function OnboardingCrecheModal({ onDone }: { onDone: () => void }
             <input className={inputClass} value={nomCreche} onChange={e => setNomCreche(e.target.value)} placeholder={isFrench ? 'Ex: Crèche Les Marguerites' : ''} />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelClass}><DollarSign className="w-3.5 h-3.5 inline mr-1" />{isFrench ? 'Tarif mensuel (DA) *' : 'الرسوم الشهرية *'}</label>
               <input className={inputClass} type="number" value={tarif} onChange={e => setTarif(e.target.value)} />
@@ -117,7 +117,7 @@ export default function OnboardingCrecheModal({ onDone }: { onDone: () => void }
             <input className={inputClass} value={adresse} onChange={e => setAdresse(e.target.value)} />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelClass}><Mail className="w-3.5 h-3.5 inline mr-1" />{isFrench ? 'Email (si dispo)' : 'البريد الإلكتروني'}</label>
               <input className={inputClass} type="email" value={email} onChange={e => setEmail(e.target.value)} />
@@ -131,7 +131,7 @@ export default function OnboardingCrecheModal({ onDone }: { onDone: () => void }
           {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
         </div>
 
-        <div className="p-6 pt-0">
+        <div className="p-4 sm:p-6 sm:pt-0">
           <button
             onClick={handleSubmit}
             disabled={saving}

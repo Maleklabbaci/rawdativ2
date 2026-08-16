@@ -152,9 +152,9 @@ export default function PublicAdmission() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 px-4 py-8 text-slate-900" dir={isAr ? 'rtl' : 'ltr'}>
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-6 flex items-center justify-between gap-4 text-white">
+    <div className="min-h-[100dvh] w-full min-w-0 overflow-x-hidden bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 px-3 py-4 sm:px-4 sm:py-8 text-slate-900" dir={isAr ? 'rtl' : 'ltr'}>
+      <div className="mx-auto w-full max-w-5xl min-w-0">
+        <div className="mb-4 flex flex-col items-stretch gap-3 text-white sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="flex items-center gap-3">
             {context?.logoUrl ? <img src={context.logoUrl} alt="Logo" className="h-12 w-12 rounded-2xl bg-white object-contain p-1" /> : <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500"><Baby className="h-6 w-6" /></div>}
             <div>
@@ -163,7 +163,7 @@ export default function PublicAdmission() {
               {context?.adresse && <p className="text-xs text-indigo-200">{context.adresse}</p>}
             </div>
           </div>
-          <div className="flex rounded-xl border border-white/15 bg-white/10 p-1 text-xs font-bold backdrop-blur">
+          <div className="flex self-end rounded-xl border border-white/15 bg-white/10 p-1 text-xs font-bold backdrop-blur sm:self-auto">
             <button type="button" onClick={() => setLanguage('fr')} className={`rounded-lg px-3 py-2 ${!isAr ? 'bg-white text-indigo-700' : 'text-white'}`}>FR</button>
             <button type="button" onClick={() => setLanguage('ar')} className={`rounded-lg px-3 py-2 ${isAr ? 'bg-white text-indigo-700' : 'text-white'}`}>عربي</button>
           </div>
@@ -185,9 +185,9 @@ export default function PublicAdmission() {
         ) : (
           <form onSubmit={submit} className="overflow-hidden rounded-3xl bg-white shadow-2xl">
             <div className="bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-7 text-white sm:px-10">
-              <div className="flex items-start gap-4"><ShieldCheck className="mt-1 h-7 w-7 shrink-0 text-indigo-100" /><div><h2 className="text-2xl font-black">{title}</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100">{subtitle}</p></div></div>
+              <div className="flex items-start gap-4"><ShieldCheck className="mt-1 h-7 w-7 shrink-0 text-indigo-100" /><div><h2 className="text-xl font-black sm:text-2xl">{title}</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100">{subtitle}</p></div></div>
             </div>
-            <div className="space-y-8 p-5 sm:p-10">
+            <div className="space-y-7 p-4 sm:space-y-8 sm:p-10">
               {error && <div className="flex items-center gap-2 rounded-2xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
 
               <section>
@@ -232,7 +232,7 @@ export default function PublicAdmission() {
                 <p className="mb-4 text-xs leading-5 text-slate-500">{isAr ? 'يمكنكم تحديد الوثائق المتوفرة وإرفاقها. الحد الأقصى لكل ملف 2 ميغابايت.' : 'Cochez les pièces disponibles et joignez-les si vous le souhaitez. Limite de 2 Mo par fichier.'}</p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {(Object.keys(labels) as DocumentKey[]).map(key => (
-                    <label key={key} className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 p-4 transition hover:border-indigo-300 hover:bg-indigo-50/40">
+                    <label key={key} className="flex min-w-0 cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 p-3.5 transition hover:border-indigo-300 hover:bg-indigo-50/40 sm:items-center sm:p-4">
                       <input type="checkbox" checked={form.documentsRequis[key]} onChange={e => updateField('documentsRequis', { ...form.documentsRequis, [key]: e.target.checked })} className="h-4 w-4 accent-indigo-600" />
                       <span className="flex-1 text-sm font-semibold text-slate-700">{labels[key]}</span>
                       <span className="relative cursor-pointer rounded-xl bg-indigo-50 p-2 text-indigo-600 hover:bg-indigo-100" title={isAr ? 'إرفاق ملف' : 'Joindre un fichier'}><Upload className="h-4 w-4" /><input type="file" accept="image/*,.pdf" onChange={e => handleFile(key, e.target.files?.[0])} className="absolute inset-0 cursor-pointer opacity-0" /></span>
@@ -244,7 +244,7 @@ export default function PublicAdmission() {
 
               <div className="flex flex-col gap-3 border-t border-slate-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
                 <p className="max-w-md text-xs leading-5 text-slate-500">{isAr ? 'لن يتم قبول الطفل تلقائياً. ستراجع إدارة الروضة الطلب أولاً.' : "L'enfant ne sera pas ajouté automatiquement. La direction vérifiera d'abord la demande."}</p>
-                <button type="submit" disabled={submitting} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3.5 text-sm font-black text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"><Send className="h-4 w-4" />{submitting ? (isAr ? 'جاري الإرسال...' : 'Envoi en cours...') : (isAr ? 'إرسال الطلب' : 'Envoyer la demande')}</button>
+                <button type="submit" disabled={submitting} className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3.5 text-sm font-black text-white sm:w-auto shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"><Send className="h-4 w-4" />{submitting ? (isAr ? 'جاري الإرسال...' : 'Envoi en cours...') : (isAr ? 'إرسال الطلب' : 'Envoyer la demande')}</button>
               </div>
             </div>
           </form>

@@ -101,19 +101,19 @@ export default function Rapports() {
             {isArabic ? 'ملخص موثوق مبني على البيانات المسجلة في المنصة.' : 'Une synthèse fiable, calculée uniquement à partir des données enregistrées.'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => changeMonth(-1)} className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:border-indigo-300 cursor-pointer" aria-label="Mois précédent">
+        <div className="flex w-full items-center justify-between gap-2 sm:w-auto">
+          <button onClick={() => changeMonth(-1)} className="flex h-10 w-10 shrink-0 items-center justify-center p-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:border-indigo-300 cursor-pointer" aria-label="Mois précédent">
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <div className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-800 min-w-36 text-center capitalize">
+          <div className="min-w-0 flex-1 px-2 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-800 sm:min-w-36 text-center capitalize truncate">
             {selectedMonthLabel}
           </div>
-          <button onClick={() => changeMonth(1)} className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:border-indigo-300 cursor-pointer" aria-label="Mois suivant">
+          <button onClick={() => changeMonth(1)} className="flex h-10 w-10 shrink-0 items-center justify-center p-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:border-indigo-300 cursor-pointer" aria-label="Mois suivant">
             <ChevronRight className="w-4 h-4" />
           </button>
-          <button onClick={() => window.print()} className="flex items-center gap-2 px-3.5 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 cursor-pointer">
+          <button onClick={() => window.print()} className="flex h-10 shrink-0 items-center justify-center gap-2 px-3.5 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 cursor-pointer">
             <Printer className="w-4 h-4" />
-            {isArabic ? 'طباعة' : 'Imprimer'}
+            <span className="hidden sm:inline">{isArabic ? 'طباعة' : 'Imprimer'}</span>
           </button>
         </div>
       </div>
@@ -123,7 +123,7 @@ export default function Rapports() {
         <p className="text-sm text-slate-500 capitalize">{selectedMonthLabel}</p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
         <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs">
           <Users className="w-5 h-5 text-indigo-500 mb-3" />
           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Enfants actifs</p>
@@ -150,7 +150,7 @@ export default function Rapports() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
         <section className="bg-white rounded-2xl border border-slate-100 shadow-xs p-5">
           <h2 className="font-black text-slate-900 flex items-center gap-2"><CalendarCheck className="w-4 h-4 text-emerald-500" />Présence du mois</h2>
-          <div className="grid grid-cols-3 gap-3 mt-5">
+          <div className="grid grid-cols-1 gap-2.5 mt-5 sm:grid-cols-3 sm:gap-3">
             <div className="rounded-xl bg-emerald-50 p-3"><p className="text-[10px] font-black uppercase text-emerald-700">Présents</p><p className="text-2xl font-black text-emerald-700">{report.presents}</p></div>
             <div className="rounded-xl bg-amber-50 p-3"><p className="text-[10px] font-black uppercase text-amber-700">Justifiées</p><p className="text-2xl font-black text-amber-700">{report.absencesJustifiees}</p></div>
             <div className="rounded-xl bg-rose-50 p-3"><p className="text-[10px] font-black uppercase text-rose-700">Non justifiées</p><p className="text-2xl font-black text-rose-700">{report.absencesNonJustifiees}</p></div>

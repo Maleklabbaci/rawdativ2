@@ -202,7 +202,7 @@ export default function RepasPage() {
                   </div>
 
                   {/* Allergenes warnings */}
-                  <div className="grid grid-cols-2 gap-4 text-xs font-semibold text-slate-500 pt-2">
+                  <div className="grid grid-cols-1 gap-2.5 text-xs font-semibold text-slate-500 pt-2 sm:grid-cols-2 sm:gap-4">
                     <div className="flex items-center gap-1.5 p-1">
                       <ShieldAlert className="w-4 h-4 text-rose-500" />
                       <span>Allergènes: <strong className="text-slate-700">{r.allergenes}</strong></span>
@@ -222,12 +222,12 @@ export default function RepasPage() {
                 </div>
 
                 {/* Footer and chef attribution */}
-                <div className="mt-5 pt-4 border-t border-slate-50 flex items-center justify-between text-[11px] font-bold text-slate-400">
+                <div className="mt-5 pt-4 border-t border-slate-50 flex flex-col gap-3 text-[11px] font-bold text-slate-400 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-1.5">
                     <ChefHat className="w-4 h-4 text-indigo-500" />
                     <span>Cuisine par: <strong className="text-slate-700 truncate max-w-[120px] inline-block">{r.chefCuisine}</strong></span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
                     {r.bioIngrediens && (
                       <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-md border border-emerald-100 text-[10px] uppercase font-black tracking-widest flex items-center gap-0.5">
                         <Leaf className="w-3 h-3" />
@@ -235,7 +235,7 @@ export default function RepasPage() {
                       </span>
                     )}
                     <button 
-                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer z-10"
+                      className="flex h-10 w-10 items-center justify-center p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer z-10"
                       onClick={(e) => {
                         e.stopPropagation();
                         const confirmationMsg = isArabic
@@ -246,7 +246,7 @@ export default function RepasPage() {
                         }
                       }}
                     >
-                      <Trash2 size={15} />
+                      <Trash2 size={15} aria-hidden="true" />
                     </button>
                   </div>
                 </div>
@@ -267,19 +267,19 @@ export default function RepasPage() {
       <AnimatePresence>
         {showModal && (
           <div 
-            className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-center justify-center z-[999] p-4 cursor-pointer"
+            className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-start sm:items-center justify-center z-[999] p-2 sm:p-4 overflow-y-auto cursor-pointer"
             onClick={() => setShowModal(false)}
           >
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[85vh] mt-16 flex flex-col overflow-hidden font-sans cursor-default"
+              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[calc(100dvh-1rem)] sm:max-h-[85vh] mt-2 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
+              <div className="p-4 sm:p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
                 <div>
-                  <h3 className="text-xl font-black">{isArabic ? 'تخطيط وجبة غذائية أسبوعية' : 'Plannificateur Hebdomadaire'}</h3>
+                  <h3 className="text-lg sm:text-xl font-black">{isArabic ? 'تخطيط وجبة غذائية أسبوعية' : 'Plannificateur Hebdomadaire'}</h3>
                   <p className="text-xs text-indigo-100 mt-0.5">{isArabic ? 'تحديد اليوم، الوجبة، ومسؤول التحضير' : 'Attribuez ce menu à un jour spécifique de la semaine'}</p>
                 </div>
                 <button 
@@ -290,7 +290,7 @@ export default function RepasPage() {
                 </button>
               </div>
 
-              <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
                 {/* Type Selection */}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
@@ -421,17 +421,17 @@ export default function RepasPage() {
               </div>
 
               {/* Buttons */}
-              <div className="p-6 pt-4 border-t border-slate-100 flex gap-3 flex-shrink-0 bg-slate-50/50">
+              <div className="p-4 sm:p-6 sm:pt-4 border-t border-slate-100 flex flex-col gap-3 flex-shrink-0 bg-slate-50/50 sm:flex-row">
                 <button 
                   type="button"
-                  className="flex-1 p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer text-sm"
+                  className="w-full sm:flex-1 p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer text-sm"
                   onClick={() => setShowModal(false)}
                 >
                   {t('common.cancel')}
                 </button>
                 <button 
                   type="button"
-                  className="flex-1 p-3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-750 text-white font-bold rounded-xl transition cursor-pointer text-sm shadow-md"
+                  className="w-full sm:flex-1 p-3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-750 text-white font-bold rounded-xl transition cursor-pointer text-sm shadow-md"
                   onClick={handleAjouter}
                 >
                   {t('common.save')}
@@ -446,19 +446,19 @@ export default function RepasPage() {
       <AnimatePresence>
         {selectedRepas && (
           <div 
-            className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-center justify-center z-[999] p-4 cursor-pointer"
+            className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-start sm:items-center justify-center z-[999] p-2 sm:p-4 overflow-y-auto cursor-pointer"
             onClick={() => setSelectedRepas(null)}
           >
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[85vh] mt-16 flex flex-col overflow-hidden font-sans cursor-default"
+              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[calc(100dvh-1rem)] sm:max-h-[85vh] mt-2 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="p-6 bg-gradient-to-r from-amber-500 to-orange-600 text-white flex justify-between items-center flex-shrink-0">
                 <div>
-                  <h3 className="text-xl font-black">
+                  <h3 className="text-lg sm:text-xl font-black">
                     {selectedRepas.type === 'Déjeuner' ? (isArabic ? 'وجبة الغداء' : 'Déjeuner Référence') : (isArabic ? 'لمجة العصر' : 'Goûter Équilibré')}
                   </h3>
                   <p className="text-xs text-amber-50 mt-0.5">{isArabic ? 'العناصر الغذائية، السعرات الحرارية ومذكرة الطهو' : 'Certifications nutritionnelles & Fiche de Restauration'}</p>
@@ -471,7 +471,7 @@ export default function RepasPage() {
                 </button>
               </div>
 
-              <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
                 <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
                   <div className="flex justify-between items-center text-[10px] font-black uppercase text-slate-400 tracking-wider mb-2">
                     <span>{isArabic ? 'الطبق الرئيسي المجدول' : 'Menu Principal du Jour'}</span>

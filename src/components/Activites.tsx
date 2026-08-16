@@ -279,7 +279,7 @@ export default function Activites() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[85vh] mt-16 flex flex-col overflow-hidden font-sans cursor-default"
+              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[calc(100dvh-1rem)] sm:max-h-[85vh] mt-2 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
@@ -295,7 +295,7 @@ export default function Activites() {
                 </button>
               </div>
 
-              <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
                 {/* Title */}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
@@ -468,10 +468,10 @@ export default function Activites() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[85vh] mt-16 flex flex-col overflow-hidden font-sans cursor-default"
+              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[calc(100dvh-1rem)] sm:max-h-[85vh] mt-2 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="p-6 bg-gradient-to-r from-teal-600 to-emerald-600 text-white flex justify-between items-center flex-shrink-0">
+              <div className="p-4 sm:p-6 bg-gradient-to-r from-teal-600 to-emerald-600 text-white flex justify-between items-center flex-shrink-0">
                 <div>
                   <h3 className="text-xl font-black">{selectedActivite.titre}</h3>
                   <p className="text-xs text-teal-100 mt-0.5">{isArabic ? 'تفاصيل النشاط ووسائله البيداغوجية' : 'Fiche d\'animation d\'Atelier Éducatif'}</p>
@@ -484,8 +484,8 @@ export default function Activites() {
                 </button>
               </div>
 
-              <div className="p-6 space-y-4 overflow-y-auto flex-1">
-                <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
                   <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
                     <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">{isArabic ? 'الفئة المستهدفة' : 'Groupe Enfant'}</span>
                     <span className="text-xs font-black text-slate-800">{selectedActivite.groupe}</span>
