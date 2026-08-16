@@ -1,20 +1,45 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Rawdha+
 
-# Run and deploy your AI Studio app
+Rawdha+ est une plateforme professionnelle de gestion des crèches. Elle centralise les enfants, les admissions, les classes, les présences, les paiements, le personnel, les activités, les repas et les rapports dans une interface adaptée aux ordinateurs et aux téléphones.
 
-This contains everything you need to run your app locally.
+## Développement local
 
-View your app in AI Studio: https://ai.studio/apps/0879152c-7950-444b-8d56-a6101e946040
+### Prérequis
 
-## Run Locally
+Node.js 20 ou une version plus récente et pnpm sont nécessaires.
 
-**Prerequisites:**  Node.js
+### Installation
 
+```bash
+pnpm install --frozen-lockfile
+```
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### Lancement en développement
+
+```bash
+pnpm dev
+```
+
+### Vérification TypeScript
+
+```bash
+pnpm exec tsc --noEmit
+```
+
+### Build de production
+
+```bash
+pnpm build
+```
+
+## Déploiement
+
+La branche `main` du dépôt `Maleklabbaci/rawdativ2` est reliée au déploiement de production Rawdha+. Les fichiers de configuration PWA sont disponibles dans `public/manifest.webmanifest` et `public/sw.js`.
+
+## Modules principaux
+
+Rawdha+ propose un espace directeur pour la configuration de la crèche, la gestion des enfants et des admissions par QR permanent, les classes, les présences, les paiements, le personnel, les activités, les repas, les rapports et les paramètres de l’établissement.
+
+## Données et sécurité
+
+Les données applicatives sont stockées dans Supabase. Les règles d’accès et les politiques RLS doivent être vérifiées dans le projet Supabase avant toute mise en production d’une nouvelle fonctionnalité.
