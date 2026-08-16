@@ -14,6 +14,37 @@ import Sidebar from './components/Sidebar';
 // conserver l'ancien index.js et demander un fichier hashé qui n'existe plus.
 const CHUNK_RELOAD_KEY = 'rawdha_chunk_reload_once';
 
+const PAGE_PATHS: Record<string, string> = {
+  dashboard: '/dashboard',
+  enfants: '/enfants',
+  admissions: '/admissions',
+  community: '/community',
+  classes: '/classes',
+  presences: '/presences',
+  paiements: '/factures',
+  personnel: '/personnel',
+  activites: '/activites',
+  repas: '/repas',
+  comptes: '/comptes',
+  notifications: '/notifications',
+  communication: '/communication',
+  rapports: '/reports',
+  parametres: '/parametres',
+};
+
+const PAGE_FROM_PATH: Record<string, string> = Object.entries(PAGE_PATHS).reduce(
+  (routes, [page, path]) => {
+    routes[path] = page;
+    return routes;
+  },
+  {} as Record<string, string>,
+);
+
+const pageFromPathname = (pathname: string) => {
+  const normalizedPath = `/${pathname.replace(/^\/+|\/+$/g, '')}`.replace(/^\/$/, '/dashboard');
+  return PAGE_FROM_PATH[normalizedPath] || 'dashboard';
+};
+
 const reloadForStaleChunk = () => {
   if (typeof window === 'undefined') return false;
   try {
@@ -70,7 +101,7 @@ import HelpCenterModal from './components/HelpCenterModal';
 
 function AppContent() {
   const { isAuthenticated, user, creche, logout, loading: authLoading } = useAuth();
-  const [currentPage, setCurrentPage] = useState('dashboard');
+  const [currentPage, setCurrentPage] = useState(() => pageFromPathname(window.location.pathname));
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isBrowserFullscreen, setIsBrowserFullscreen] = useState(false);
@@ -80,6 +111,17 @@ function AppContent() {
   const { language, setLanguage, t } = useLanguage();
   const { loading: dbLoading, comptes } = useDb();
   const isPublicAdmission = window.location.pathname.replace(/\/+$/, '') === '/admission';
+
+  const navigateToPage = (page: string, options?: { replace?: boolean }) => {
+    const nextPage = PAGE_PATHS[page] ? page : 'dashboard';
+    const nextPath = PAGE_PATHS[nextPage];
+    setCurrentPage(nextPage);
+
+    if (typeof window !== 'undefined' && window.location.pathname !== nextPath) {
+      const method = options?.replace ? 'replaceState' : 'pushState';
+      window.history[method]({}, '', nextPath);
+    }
+  };
 
   // ✅ Onboarding premier login : on vérifie une fois si le directeur a déjà rempli
   // ses infos de crèche (existence du doc "parametres/creche_{id}"). null = pas encore vérifié.
@@ -182,16 +224,30 @@ function AppContent() {
   };
 
   useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPage(pageFromPathname(window.location.pathname));
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || isPublicAdmission) return;
+    const expectedPath = PAGE_PATHS[currentPage] || PAGE_PATHS.dashboard;
+    if (window.location.pathname !== expectedPath) {
+      window.history.replaceState({}, '', expectedPath);
+    }
+  }, [isAuthenticated, isPublicAdmission, currentPage]);
+
+  useEffect(() => {
     if (user?.role === 'admin') {
       if (currentPage !== 'comptes' && currentPage !== 'parametres' && currentPage !== 'notifications' && currentPage !== 'communication' && currentPage !== 'community') {
-        setCurrentPage('comptes');
+        navigateToPage('comptes', { replace: true });
       }
-    } else {
-      if (currentPage === 'comptes') {
-        setCurrentPage('dashboard');
-      }
+    } else if (currentPage === 'comptes') {
+      navigateToPage('dashboard', { replace: true });
     }
-  }, [user, currentPage]);
+  }, [user?.role, currentPage]);
 
   // ✅ Favicon + titre d'onglet dynamiques : le logo PNG uploadé dans Paramètres
   // remplace l'icône par défaut de RAWDHA+ dans la barre de tâches / onglet du navigateur.
@@ -205,8 +261,32 @@ function AppContent() {
     }
     link.href = faviconHref;
 
-    document.title = creche?.nom ? `${creche.nom} — RAWDHA+` : 'RAWDHA+';
-  }, [creche?.logoUrl, creche?.nom]);
+    const pageTitleKeys: Record<string, string> = {
+      dashboard: 'dashboard',
+      enfants: 'children',
+      classes: 'classes',
+      presences: 'attendance',
+      paiements: 'invoices',
+      rapports: 'reports',
+      personnel: 'staff',
+      activites: 'activities',
+      repas: 'meals',
+      parametres: 'settings',
+      comptes: 'comptes',
+    };
+    const fallbackPageTitles: Record<string, string> = {
+      admissions: language === 'ar' ? 'طلبات التسجيل' : 'Admissions',
+      notifications: language === 'ar' ? 'الإشعارات' : 'Notifications',
+      communication: language === 'ar' ? 'الرسائل والتقييمات والملاحظات' : 'Messages, Avis & Retours',
+      community: 'Rawdha Connect',
+    };
+    const pageName = pageTitleKeys[currentPage]
+      ? t(pageTitleKeys[currentPage])
+      : fallbackPageTitles[currentPage] || 'RAWDHA+';
+    document.title = currentPage === 'dashboard'
+      ? (creche?.nom ? `${creche.nom} — RAWDHA+` : 'RAWDHA+')
+      : `${pageName} — RAWDHA+`;
+  }, [creche?.logoUrl, creche?.nom, currentPage, language, t]);
 
   if (isPublicAdmission) {
     return <PublicAdmission />;
@@ -401,7 +481,7 @@ if (isSubscriptionExpired) {
   const renderPage = () => {
     const page = (() => {
       switch (currentPage) {
-        case 'dashboard': return <Dashboard onNavigate={setCurrentPage} />;
+        case 'dashboard': return <Dashboard onNavigate={navigateToPage} />;
         case 'enfants': return <Enfants />;
         case 'admissions': return <Admissions />;
         case 'community': return <Community />;
@@ -431,7 +511,7 @@ if (isSubscriptionExpired) {
       {/* Sidebar */}
       <Sidebar 
         currentPage={currentPage} 
-        onPageChange={setCurrentPage} 
+        onPageChange={navigateToPage}
         isOpen={isSidebarOpen} 
         onClose={() => setIsSidebarOpen(false)}
         isCollapsed={isSidebarCollapsed}
@@ -498,7 +578,7 @@ if (isSubscriptionExpired) {
 
                 {/* Cloche de notifications — uniquement pour les directeurs */}
                 {user?.role === 'directeur' && (
-                  <NotificationBell onNavigateToPaiements={() => setCurrentPage('paiements')} />
+                  <NotificationBell onNavigateToPaiements={() => navigateToPage('paiements')} />
                 )}
 
                 <div className="flex shrink-0 items-center gap-1">
@@ -596,7 +676,7 @@ if (isSubscriptionExpired) {
       {user && user.role !== 'admin' && <ChatBubble />}
 
       {/* Popup d'annonce admin personnalisé — uniquement pour les directeurs */}
-      {user?.role === 'directeur' && <NotificationPopup onNavigate={setCurrentPage} />}
+      {user?.role === 'directeur' && <NotificationPopup onNavigate={navigateToPage} />}
     </div>
   );
 }
