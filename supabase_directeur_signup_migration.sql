@@ -19,7 +19,7 @@ declare
   director_phone text := coalesce(metadata->>'telephone', '');
   nursery_address text := coalesce(metadata->>'adresse', '');
   nursery_website text := coalesce(metadata->>'siteWeb', '');
-  trial_end text := to_char((now() + interval '7 days')::date, 'YYYY-MM-DD');
+  trial_end text := to_char((now() + interval '15 days')::date, 'YYYY-MM-DD');
 begin
   -- Tant qu’il n’existe pas d’espace parent, tout nouvel utilisateur public
   -- est un directeur. Le rôle peut aussi être transmis explicitement par le formulaire.
@@ -35,6 +35,9 @@ begin
         'role', 'directeur',
         'abonnementActif', true,
         'dateFinAbonnement', trial_end,
+        'abonnementTarif', 3500,
+        'estCertifie', false,
+        'certificationEnfants', 0,
         'nomCreche', coalesce(nursery_name, ''),
         'telephone', director_phone,
         'adresse', nursery_address
@@ -52,7 +55,7 @@ begin
         'principalEmail', director_email,
         'phoneNumbers', director_phone,
         'addressLine', nursery_address,
-        'tuitionFeeRate', 4500,
+        'tuitionFeeRate', 3500,
         'siteWeb', nursery_website,
         'logoUrl', ''
       )

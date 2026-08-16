@@ -57,11 +57,11 @@ export default function Comptes() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   
-  // ✅ Essai gratuit de 7 jours par défaut (le blocage auto existe déjà dans App.tsx :
+  // ✅ Essai gratuit de 15 jours par défaut (le blocage auto existe déjà dans App.tsx :
   // dès que "dateFinAbonnement" est dépassée, le compte est bloqué automatiquement).
   const getDefaultDate = () => {
     const d = new Date();
-    d.setDate(d.getDate() + 7);
+    d.setDate(d.getDate() + 15);
     return d.toISOString().split('T')[0];
   };
 
@@ -73,7 +73,7 @@ export default function Comptes() {
   const [nomCreche, setNomCreche] = useState('');
   const [telephoneCreche, setTelephoneCreche] = useState('');
   const [adresseCreche, setAdresseCreche] = useState('');
-  const [tarifCreche, setTarifCreche] = useState('4500');
+  const [tarifCreche, setTarifCreche] = useState('3500');
   const [siteWebCreche, setSiteWebCreche] = useState('');
   const [dateFinAbonnement, setDateFinAbonnement] = useState(getDefaultDate());
   const [abonnementActif, setAbonnementActif] = useState(true);

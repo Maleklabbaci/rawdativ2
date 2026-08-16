@@ -250,6 +250,11 @@ export interface UserAccount {
   avatarUrl?: string;
   /** Logo public de la crèche affiché dans Rawdha Connect. */
   logoUrl?: string;
+  /** Certification automatique accordée à partir de 30 enfants actifs. */
+  estCertifie?: boolean;
+  dateCertification?: string;
+  /** Nombre d’enfants actifs rattachés, utilisé pour le badge public. */
+  certificationEnfants?: number;
   siteWeb?: string;
   enfantId?: string;
 }
@@ -287,6 +292,8 @@ export interface CommunityPost {
   authorBio?: string;
   authorVille?: string;
   authorSiteWeb?: string;
+  authorEstCertifie?: boolean;
+  authorCertificationEnfants?: number;
   crecheId: string;
   nomCreche: string;
   categorie: CommunityPostCategory;
@@ -306,6 +313,8 @@ export interface CommunityPost {
         authorLogoUrl?: string;
         authorVille?: string;
         authorSiteWeb?: string;
+        authorEstCertifie?: boolean;
+        authorCertificationEnfants?: number;
         nomCreche?: string;
     categorie?: CommunityPostCategory;
     titre?: string;

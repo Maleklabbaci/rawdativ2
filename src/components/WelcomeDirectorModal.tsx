@@ -34,8 +34,8 @@ export default function WelcomeDirectorModal({
         eyebrow: 'مرحباً بك في Rawdha+',
         title: `أهلاً ${firstName}، سعيدون بانضمامك إلينا`,
         subtitle: 'منصتك الذكية لإدارة الحضانة بسهولة، أمان واحترافية.',
-        trial: 'تجربة مجانية لمدة 7 أيام',
-        trialText: 'استفد من جميع مزايا Rawdha+ خلال فترة التجربة، بدون التزام.',
+        trial: 'تجربة مجانية لمدة 15 يوماً',
+        trialText: 'استفد من جميع مزايا Rawdha+ لمدة 15 يوماً، بدون التزام.',
         benefitsTitle: 'كل ما تحتاجه حضانتك في مكان واحد',
         benefits: [
           ['إدارة الأطفال', 'ملفات الأطفال، معلومات الأولياء والوثائق في متناول يدك.', Users],
@@ -58,8 +58,8 @@ export default function WelcomeDirectorModal({
         eyebrow: 'Bienvenue sur Rawdha+',
         title: `Bonjour ${firstName}, bienvenue dans votre nouvelle plateforme`,
         subtitle: 'La solution simple, moderne et sécurisée pour piloter votre crèche au quotidien.',
-        trial: '7 jours d’essai gratuit',
-        trialText: 'Profitez de toutes les fonctionnalités de Rawdha+ pendant votre période d’essai, sans engagement.',
+        trial: '15 jours d’essai gratuit',
+        trialText: 'Profitez de toutes les fonctionnalités de Rawdha+ pendant 15 jours, sans engagement.',
         benefitsTitle: 'Tout ce dont votre crèche a besoin, au même endroit',
         benefits: [
           ['Gestion des enfants', 'Dossiers enfants, informations des parents et documents toujours accessibles.', Users],
