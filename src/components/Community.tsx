@@ -365,17 +365,20 @@ export default function Community() {
             const comments = getPostComments(post.id);
             const liked = isLiked(post.id);
             const category = categories.find(item => item.value === post.categorie);
+            const safeAuthorName = typeof post.authorName === 'string' && post.authorName.trim() ? post.authorName : (isAr ? 'مدير' : 'Directeur');
+            const safeCrecheName = typeof post.nomCreche === 'string' && post.nomCreche.trim() ? post.nomCreche : (isAr ? 'روضة' : 'Crèche');
+            const safeContent = typeof post.contenu === 'string' ? post.contenu : '';
             return (
               <motion.article layout key={post.id} className={`rounded-3xl border bg-white p-5 shadow-sm transition hover:shadow-lg md:p-6 ${post.statut === 'masquee' ? 'border-rose-200 bg-rose-50/30' : 'border-slate-200'}`}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-3">
-                    {post.authorAvatarUrl ? <img src={post.authorAvatarUrl} alt={post.authorName} className="h-12 w-12 shrink-0 rounded-2xl object-cover ring-2 ring-indigo-50" /> : <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-black text-white">{post.authorName.slice(0, 2).toUpperCase()}</div>}
+                    {post.authorAvatarUrl ? <img src={post.authorAvatarUrl} alt={safeAuthorName} className="h-12 w-12 shrink-0 rounded-2xl object-cover ring-2 ring-indigo-50" /> : <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-black text-white">{safeAuthorName.slice(0, 2).toUpperCase()}</div>}
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-black text-slate-900">{post.nomCreche}</p>
+                        <p className="truncate text-sm font-black text-slate-900">{safeCrecheName}</p>
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-700"><Check className="h-3 w-3" />{isAr ? 'موثقة' : 'Vérifiée'}</span>
                       </div>
-                      <p className="mt-1 flex flex-wrap items-center gap-1 text-[11px] font-medium text-slate-400"><Clock3 className="h-3 w-3" />{formatDate(post.createdAt, language)} · <span className="font-black text-slate-500">{post.authorName}</span>{post.authorBio && <span className="hidden md:inline">· {post.authorBio}</span>}</p>
+                      <p className="mt-1 flex flex-wrap items-center gap-1 text-[11px] font-medium text-slate-400"><Clock3 className="h-3 w-3" />{formatDate(typeof post.createdAt === 'string' ? post.createdAt : '', language)} · <span className="font-black text-slate-500">{safeAuthorName}</span>{post.authorBio && <span className="hidden md:inline">· {post.authorBio}</span>}</p>
                     </div>
                   </div>
                   {(canManagePost(post) || isAdmin) && (
@@ -399,7 +402,7 @@ export default function Community() {
                     {post.statut === 'masquee' && <span className="rounded-full bg-rose-100 px-3 py-1.5 text-[11px] font-black text-rose-700">{isAr ? 'مخفية' : 'Masquée par l’admin'}</span>}
                   </div>
                   {post.titre && <h3 className="text-lg font-black text-slate-900">{post.titre}</h3>}
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-600">{post.contenu}</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-600">{safeContent}</p>
                   {post.contact && <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-600"><span className="font-black text-slate-800">{isAr ? 'تواصل: ' : 'Contact : '}</span>{post.contact}</div>}
                 </div>
 
@@ -415,8 +418,8 @@ export default function Community() {
                         {comments.map(comment => (
                           <div key={comment.id} className="flex items-start justify-between gap-3 rounded-xl bg-white p-3">
                             <div className="min-w-0">
-                              <p className="text-xs font-black text-slate-800">{comment.nomCreche} <span className="font-medium text-slate-400">· {comment.authorName}</span></p>
-                              <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-600">{comment.contenu}</p>
+                              <p className="text-xs font-black text-slate-800">{comment.nomCreche || (isAr ? 'روضة' : 'Crèche')} <span className="font-medium text-slate-400">· {comment.authorName || (isAr ? 'مدير' : 'Directeur')}</span></p>
+                              <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-600">{comment.contenu || ''}</p>
                               <p className="mt-1 text-[10px] text-slate-400">{formatDate(comment.createdAt, language)}</p>
                             </div>
                             {(isAdmin || comment.authorId === user.id) && <button type="button" onClick={() => void deleteCommunityComment(comment.id)} className="shrink-0 rounded-lg p-1.5 text-slate-300 transition hover:bg-rose-50 hover:text-rose-500"><Trash2 className="h-3.5 w-3.5" /></button>}

@@ -78,6 +78,74 @@ function normalizeEnfantData(enfant: Partial<Enfant> | null | undefined): Enfant
   } as Enfant;
 }
 
+const COMMUNITY_CATEGORIES: CommunityPost['categorie'][] = ['activite', 'materiel', 'vente_echange', 'recrutement', 'formation', 'partenariat'];
+
+function optionalText(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function normalizeCommunityPost(post: Partial<CommunityPost> | null | undefined, index = 0): CommunityPost {
+  const candidate = (post || {}) as Record<string, unknown>;
+  const authorId = typeof candidate.authorId === 'string' ? candidate.authorId : '';
+  const authorName = typeof candidate.authorName === 'string' && candidate.authorName.trim() ? candidate.authorName : 'Directeur';
+  const categorie = COMMUNITY_CATEGORIES.includes(candidate.categorie as CommunityPost['categorie'])
+    ? candidate.categorie as CommunityPost['categorie']
+    : 'activite';
+  const prix = typeof candidate.prix === 'number' && Number.isFinite(candidate.prix) ? candidate.prix : undefined;
+  const likesCount = typeof candidate.likesCount === 'number' && Number.isFinite(candidate.likesCount) ? Math.max(0, candidate.likesCount) : 0;
+  const createdAt = typeof candidate.createdAt === 'string' && candidate.createdAt ? candidate.createdAt : new Date(0).toISOString();
+
+  return {
+    ...candidate,
+    id: typeof candidate.id === 'string' && candidate.id ? candidate.id : `community_post_unknown_${index}`,
+    authorId,
+    authorName,
+    authorAvatarUrl: optionalText(candidate.authorAvatarUrl),
+    authorBio: optionalText(candidate.authorBio),
+    crecheId: typeof candidate.crecheId === 'string' ? candidate.crecheId : authorId,
+    nomCreche: typeof candidate.nomCreche === 'string' && candidate.nomCreche.trim() ? candidate.nomCreche : 'Crèche',
+    categorie,
+    titre: optionalText(candidate.titre),
+    contenu: typeof candidate.contenu === 'string' ? candidate.contenu : '',
+    ville: optionalText(candidate.ville),
+    prix,
+    contact: optionalText(candidate.contact),
+    statut: candidate.statut === 'masquee' ? 'masquee' : 'publie',
+    likesCount,
+    createdAt,
+    updatedAt: optionalText(candidate.updatedAt),
+  } as CommunityPost;
+}
+
+function normalizeCommunityComment(comment: Partial<CommunityComment> | null | undefined, index = 0): CommunityComment {
+  const candidate = (comment || {}) as Record<string, unknown>;
+  const authorId = typeof candidate.authorId === 'string' ? candidate.authorId : '';
+  return {
+    ...candidate,
+    id: typeof candidate.id === 'string' && candidate.id ? candidate.id : `community_comment_unknown_${index}`,
+    postId: typeof candidate.postId === 'string' ? candidate.postId : '',
+    authorId,
+    authorName: typeof candidate.authorName === 'string' && candidate.authorName.trim() ? candidate.authorName : 'Directeur',
+    authorAvatarUrl: optionalText(candidate.authorAvatarUrl),
+    authorBio: optionalText(candidate.authorBio),
+    crecheId: typeof candidate.crecheId === 'string' ? candidate.crecheId : authorId,
+    nomCreche: typeof candidate.nomCreche === 'string' && candidate.nomCreche.trim() ? candidate.nomCreche : 'Crèche',
+    contenu: typeof candidate.contenu === 'string' ? candidate.contenu : '',
+    createdAt: typeof candidate.createdAt === 'string' && candidate.createdAt ? candidate.createdAt : new Date(0).toISOString(),
+  } as CommunityComment;
+}
+
+function normalizeCommunityReaction(reaction: Partial<CommunityReaction> | null | undefined, index = 0): CommunityReaction {
+  const candidate = (reaction || {}) as Record<string, unknown>;
+  return {
+    ...candidate,
+    id: typeof candidate.id === 'string' && candidate.id ? candidate.id : `community_reaction_unknown_${index}`,
+    postId: typeof candidate.postId === 'string' ? candidate.postId : '',
+    userId: typeof candidate.userId === 'string' ? candidate.userId : '',
+    createdAt: typeof candidate.createdAt === 'string' && candidate.createdAt ? candidate.createdAt : new Date(0).toISOString(),
+  } as CommunityReaction;
+}
+
 interface DbContextType {
   enfants: Enfant[];
   classes: Classe[];
@@ -300,9 +368,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
           setMessages(dbMessages);
           setAvis(dbAvis);
           setSignalements(dbSignalements);
-          setCommunityPosts(dbCommunityPosts);
-          setCommunityComments(dbCommunityComments);
-          setCommunityReactions(dbCommunityReactions);
+          setCommunityPosts((Array.isArray(dbCommunityPosts) ? dbCommunityPosts : []).filter(Boolean).map(normalizeCommunityPost));
+          setCommunityComments((Array.isArray(dbCommunityComments) ? dbCommunityComments : []).filter(Boolean).map(normalizeCommunityComment));
+          setCommunityReactions((Array.isArray(dbCommunityReactions) ? dbCommunityReactions : []).filter(Boolean).map(normalizeCommunityReaction));
           setInscriptionLinks(dbInscriptionLinks);
           setDemandesAdmission(dbDemandesAdmission);
           setNotifications(dbNotifications);
@@ -872,11 +940,11 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   // --- COMMUNAUTÉ PROFESSIONNELLE PRIVÉE ---
   const addCommunityPost = async (postData: Omit<CommunityPost, 'id'>) => {
     const tempId = 'community_post_' + Date.now();
-    const optimistic = { ...postData, id: tempId } as CommunityPost;
+    const optimistic = normalizeCommunityPost({ ...postData, id: tempId });
     setCommunityPosts(prev => [optimistic, ...prev]);
     try {
       const freshId = await addCollectionDocument('community_posts', postData);
-      setCommunityPosts(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      setCommunityPosts(prev => prev.map(item => item.id === tempId ? normalizeCommunityPost({ ...item, id: freshId }) : item));
       return freshId;
     } catch (err) {
       setCommunityPosts(prev => prev.filter(item => item.id !== tempId));
@@ -887,7 +955,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   const updateCommunityPost = async (id: string, data: Partial<CommunityPost>) => {
     const previous = communityPosts.find(item => item.id === id);
-    setCommunityPosts(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    setCommunityPosts(prev => prev.map(item => item.id === id ? normalizeCommunityPost({ ...item, ...data }) : item));
     try {
       await updateCollectionDocument<CommunityPost>('community_posts', id, data);
     } catch (err) {
@@ -911,11 +979,11 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   const addCommunityComment = async (commentData: Omit<CommunityComment, 'id'>) => {
     const tempId = 'community_comment_' + Date.now();
-    const optimistic = { ...commentData, id: tempId } as CommunityComment;
+    const optimistic = normalizeCommunityComment({ ...commentData, id: tempId });
     setCommunityComments(prev => [...prev, optimistic]);
     try {
       const freshId = await addCollectionDocument('community_comments', commentData);
-      setCommunityComments(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      setCommunityComments(prev => prev.map(item => item.id === tempId ? normalizeCommunityComment({ ...item, id: freshId }) : item));
       return freshId;
     } catch (err) {
       setCommunityComments(prev => prev.filter(item => item.id !== tempId));
@@ -926,7 +994,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   const updateCommunityComment = async (id: string, data: Partial<CommunityComment>) => {
     const previous = communityComments.find(item => item.id === id);
-    setCommunityComments(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    setCommunityComments(prev => prev.map(item => item.id === id ? normalizeCommunityComment({ ...item, ...data }) : item));
     try {
       await updateCollectionDocument<CommunityComment>('community_comments', id, data);
     } catch (err) {
@@ -973,11 +1041,11 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       createdAt: new Date().toISOString(),
     };
     const tempId = 'community_reaction_' + Date.now();
-    setCommunityReactions(prev => [...prev, { ...reactionData, id: tempId }]);
+    setCommunityReactions(prev => [...prev, normalizeCommunityReaction({ ...reactionData, id: tempId })]);
     setCommunityPosts(prev => prev.map(post => post.id === postId ? { ...post, likesCount: post.likesCount + 1 } : post));
     try {
       const freshId = await addCollectionDocument('community_reactions', reactionData);
-      setCommunityReactions(prev => prev.map(reaction => reaction.id === tempId ? { ...reaction, id: freshId } : reaction));
+      setCommunityReactions(prev => prev.map(reaction => reaction.id === tempId ? normalizeCommunityReaction({ ...reaction, id: freshId }) : reaction));
     } catch (err) {
       setCommunityReactions(previousReactions);
       setCommunityPosts(previousPosts);
