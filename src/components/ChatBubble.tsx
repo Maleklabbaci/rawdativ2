@@ -228,7 +228,7 @@ export default function ChatBubble() {
         )}
       </AnimatePresence>
 
-      <div className={`fixed bottom-4 z-40 font-sans sm:bottom-6 ${language === 'ar' ? 'left-4 sm:left-6' : 'right-4 sm:right-6'}`} style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))' }} dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      <div className={`fixed z-40 font-sans ${language === 'ar' ? 'left-3 sm:left-6' : 'right-3 sm:right-6'}`} style={{ bottom: 'max(0.75rem, env(safe-area-inset-bottom))' }} dir={language === 'ar' ? 'rtl' : 'ltr'}>
         <motion.button
           onClick={() => setIsOpen(value => !value)}
           whileHover={{ scale: 1.05 }}
@@ -251,9 +251,9 @@ export default function ChatBubble() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.97 }}
               transition={{ duration: 0.2 }}
-              className={`absolute bottom-16 ${language === 'ar' ? 'left-0' : 'right-0'} h-[min(70dvh,600px)] max-h-[calc(100dvh-5.5rem)] w-[calc(100vw-2rem)] max-w-[420px] overscroll-contain rounded-3xl border border-slate-200 bg-white shadow-2xl flex flex-col overflow-hidden sm:bottom-20`}
+              className={`absolute bottom-[calc(4rem+env(safe-area-inset-bottom))] ${language === 'ar' ? 'left-0' : 'right-0'} h-[min(70dvh,600px)] max-h-[calc(100dvh-6.5rem)] w-[min(calc(100vw-1.5rem),420px)] max-w-[calc(100vw-1.5rem)] overscroll-contain rounded-3xl border border-slate-200 bg-white shadow-2xl flex flex-col overflow-hidden sm:bottom-20 sm:max-h-[calc(100dvh-6rem)]`}
             >
-              <div className="p-4 bg-gradient-to-r from-slate-800 to-slate-900 text-white flex items-center justify-between shadow-md z-10">
+              <div className="shrink-0 p-3.5 bg-gradient-to-r from-slate-800 to-slate-900 text-white flex items-center justify-between shadow-md z-10 sm:p-4">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="w-10 h-10 bg-white/10 border border-white/20 text-white rounded-xl flex items-center justify-center font-bold">
                     {activeTab === 'chat' ? <ShieldCheck className="w-5 h-5" /> : activeTab === 'avis' ? <Star className="w-5 h-5 fill-amber-400 text-amber-400" /> : <Flag className="w-5 h-5 text-rose-300" />}
@@ -388,7 +388,7 @@ export default function ChatBubble() {
                     })}
                     <div ref={messagesEndRef} />
                   </div>
-                  <form onSubmit={event => { event.preventDefault(); void handleSendMessage(inputText); }} className="p-3 bg-white border-t border-slate-200 flex items-center gap-2">
+                  <form onSubmit={event => { event.preventDefault(); void handleSendMessage(inputText); }} className="shrink-0 p-3 bg-white border-t border-slate-200 flex items-center gap-2" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
                     <input type="text" value={inputText} onChange={event => setInputText(event.target.value)} placeholder={isFrench ? 'Écrivez un message...' : 'اكتب رسالتك...'} className="flex-1 px-4 py-2.5 text-xs border border-slate-200 rounded-xl outline-none focus:border-indigo-500 font-medium" required />
                     <button type="submit" className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition flex items-center justify-center cursor-pointer shadow-md"><Send className="w-4 h-4 rtl:-scale-x-100" /></button>
                   </form>
