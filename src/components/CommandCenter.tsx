@@ -9,6 +9,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { Classe, Enfant, Paiement, Personnel, Presence } from '../types';
+import { useLanguage } from '../contexts/LanguageContext';
 import {
   buildCommandCenterAlerts,
   type CommandCenterAlert,
@@ -35,7 +36,7 @@ function localDateKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-function alertTone(level: CommandCenterAlertLevel) {
+function alertTone(level: CommandCenterAlertLevel, isArabic: boolean) {
   if (level === 'urgent') {
     return {
       container: 'border-rose-100 bg-rose-50/70',
@@ -43,7 +44,7 @@ function alertTone(level: CommandCenterAlertLevel) {
       title: 'text-rose-950',
       text: 'text-rose-800/80',
       button: 'text-rose-700 hover:bg-rose-100',
-      label: 'Urgent',
+      label: isArabic ? 'عاجل' : 'Urgent',
     };
   }
 
@@ -54,7 +55,7 @@ function alertTone(level: CommandCenterAlertLevel) {
       title: 'text-amber-950',
       text: 'text-amber-900/75',
       button: 'text-amber-800 hover:bg-amber-100',
-      label: 'À vérifier',
+      label: isArabic ? 'للتأكد' : 'À vérifier',
     };
   }
 
@@ -64,7 +65,7 @@ function alertTone(level: CommandCenterAlertLevel) {
     title: 'text-sky-950',
     text: 'text-sky-900/75',
     button: 'text-sky-800 hover:bg-sky-100',
-    label: 'Info',
+    label: isArabic ? 'معلومة' : 'Info',
   };
 }
 
@@ -74,9 +75,13 @@ function AlertIcon({ level }: { level: CommandCenterAlertLevel }) {
   return <Info className="h-4 w-4" aria-hidden="true" />;
 }
 
-function CommandCenterSkeleton() {
+function CommandCenterSkeleton({ isArabic }: { isArabic: boolean }) {
   return (
-    <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-xs sm:p-5" aria-label="Chargement du Command Center">
+    <section
+      dir={isArabic ? 'rtl' : 'ltr'}
+      className="rounded-2xl border border-slate-100 bg-white p-4 shadow-xs sm:p-5"
+      aria-label={isArabic ? 'جار تحميل مركز التحكم' : 'Chargement du centre de contrôle'}
+    >
       <div className="animate-pulse space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div className="space-y-2">
@@ -94,15 +99,24 @@ function CommandCenterSkeleton() {
   );
 }
 
-function AlertRow({ alert, onNavigate }: { alert: CommandCenterAlert; onNavigate?: (page: string) => void }) {
-  const tone = alertTone(alert.level);
+function AlertRow({
+  alert,
+  isArabic,
+  onNavigate,
+}: {
+  alert: CommandCenterAlert;
+  isArabic: boolean;
+  onNavigate?: (page: string) => void;
+}) {
+  const tone = alertTone(alert.level, isArabic);
+  const openLabel = isArabic ? 'فتح' : 'Ouvrir';
 
   return (
     <div className={`flex min-w-0 items-start gap-3 rounded-xl border p-3 ${tone.container}`}>
       <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tone.icon}`}>
         <AlertIcon level={alert.level} />
       </div>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 text-start">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className={`text-xs font-black ${tone.title}`}>{alert.title}</h3>
           <span className={`rounded-full bg-white/70 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide ${tone.text}`}>
@@ -115,10 +129,10 @@ function AlertRow({ alert, onNavigate }: { alert: CommandCenterAlert; onNavigate
         type="button"
         onClick={() => onNavigate?.(alert.targetPage)}
         className={`mt-0.5 flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] font-black transition active:scale-[0.97] ${tone.button}`}
-        aria-label={`Ouvrir ${alert.title}`}
+        aria-label={`${openLabel} ${alert.title}`}
       >
-        <span className="hidden sm:inline">Ouvrir</span>
-        <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+        <span className="hidden sm:inline">{openLabel}</span>
+        <ArrowRight className="h-3.5 w-3.5 rtl:rotate-180" aria-hidden="true" />
       </button>
     </div>
   );
@@ -134,7 +148,9 @@ export default function CommandCenter({
   enabled = COMMAND_CENTER_ENABLED,
   onNavigate,
 }: CommandCenterProps) {
-  const now = new Date();
+  const { language } = useLanguage();
+  const isArabic = language === 'ar';
+  const now = useMemo(() => new Date(), []);
 
   const todaySummary = useMemo(() => {
     const activeChildren = enfants.filter(enfant => enfant.statut === 'Actif');
@@ -170,73 +186,99 @@ export default function CommandCenter({
     personnel,
     classes,
     now,
+    locale: isArabic ? 'ar' : 'fr',
     maxAlerts: 6,
-  }), [enfants, presences, paiements, personnel, classes, now]);
+  }), [enfants, presences, paiements, personnel, classes, now, isArabic]);
 
   const urgentCount = alerts.filter(alert => alert.level === 'urgent').length;
   const checkCount = alerts.filter(alert => alert.level === 'check').length;
 
   if (!enabled) return null;
-  if (loading) return <CommandCenterSkeleton />;
+  if (loading) return <CommandCenterSkeleton isArabic={isArabic} />;
 
   return (
-    <section className="min-w-0 rounded-2xl border border-slate-100 bg-white p-4 shadow-xs sm:p-5" aria-labelledby="command-center-title">
+    <section
+      dir={isArabic ? 'rtl' : 'ltr'}
+      className="min-w-0 rounded-2xl border border-slate-100 bg-white p-4 shadow-xs sm:p-5"
+      aria-labelledby="command-center-title"
+    >
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
               <CircleAlert className="h-4 w-4" aria-hidden="true" />
             </div>
-            <div>
-              <h2 id="command-center-title" className="text-sm font-black tracking-tight text-slate-900">Rawdha Command Center</h2>
-              <p className="text-[10px] font-bold text-slate-400">La vue courte qui aide à décider maintenant.</p>
+            <div className="text-start">
+              <h2 id="command-center-title" className="text-sm font-black tracking-tight text-slate-900">
+                {isArabic ? 'مركز تحكم Rawdha+' : 'Rawdha Command Center'}
+              </h2>
+              <p className="text-[10px] font-bold text-slate-400">
+                {isArabic ? 'ملخص سريع يساعدك على اتخاذ القرار الآن.' : 'Une vue courte pour décider maintenant.'}
+              </p>
             </div>
           </div>
         </div>
         <div className="flex w-fit items-center gap-1.5 rounded-xl bg-slate-50 px-2.5 py-1.5 text-[10px] font-black text-slate-500">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-          Aujourd'hui
+          {isArabic ? 'اليوم' : "Aujourd'hui"}
         </div>
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
-        <div className="rounded-xl bg-emerald-50/80 p-3">
+        <div className="rounded-xl bg-emerald-50/80 p-3 text-start">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] font-black uppercase tracking-wide text-emerald-700">Présents</span>
+            <span className="text-[10px] font-black uppercase tracking-wide text-emerald-700">{isArabic ? 'الحاضرون' : 'Présents'}</span>
             <Users className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" />
           </div>
           <p className="mt-1 text-xl font-black text-emerald-900">{todaySummary.presents}</p>
         </div>
-        <div className="rounded-xl bg-slate-50 p-3">
-          <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">Absents</span>
+        <div className="rounded-xl bg-slate-50 p-3 text-start">
+          <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">{isArabic ? 'الغائبون' : 'Absents'}</span>
           <p className="mt-1 text-xl font-black text-slate-800">{todaySummary.absents}</p>
         </div>
-        <div className="rounded-xl bg-indigo-50/80 p-3">
-          <span className="text-[10px] font-black uppercase tracking-wide text-indigo-600">Attendus</span>
+        <div className="rounded-xl bg-indigo-50/80 p-3 text-start">
+          <span className="text-[10px] font-black uppercase tracking-wide text-indigo-600">{isArabic ? 'المتوقعون' : 'Attendus'}</span>
           <p className="mt-1 text-xl font-black text-indigo-900">{todaySummary.expected}</p>
         </div>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] font-bold text-slate-400">
-        <span className="rounded-full bg-slate-50 px-2 py-1">Taux de présence : <strong className="text-slate-700">{todaySummary.attendanceRate}%</strong></span>
-        {urgentCount > 0 && <span className="rounded-full bg-rose-50 px-2 py-1 text-rose-700">{urgentCount} urgent{urgentCount > 1 ? 's' : ''}</span>}
-        {checkCount > 0 && <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-700">{checkCount} à vérifier</span>}
+        <span className="rounded-full bg-slate-50 px-2 py-1">
+          {isArabic ? 'نسبة الحضور: ' : 'Taux de présence : '}
+          <strong className="text-slate-700">{todaySummary.attendanceRate}%</strong>
+        </span>
+        {urgentCount > 0 && (
+          <span className="rounded-full bg-rose-50 px-2 py-1 text-rose-700">
+            {isArabic ? `${urgentCount} تنبيه عاجل` : `${urgentCount} urgent${urgentCount > 1 ? 's' : ''}`}
+          </span>
+        )}
+        {checkCount > 0 && (
+          <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-700">
+            {isArabic ? `${checkCount} للتأكد` : `${checkCount} à vérifier`}
+          </span>
+        )}
       </div>
 
       <div className="mt-5 border-t border-slate-100 pt-4">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-xs font-black uppercase tracking-wider text-slate-700">Radar Rawdha</h3>
-            <p className="mt-0.5 text-[10px] font-semibold text-slate-400">Les priorités détectées dans vos données du jour.</p>
+          <div className="text-start">
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-700">{isArabic ? 'رادار Rawdha' : 'Radar Rawdha'}</h3>
+            <p className="mt-0.5 text-[10px] font-semibold text-slate-400">
+              {isArabic ? 'الأولويات المستخرجة من بياناتك اليومية.' : 'Les priorités détectées dans vos données du jour.'}
+            </p>
           </div>
-          {alerts.length > 0 && <span className="rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-500">{alerts.length} signal{alerts.length > 1 ? 'aux' : ''}</span>}
+          {alerts.length > 0 && (
+            <span className="rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-500">
+              {isArabic ? `${alerts.length} إشارات` : `${alerts.length} signal${alerts.length > 1 ? 'aux' : ''}`}
+            </span>
+          )}
         </div>
 
         {alerts.length > 0 ? (
           <div className="space-y-2">
             {alerts.map(alert => (
               <div key={alert.id}>
-                <AlertRow alert={alert} onNavigate={onNavigate} />
+                <AlertRow alert={alert} isArabic={isArabic} onNavigate={onNavigate} />
               </div>
             ))}
           </div>
@@ -245,9 +287,11 @@ export default function CommandCenter({
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
               <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
             </div>
-            <div>
-              <p className="text-sm font-black text-emerald-900">Tout va bien aujourd'hui</p>
-              <p className="mt-0.5 text-[11px] font-semibold text-emerald-800/75">Aucune priorité ne demande votre attention immédiate.</p>
+            <div className="text-start">
+              <p className="text-sm font-black text-emerald-900">{isArabic ? 'كل شيء على ما يرام اليوم' : "Tout va bien aujourd'hui"}</p>
+              <p className="mt-0.5 text-[11px] font-semibold text-emerald-800/75">
+                {isArabic ? 'لا توجد أولوية تتطلب انتباهك الآن.' : 'Aucune priorité ne demande votre attention immédiate.'}
+              </p>
             </div>
           </div>
         )}

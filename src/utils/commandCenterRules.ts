@@ -1,5 +1,6 @@
 import type { Classe, Enfant, Paiement, Personnel, Presence } from '../types';
 
+export type CommandCenterLocale = 'fr' | 'ar';
 export type CommandCenterAlertLevel = 'urgent' | 'check' | 'info';
 
 export interface CommandCenterAlert {
@@ -18,6 +19,7 @@ export interface CommandCenterRulesInput {
   personnel: ReadonlyArray<Personnel>;
   classes: ReadonlyArray<Classe & { childrenIds?: string[] }>;
   now: Date;
+  locale?: CommandCenterLocale;
   maxAlerts?: number;
 }
 
@@ -61,7 +63,11 @@ function daysPastDue(payment: Paiement, now: Date): number {
   return Math.floor(elapsed / 86_400_000);
 }
 
-function buildPaymentAlerts(paiements: ReadonlyArray<Paiement>, now: Date): CommandCenterAlert[] {
+function buildPaymentAlerts(
+  paiements: ReadonlyArray<Paiement>,
+  now: Date,
+  locale: CommandCenterLocale,
+): CommandCenterAlert[] {
   const latePayments = paiements.filter(payment => payment.statut === 'Retard');
   const waitingOverFiveDays = paiements.filter(
     payment => payment.statut === 'En attente' && daysPastDue(payment, now) > 5,
@@ -72,8 +78,10 @@ function buildPaymentAlerts(paiements: ReadonlyArray<Paiement>, now: Date): Comm
     alerts.push({
       id: 'payments-overdue',
       level: 'urgent',
-      title: 'Paiements en retard',
-      message: `${latePayments.length} règlement${latePayments.length > 1 ? 's' : ''} nécessite${latePayments.length > 1 ? 'nt' : ''} une relance.`,
+      title: locale === 'ar' ? 'مدفوعات متأخرة' : 'Paiements en retard',
+      message: locale === 'ar'
+        ? `يوجد ${latePayments.length} من المدفوعات المتأخرة التي تحتاج إلى متابعة.`
+        : `${latePayments.length} règlement${latePayments.length > 1 ? 's' : ''} nécessite${latePayments.length > 1 ? 'nt' : ''} une relance.`,
       targetPage: 'paiements',
       count: latePayments.length,
     });
@@ -83,8 +91,10 @@ function buildPaymentAlerts(paiements: ReadonlyArray<Paiement>, now: Date): Comm
     alerts.push({
       id: 'payments-waiting-over-five-days',
       level: 'check',
-      title: 'Paiements à vérifier',
-      message: `${waitingOverFiveDays.length} paiement${waitingOverFiveDays.length > 1 ? 's' : ''} est${waitingOverFiveDays.length > 1 ? 'ent' : ''} en attente depuis plus de 5 jours.`,
+      title: locale === 'ar' ? 'مدفوعات تحتاج إلى التحقق' : 'Paiements à vérifier',
+      message: locale === 'ar'
+        ? `هناك ${waitingOverFiveDays.length} من المدفوعات قيد الانتظار منذ أكثر من 5 أيام.`
+        : `${waitingOverFiveDays.length} paiement${waitingOverFiveDays.length > 1 ? 's' : ''} est${waitingOverFiveDays.length > 1 ? 'ent' : ''} en attente depuis plus de 5 jours.`,
       targetPage: 'paiements',
       count: waitingOverFiveDays.length,
     });
@@ -93,7 +103,7 @@ function buildPaymentAlerts(paiements: ReadonlyArray<Paiement>, now: Date): Comm
   return alerts;
 }
 
-function buildDocumentAlert(enfants: ReadonlyArray<Enfant>): CommandCenterAlert | null {
+function buildDocumentAlert(enfants: ReadonlyArray<Enfant>, locale: CommandCenterLocale): CommandCenterAlert | null {
   const activeChildren = enfants.filter(enfant => enfant.statut === 'Actif');
   const incompleteChildren = activeChildren.filter(enfant => {
     const documents = enfant.documentsRequis;
@@ -105,8 +115,10 @@ function buildDocumentAlert(enfants: ReadonlyArray<Enfant>): CommandCenterAlert 
   return {
     id: 'children-missing-documents',
     level: 'check',
-    title: 'Dossiers à compléter',
-    message: `${incompleteChildren.length} dossier${incompleteChildren.length > 1 ? 's' : ''} enfant${incompleteChildren.length > 1 ? 's' : ''} comporte${incompleteChildren.length > 1 ? 'nt' : ''} une pièce manquante.`,
+    title: locale === 'ar' ? 'ملفات الأطفال غير مكتملة' : 'Dossiers à compléter',
+    message: locale === 'ar'
+      ? `هناك ${incompleteChildren.length} من ملفات الأطفال تحتوي على وثيقة ناقصة على الأقل.`
+      : `${incompleteChildren.length} dossier${incompleteChildren.length > 1 ? 's' : ''} enfant${incompleteChildren.length > 1 ? 's' : ''} comporte${incompleteChildren.length > 1 ? 'nt' : ''} une pièce manquante.`,
     targetPage: 'enfants',
     count: incompleteChildren.length,
   };
@@ -116,6 +128,7 @@ function buildAttendanceAlert(
   enfants: ReadonlyArray<Enfant>,
   presences: ReadonlyArray<Presence>,
   now: Date,
+  locale: CommandCenterLocale,
 ): CommandCenterAlert | null {
   const activeChildren = enfants.filter(enfant => enfant.statut === 'Actif');
   if (activeChildren.length === 0) return null;
@@ -131,14 +144,19 @@ function buildAttendanceAlert(
   return {
     id: 'attendance-not-recorded-today',
     level: 'info',
-    title: 'Pointage à compléter',
-    message: `${missingAttendance.length} enfant${missingAttendance.length > 1 ? 's' : ''} n'a${missingAttendance.length > 1 ? 'nt' : ''} pas encore de présence enregistrée aujourd'hui.`,
+    title: locale === 'ar' ? 'استكمال تسجيل الحضور' : 'Pointage à compléter',
+    message: locale === 'ar'
+      ? `لم يُسجَّل حضور ${missingAttendance.length} من الأطفال اليوم.`
+      : `${missingAttendance.length} enfant${missingAttendance.length > 1 ? 's' : ''} n'a${missingAttendance.length > 1 ? 'nt' : ''} pas encore de présence enregistrée aujourd'hui.`,
     targetPage: 'presences',
     count: missingAttendance.length,
   };
 }
 
-function buildCapacityAlerts(classes: ReadonlyArray<Classe & { childrenIds?: string[] }>): CommandCenterAlert[] {
+function buildCapacityAlerts(
+  classes: ReadonlyArray<Classe & { childrenIds?: string[] }>,
+  locale: CommandCenterLocale,
+): CommandCenterAlert[] {
   const overflowingClasses = classes.filter(classe => {
     const capacity = Number(classe.capacite);
     const enrolled = Array.isArray(classe.childrenIds) ? classe.childrenIds.length : 0;
@@ -151,8 +169,10 @@ function buildCapacityAlerts(classes: ReadonlyArray<Classe & { childrenIds?: str
     return {
       id: `class-over-capacity-${classe.id}`,
       level: 'urgent',
-      title: `Capacité dépassée : ${classe.nom}`,
-      message: `${enrolled} enfants pour ${capacity} place${capacity > 1 ? 's' : ''}.`,
+      title: locale === 'ar' ? `تجاوز سعة القسم: ${classe.nom}` : `Capacité dépassée : ${classe.nom}`,
+      message: locale === 'ar'
+        ? `يوجد ${enrolled} من الأطفال في القسم مقابل ${capacity} مقعد${capacity > 1 ? 'اً' : ''}.`
+        : `${enrolled} enfants pour ${capacity} place${capacity > 1 ? 's' : ''}.`,
       targetPage: 'classes',
       count: enrolled - capacity,
     };
@@ -166,17 +186,18 @@ export function buildCommandCenterAlerts({
   personnel,
   classes,
   now,
+  locale = 'fr',
   maxAlerts = 6,
 }: CommandCenterRulesInput): CommandCenterAlert[] {
   const alerts: CommandCenterAlert[] = [
-    ...buildPaymentAlerts(paiements, now),
-    ...buildCapacityAlerts(classes),
+    ...buildPaymentAlerts(paiements, now, locale),
+    ...buildCapacityAlerts(classes, locale),
   ];
 
-  const documentAlert = buildDocumentAlert(enfants);
+  const documentAlert = buildDocumentAlert(enfants, locale);
   if (documentAlert) alerts.push(documentAlert);
 
-  const attendanceAlert = buildAttendanceAlert(enfants, presences, now);
+  const attendanceAlert = buildAttendanceAlert(enfants, presences, now, locale);
   if (attendanceAlert) alerts.push(attendanceAlert);
 
   const inactiveStaff = personnel.filter(member => member.statut === 'Inactif');
@@ -184,8 +205,10 @@ export function buildCommandCenterAlerts({
     alerts.push({
       id: 'inactive-personnel',
       level: 'check',
-      title: 'Personnel à vérifier',
-      message: `${inactiveStaff.length} membre${inactiveStaff.length > 1 ? 's' : ''} du personnel est${inactiveStaff.length > 1 ? 'ent' : ''} marqué${inactiveStaff.length > 1 ? 's' : ''} inactif${inactiveStaff.length > 1 ? 's' : ''}.`,
+      title: locale === 'ar' ? 'التحقق من أعضاء الفريق' : 'Personnel à vérifier',
+      message: locale === 'ar'
+        ? `يوجد ${inactiveStaff.length} من أعضاء الفريق مميزون كغير نشطين.`
+        : `${inactiveStaff.length} membre${inactiveStaff.length > 1 ? 's' : ''} du personnel est${inactiveStaff.length > 1 ? 'ent' : ''} marqué${inactiveStaff.length > 1 ? 's' : ''} inactif${inactiveStaff.length > 1 ? 's' : ''}.`,
       targetPage: 'personnel',
       count: inactiveStaff.length,
     });
@@ -195,8 +218,10 @@ export function buildCommandCenterAlerts({
     alerts.push({
       id: 'no-classes-configured',
       level: 'info',
-      title: 'Aucune classe configurée',
-      message: 'Créez votre première classe pour suivre les capacités et les groupes.',
+      title: locale === 'ar' ? 'لا توجد أقسام مهيأة' : 'Aucune classe configurée',
+      message: locale === 'ar'
+        ? 'أضيفوا أول قسم لمتابعة السعة وتنظيم الأطفال حسب الفئة العمرية.'
+        : 'Créez votre première classe pour suivre les capacités et les groupes.',
       targetPage: 'classes',
     });
   }

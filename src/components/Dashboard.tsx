@@ -124,6 +124,39 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
     }
   };
 
+  const groupeLabels: Record<string, string> = {
+    Bébés: 'الرضع',
+    Moyens: 'الأطفال المتوسطون',
+    Grands: 'الأطفال الكبار',
+  };
+
+  const localizePaymentStatus = (status: string) => {
+    if (!isArabic) return status;
+    if (status === 'Payé') return 'مدفوعة';
+    if (status === 'Retard') return 'متأخرة';
+    if (status === 'En attente') return 'قيد الانتظار';
+    return status;
+  };
+
+  const localizePaymentMonth = (value: string) => {
+    if (!isArabic) return value;
+    const monthLabels: Record<string, string> = {
+      janvier: 'جانفي',
+      février: 'فيفري',
+      mars: 'مارس',
+      avril: 'أفريل',
+      mai: 'ماي',
+      juin: 'جوان',
+      juillet: 'جويلية',
+      août: 'أوت',
+      septembre: 'سبتمبر',
+      octobre: 'أكتوبر',
+      novembre: 'نوفمبر',
+      décembre: 'ديسمبر',
+    };
+    return value.replace(/janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre/gi, match => monthLabels[match.toLowerCase()] ?? match);
+  };
+
   const documentsManquants = enfantsData.filter(e => {
     const documents = e.documentsRequis || {};
     return !documents.certificatMedical ||
@@ -166,7 +199,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
       trendUp: paiementsPayes.length > 0
     },
     {
-      title: isArabic ? 'إشعارات الدفع المعلقة' : 'Paiements Suspendus',
+      title: isArabic ? 'دفعات معلقة' : 'Paiements en attente',
       value: paiementsEnAttente.length,
       subtitle: formatCurrency(totalRevenusAttendus),
       icon: AlertCircle,
@@ -178,7 +211,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
   ];
 
   return (
-    <div className="min-w-0 space-y-5 sm:space-y-8 font-sans">
+    <div dir={isArabic ? 'rtl' : 'ltr'} className="min-w-0 space-y-5 sm:space-y-8 font-sans">
       <div className="flex min-w-0 flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4">
         <div>
           <span className="text-[10px] sm:text-xs font-bold text-indigo-600 uppercase tracking-widest block mb-0.5 flex items-center gap-1">
@@ -303,7 +336,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
                           {stats.presents}/{stats.total}
                         </div>
                         <div>
-                          <span className="text-sm font-extrabold text-slate-900 block leading-tight">{groupe}</span>
+                          <span className="text-sm font-extrabold text-slate-900 block leading-tight">{isArabic ? (groupeLabels[groupe] ?? groupe) : groupe}</span>
                           <span className="text-[10px] text-slate-400 font-bold">{stats.labelRef}</span>
                         </div>
                       </div>
@@ -324,19 +357,19 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
           <div className="mt-8 pt-6 border-t border-slate-100 grid grid-cols-1 min-[390px]:grid-cols-3 gap-4 text-center">
             <div>
               <p className="text-xl font-black text-emerald-600">{presencesAujourdhui.length}</p>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Présents</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">{isArabic ? 'الحاضرون' : 'Présents'}</p>
             </div>
             <div>
               <p className="text-xl font-black text-amber-500">
                 {presencesData.filter(p => p.date === today && p.statut === 'Absent justifié').length}
               </p>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Absences Justifiées</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">{isArabic ? 'غيابات مبررة' : 'Absences justifiées'}</p>
             </div>
             <div>
               <p className="text-xl font-black text-rose-500">
                 {presencesData.filter(p => p.date === today && p.statut === 'Absent non justifié').length}
               </p>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Non Justifiées</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">{isArabic ? 'غيابات غير مبررة' : 'Absences non justifiées'}</p>
             </div>
           </div>
         </div>
@@ -363,7 +396,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-xs">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4">{isArabic ? 'محاور الرقابة السريعة' : 'Indicateurs d\'Urgence'}</h3>
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4">{isArabic ? 'نقاط المراقبة السريعة' : 'Points de contrôle'}</h3>
             <div className="space-y-3">
               <div className="flex items-center gap-3 p-3 bg-emerald-50/50 rounded-xl border border-emerald-100/50">
                 <ShieldCheck className="w-5 h-5 text-emerald-600" />
@@ -371,7 +404,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
               </div>
               <div className="flex items-center gap-3 p-3 bg-pink-50/50 rounded-xl border border-pink-100/50">
                 <Coffee className="w-5 h-5 text-pink-600" />
-                <span className="text-xs font-black text-pink-800">{isArabic ? 'الوجبات: خالية من مسببات الحساسية' : 'Cuisine: menus Bio & Sains'}</span>
+                <span className="text-xs font-black text-pink-800">{isArabic ? 'الوجبات: خالية من مسببات الحساسية' : 'Repas : menus sains et adaptés'}</span>
               </div>
             </div>
           </div>
@@ -391,7 +424,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
               </div>
             </div>
             <span className="px-3 py-1 bg-rose-50 text-rose-600 text-xs font-black rounded-lg">
-              {paiementsEnAttente.length} {isArabic ? 'جاري' : 'alertes'}
+              {paiementsEnAttente.length} {isArabic ? 'تنبيهات' : 'alertes'}
             </span>
           </div>
 
@@ -409,9 +442,9 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
                       <span className="text-xs font-black text-rose-600">{formatCurrency(paiement.montant)}</span>
                     </div>
                     <div className="flex justify-between items-center text-xs text-slate-400 font-semibold">
-                      <span>Terme: {paiement.moisConcerne}</span>
+                      <span>{isArabic ? 'الاستحقاق: ' : 'Échéance : '}{localizePaymentMonth(paiement.moisConcerne)}</span>
                       <span className="px-1.5 py-0.5 bg-rose-50 text-rose-700 rounded font-black text-[10px]">
-                        {paiement.statut}
+                        {localizePaymentStatus(paiement.statut)}
                       </span>
                     </div>
                   </div>
@@ -445,7 +478,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
               </div>
             </div>
             <span className="px-3 py-1 bg-emerald-50 text-emerald-600 text-xs font-black rounded-lg">
-              {personnelData.filter((p: any) => p.statut === 'Actif').length} en poste
+              {personnelData.filter((p: any) => p.statut === 'Actif').length} {isArabic ? 'في الخدمة' : 'en poste'}
             </span>
           </div>
 
@@ -463,7 +496,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
                 </div>
                 <span className="text-[10px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100/30 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
-                  Actif
+                  {isArabic ? 'نشط' : 'Actif'}
                 </span>
               </div>
             ))}
