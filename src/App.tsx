@@ -111,7 +111,13 @@ import { hasCompletedOnboarding } from './components/OnboardingCrecheModal';
 
 function AppContent() {
   const { isAuthenticated, user, creche, logout, loading: authLoading } = useAuth();
+  // La route est conservée dans l’état React : history.pushState() seul ne déclenche
+  // pas de rendu, notamment dans certains WebViews Android.
+  const [routeVersion, setRouteVersion] = useState(0);
   const [currentPage, setCurrentPage] = useState(() => pageFromPathname(window.location.pathname));
+  const [isDesktopViewport, setIsDesktopViewport] = useState(() => (
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
+  ));
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isBrowserFullscreen, setIsBrowserFullscreen] = useState(false);
@@ -119,12 +125,14 @@ function AppContent() {
   const [showCouponInput, setShowCouponInput] = useState(false); // ✅ champ coupon replié par défaut, pour ne pas distraire du CTA principal // ✅ champ code coupon sur l'écran d'abonnement expiré
   const { language, setLanguage, t } = useLanguage();
   const { loading: dbLoading, comptes } = useDb();
+  // routeVersion est volontairement lu ici : il force le recalcul des routes après
+  // toute modification interne de l’historique, sans dépendre d’un PopStateEvent.
+  void routeVersion;
   const isPublicAdmission = window.location.pathname.replace(/\/+$/, '') === '/admission';
   const isPublicPrivacy = window.location.pathname.replace(/\/+$/, '') === '/confidentialite';
   const normalizedPathname = normalizeAuthPath(window.location.pathname);
   const isAccessRequest = normalizedPathname === '/signin';
   const isPublicWelcome = normalizedPathname === '/welcome';
-  const isDesktopViewport = typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches;
   const isMobileWelcomeScreen = isPublicWelcome && !isDesktopViewport;
 
   const navigateToPage = (page: string, options?: { replace?: boolean }) => {
@@ -135,7 +143,20 @@ function AppContent() {
     if (typeof window !== 'undefined' && window.location.pathname !== nextPath) {
       const method = options?.replace ? 'replaceState' : 'pushState';
       window.history[method]({}, '', nextPath);
+      setRouteVersion((version) => version + 1);
     }
+  };
+
+  const navigateToPublicPath = (path: '/login/' | '/signin/', options?: { replace?: boolean }) => {
+    if (typeof window === 'undefined') return;
+    const nextPath = path;
+    if (window.location.pathname !== nextPath) {
+      const method = options?.replace ? 'replaceState' : 'pushState';
+      window.history[method]({}, '', `${nextPath}${window.location.search}${window.location.hash}`);
+    }
+    // Cette mise à jour est indispensable : pushState/replaceState ne déclenchent
+    // pas l’évènement popstate par eux-mêmes.
+    setRouteVersion((version) => version + 1);
   };
 
   // ✅ Onboarding premier login : on vérifie une fois si le directeur a déjà rempli
@@ -174,8 +195,16 @@ function AppContent() {
   };
 
   useEffect(() => {
+    const updateViewport = () => setIsDesktopViewport(window.innerWidth >= 1024);
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    return () => window.removeEventListener('resize', updateViewport);
+  }, []);
+
+  useEffect(() => {
     const handlePopState = () => {
       setCurrentPage(pageFromPathname(window.location.pathname));
+      setRouteVersion((version) => version + 1);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -190,12 +219,14 @@ function AppContent() {
       const canonicalPath = `${normalizedPath}/${queryAndHash}`;
       if (window.location.pathname !== `${normalizedPath}/`) {
         window.history.replaceState({}, '', canonicalPath);
+        setRouteVersion((version) => version + 1);
       }
       return;
     }
 
     // L’accueil est réservé au téléphone ; sur ordinateur, on ouvre directement le formulaire.
     window.history.replaceState({}, '', `${isDesktopViewport ? '/login/' : '/welcome/'}${queryAndHash}`);
+    setRouteVersion((version) => version + 1);
   }, [isAuthenticated, isDesktopViewport, isPublicAdmission, isPublicPrivacy]);
 
   useEffect(() => {
@@ -273,7 +304,9 @@ function AppContent() {
   // Les routes publiques ne doivent jamais montrer un écran technique de restauration.
   // L’accueil et la connexion restent immédiatement visibles, même durant la vérification silencieuse de session.
   if (!isAuthenticated) {
-    if (isMobileWelcomeScreen) return <MobileWelcome />;
+    if (isMobileWelcomeScreen) {
+      return <MobileWelcome onContinue={() => navigateToPublicPath('/login/', { replace: true })} />;
+    }
     return <SignIn mode={isAccessRequest ? 'request' : 'signin'} />;
   }
 

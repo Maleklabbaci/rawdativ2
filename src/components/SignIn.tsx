@@ -454,7 +454,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
 
           <div className="flex justify-center pt-1">
             <a
-              href="https://github.com/Maleklabbaci/rawdativ2/releases/download/android-v1.0.0/RawdhaPlus-v1.0.0-android.apk"
+              href="https://github.com/Maleklabbaci/rawdativ2/releases/download/android-v1.0.1/RawdhaPlus-v1.0.1-android.apk"
               className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 shadow-sm transition hover:border-[#e9673a] hover:bg-orange-50 hover:text-[#d94b38] focus:outline-none focus:ring-2 focus:ring-orange-200"
             >
               <Download className="h-4 w-4" aria-hidden="true" />

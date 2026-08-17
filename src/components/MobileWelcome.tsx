@@ -1,10 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BadgeCheck } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 
-export default function MobileWelcome() {
+interface MobileWelcomeProps {
+  onContinue: () => void;
+}
+
+export default function MobileWelcome({ onContinue }: MobileWelcomeProps) {
   const { isFrench } = useLanguage();
   const [isLeaving, setIsLeaving] = useState(false);
+  const exitTimerRef = useRef<number | null>(null);
 
   const copy = isFrench ? {
     subtitle: 'Premium Nursery Platform',
@@ -25,16 +30,19 @@ export default function MobileWelcome() {
   const goToLogin = () => {
     if (isLeaving) return;
     setIsLeaving(true);
-    window.setTimeout(() => {
-      // Navigation interne SPA : compatible web et application Capacitor, sans recharger une URL distante.
-      window.history.pushState({}, '', '/login/');
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }, 650);
+
+    // Le composant parent met explicitement à jour l’état de route. Cette approche
+    // évite de dépendre d’un PopStateEvent synthétique, source d’écrans blancs dans
+    // certains WebViews Android après la transition visuelle.
+    exitTimerRef.current = window.setTimeout(onContinue, 650);
   };
 
   useEffect(() => {
-    const timer = window.setTimeout(goToLogin, 3200);
-    return () => window.clearTimeout(timer);
+    const welcomeTimer = window.setTimeout(goToLogin, 3200);
+    return () => {
+      window.clearTimeout(welcomeTimer);
+      if (exitTimerRef.current !== null) window.clearTimeout(exitTimerRef.current);
+    };
   }, []);
 
   return (
