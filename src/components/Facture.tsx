@@ -171,45 +171,64 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
     .card { box-shadow: none; max-width: none; height: 100%; overflow: hidden; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   }
+  .brand-row { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 12px 16px; margin-bottom: 14px; border: 1px solid #dbeafe; border-radius: 14px; background: linear-gradient(135deg, #eff6ff 0%, #f5f3ff 100%); }
+  .brand-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .brand-copy { min-width: 0; }
+  .brand-kicker { font-size: 9px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: #6366f1; }
+  .brand-name { font-size: 18px; font-weight: 900; color: #0f172a; margin-top: 2px; }
+  .brand-address { font-size: 10px; color: #475569; margin-top: 2px; }
+  .meta-card { min-width: 210px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.9); box-shadow: 0 2px 8px rgba(79,70,229,.08); }
+  .meta-title { font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .12em; color: #4f46e5; margin-bottom: 7px; }
+  .compact-grid { gap: 14px; margin-bottom: 12px; }
+  .section-card { border: 1px solid #dbeafe; border-radius: 12px; padding: 12px 14px; background: #f8fbff; }
+  .payment-card { border-color: #ede9fe; background: #faf8ff; }
+  .section-title { font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; color: #0369a1; margin-bottom: 8px; }
+  .payment-card .section-title { color: #6d28d9; }
+  .detail-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; border-bottom: 1px solid #e0f2fe; padding: 4px 0; font-size: 10px; }
+  .detail-row:last-child { border-bottom: 0; }
+  .detail-row span { color: #64748b; }
+  .detail-row strong { color: #0f172a; text-align: right; }
+  .amount-strip { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 10px 14px; margin: 12px 0; border-radius: 12px; background: linear-gradient(90deg, #fffbeb 0%, #ffffff 48%, #ecfdf5 100%); border: 1px solid #fde68a; }
+  .thanks { font-size: 11px; font-weight: 700; color: #475569; }
+  .received-label { font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: .07em; }
+  .received-value { font-size: 18px; font-weight: 900; color: #4338ca; margin-top: 2px; }
+  .signature-card { padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; }
+  .signature-card .sign-label { margin-bottom: 16px; }
   @page { size: A4 landscape; margin: 5mm; }
 </style>
 </head>
 <body>
   <div class="card">
-    <div class="header">
-      <div class="logo-circle">${creche?.logoUrl ? `<img src="${creche.logoUrl}" alt="Logo" />` : '<img src="/favicon.png" alt="Logo Rawdha+" />'}</div>
-      <div class="title">${t('invoice')}</div>
-      <div class="subtitle">${invoiceNumber}</div>
-    </div>
-
-    <div class="grid2">
-      <div>
-        <div class="label">${t('creche')}</div>
-        <div class="value-strong">${creche?.nom || ''}</div>
-        <div class="value-muted">${creche?.adresse || ''}</div>
+    <div class="brand-row">
+      <div class="brand-left">
+        <div class="logo-circle">${creche?.logoUrl ? `<img src="${creche.logoUrl}" alt="Logo" />` : '<img src="/favicon.png" alt="Logo Rawdha+" />'}</div>
+        <div class="brand-copy">
+          <div class="brand-kicker">Rawdha+ • Crèche & maternelle</div>
+          <div class="brand-name">${creche?.nom || 'Rawdha+'}</div>
+          <div class="brand-address">${creche?.adresse || 'Adresse de l’établissement'}</div>
+        </div>
       </div>
-      <div>
-        <div class="label">${t('invoice')}</div>
+      <div class="meta-card">
+        <div class="meta-title">${isArabic ? 'إيصال الدفع' : 'Reçu de paiement'}</div>
         <div class="row-between"><span>${t('number')}:</span><span>${invoiceNumber}</span></div>
         <div class="row-between"><span>${t('date')}:</span><span>${invoiceDate}</span></div>
-        <div class="row-between"><span>${t('paymentMethod')}:</span><span>${paiement?.moyenPaiement || 'Espèces'}</span></div>
       </div>
     </div>
 
-    <div class="info-box grid2" style="margin-bottom:0;">
-      <div>
-        <div class="label">${t('child')}</div>
-        <div class="value-strong">${enfant?.prenom || ''} ${enfant?.nom || ''}</div>
-        <div class="value-muted">${enfant?.dateNaissance || ''} • ${enfant?.genre || ''}</div>
+    <div class="grid2 compact-grid">
+      <div class="section-card">
+        <div class="section-title">${isArabic ? 'معلومات الطفل' : 'Informations de l’enfant'}</div>
+        <div class="detail-row"><span>Nom et prénom</span><strong>${enfant?.prenom || ''} ${enfant?.nom || ''}</strong></div>
+        <div class="detail-row"><span>Parent / tuteur</span><strong>${parentInfo?.prenom || ''} ${parentInfo?.nom || ''}</strong></div>
+        <div class="detail-row"><span>Date de naissance</span><strong>${enfant?.dateNaissance || '—'}</strong></div>
       </div>
-      <div>
-        <div class="label">${t('parent')}</div>
-        <div class="value-strong">${parentInfo?.prenom || ''} ${parentInfo?.nom || ''}</div>
-        <div class="value-muted">${parentInfo?.telephone || ''}</div>
-        ${parentInfo?.email ? `<div class="value-muted">${parentInfo.email}</div>` : ''}
+      <div class="section-card payment-card">
+        <div class="section-title">${isArabic ? 'تفاصيل الدفع' : 'Détails du règlement'}</div>
+        <div class="detail-row"><span>${t('paymentMethod')}</span><strong>${paiement?.moyenPaiement || 'Espèces'}</strong></div>
+        <div class="detail-row"><span>${t('month')}</span><strong>${paiement?.moisConcerne || '—'}</strong></div>
+        <div class="detail-row"><span>${isArabic ? 'الحالة' : 'Statut'}</span><strong>${getStatusLabel()}</strong></div>
       </div>
     </div>
-    <div style="height:12px;"></div>
 
     <table>
       <thead>
@@ -228,30 +247,28 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
       </tbody>
     </table>
 
-    <div style="display:flex; justify-content:${isArabic ? 'flex-start' : 'flex-end'};">
-      <div style="width:50%;">
-        <div class="total-box">
-          <span class="total-label">${t('totalAmount')}:</span>
-          <span class="total-value">${paiement?.montant?.toLocaleString() || '0'} DA</span>
-        </div>
-        <div class="status-badge">${getStatusLabel()}</div>
+    <div class="amount-strip">
+      <span class="thanks">Merci pour votre confiance</span>
+      <div style="text-align:${isArabic ? 'left' : 'right'};">
+        <div class="received-label">${isArabic ? 'المبلغ المستلم' : 'Montant reçu'}</div>
+        <div class="received-value">${paiement?.montant?.toLocaleString() || '0'} DA</div>
       </div>
     </div>
 
     <div class="sign-block">
-      <div>
+      <div class="signature-card">
         <div class="sign-label">${isArabic ? 'ختم وتوقيع الحضانة' : 'Cachet et signature de la crèche'}</div>
         <div class="sign-line"></div>
         <div class="sign-name">${creche?.nom || ''}</div>
       </div>
-      <div>
+      <div class="signature-card">
         <div class="sign-label">${isArabic ? 'توقيع الولي' : 'Signature du parent'}</div>
         <div class="sign-line"></div>
         <div class="sign-name">${parentInfo?.prenom || ''} ${parentInfo?.nom || ''}</div>
       </div>
     </div>
 
-    <div class="footer">© ${new Date().getFullYear()} RAWDHA+ - Plateforme de Gestion</div>
+    <div class="footer">© ${new Date().getFullYear()} RAWDHA+ - Plateforme de gestion de crèche</div>
   </div>
 </body>
 </html>`;
