@@ -32,7 +32,7 @@ const formatPhoneForWhatsapp = (phone: string) => {
 };
 
 export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onClose: () => void }) {
-  const { language } = useLanguage();
+  const { language, t } = useLanguage();
   const isArabic = language === 'ar';
   const { creche } = useAuth();
   
@@ -164,7 +164,7 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
             }`}
           >
             <CreditCard className="w-4 h-4" />
-            <span>{isArabic ? 'تقرير الدفع والاشتراك' : 'Invoices & Paiements'}</span>
+            <span>{t('children.paymentsTab')}</span>
             {childPaiements.length > 0 && (
               <span className="bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded-full text-[10px]">
                 {childPaiements.length}

@@ -87,6 +87,16 @@ export default function Rapports() {
     setSelectedMonth(monthKey(date));
   };
 
+  // L’appel direct à window.print() bloque le canal de contrôle du navigateur
+  // avant que le clic ne soit acquitté. Le lancement différé laisse l’interface
+  // terminer l’événement utilisateur avant d’ouvrir l’aperçu d’impression.
+  const handlePrint = () => {
+    window.setTimeout(() => {
+      window.focus();
+      window.print();
+    }, 80);
+  };
+
   return (
     <div className="space-y-5 print:bg-white print:p-0">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 print:hidden">
@@ -111,7 +121,7 @@ export default function Rapports() {
           <button onClick={() => changeMonth(1)} className="flex h-10 w-10 shrink-0 items-center justify-center p-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:border-indigo-300 cursor-pointer" aria-label="Mois suivant">
             <ChevronRight className="w-4 h-4" />
           </button>
-          <button onClick={() => window.print()} className="flex h-10 shrink-0 items-center justify-center gap-2 px-3.5 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 cursor-pointer">
+          <button onClick={handlePrint} aria-label={isArabic ? 'طباعة التقرير' : 'Imprimer le rapport'} className="flex h-10 shrink-0 items-center justify-center gap-2 px-3.5 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 cursor-pointer">
             <Printer className="w-4 h-4" />
             <span className="hidden sm:inline">{isArabic ? 'طباعة' : 'Imprimer'}</span>
           </button>
