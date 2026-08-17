@@ -223,6 +223,11 @@ function AppContent() {
     }
     link.href = faviconHref;
 
+    if (!isAuthenticated && !isPublicAdmission && !isPublicPrivacy) {
+      document.title = language === 'ar' ? 'تسجيل الدخول — RAWDHA+' : 'Connexion — RAWDHA+';
+      return;
+    }
+
     const pageTitleKeys: Record<string, string> = {
       dashboard: 'dashboard',
       enfants: 'children',
@@ -246,7 +251,7 @@ function AppContent() {
       ? t(pageTitleKeys[currentPage])
       : fallbackPageTitles[currentPage] || 'RAWDHA+';
     document.title = `${pageName} — RAWDHA+`;
-  }, [creche?.logoUrl, creche?.nom, currentPage, language, t]);
+  }, [creche?.logoUrl, creche?.nom, currentPage, isAuthenticated, isPublicAdmission, isPublicPrivacy, language, t]);
 
   if (isPublicPrivacy) {
     return <PrivacyPolicy />;
