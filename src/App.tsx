@@ -270,11 +270,15 @@ function AppContent() {
     return <PublicAdmission />;
   }
 
-  // Attendre la restauration de la session avant de décider si l’utilisateur est déconnecté.
-  // Sans ce garde placé avant SignIn, chaque reload affichait brièvement l’écran de connexion.
-  // La restauration Auth doit être terminée avant tout rendu de SignIn.
-  // Les données métier peuvent ensuite continuer à charger sans faire clignoter le login.
-  if (authLoading || (isAuthenticated && dbLoading)) {
+  // Les routes publiques ne doivent jamais montrer un écran technique de restauration.
+  // L’accueil et la connexion restent immédiatement visibles, même durant la vérification silencieuse de session.
+  if (!isAuthenticated) {
+    if (isMobileWelcomeScreen) return <MobileWelcome />;
+    return <SignIn mode={isAccessRequest ? 'request' : 'signin'} />;
+  }
+
+  // Pour un utilisateur déjà connecté, on attend la restauration de session et des données métier.
+  if (authLoading || dbLoading) {
     return (
       <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center gap-4">
         <School className="w-12 h-12 text-indigo-600 animate-bounce" />
@@ -285,11 +289,6 @@ function AppContent() {
         </p>
       </div>
     );
-  }
-
-  if (!isAuthenticated) {
-    if (isMobileWelcomeScreen) return <MobileWelcome />;
-    return <SignIn mode={isAccessRequest ? 'request' : 'signin'} />;
   }
 
   // --- Real-time Subscription Expiry Guard (Checks end date & active status) ---
