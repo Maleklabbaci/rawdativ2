@@ -6,3 +6,10 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Artefacts de vérification et de publication Android — à livrer hors Git.
+/release/
+/mobile-*.png
+/desktop-*.png
+/rawdha-login-split-layout.patch
+/RAWDHA_ANDROID_UPLOAD_KEY.txt

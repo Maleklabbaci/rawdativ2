@@ -25,7 +25,11 @@ export default function MobileWelcome() {
   const goToLogin = () => {
     if (isLeaving) return;
     setIsLeaving(true);
-    window.setTimeout(() => window.location.assign('/login/'), 650);
+    window.setTimeout(() => {
+      // Navigation interne SPA : compatible web et application Capacitor, sans recharger une URL distante.
+      window.history.pushState({}, '', '/login/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, 650);
   };
 
   useEffect(() => {
