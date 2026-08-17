@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { Building2, User, Phone, MapPin, Mail, Globe, DollarSign, Check } from 'lucide-react';
+import { Building2, User, Phone, MapPin, Mail, Globe, DollarSign, Check, CheckCircle2, MessageCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useDb } from '../contexts/DbContext';
 import { setCollectionDocument, getCollectionDocument } from '../supabase';
@@ -85,6 +85,29 @@ export default function OnboardingCrecheModal({ onDone }: { onDone: () => void }
         </div>
 
         <div className="p-4 sm:p-6 space-y-4">
+          <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
+            <p className="text-xs font-black uppercase tracking-wider text-indigo-700">
+              {isFrench ? 'Démarrage accompagné' : 'بدء التشغيل بمرافقة'}
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-indigo-900/80">
+              {isFrench
+                ? 'On configure d’abord votre crèche, puis nous vous guidons pour ajouter les enfants et suivre les paiements.'
+                : 'نقوم أولاً بإعداد حضانتكم، ثم نرافقكم لإضافة الأطفال ومتابعة المدفوعات.'}
+            </p>
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {[
+                isFrench ? '1. Votre crèche' : '1. حضانتكم',
+                isFrench ? '2. Vos enfants' : '2. أطفالكم',
+                isFrench ? '3. Votre suivi' : '3. متابعتكم',
+              ].map((step) => (
+                <div key={step} className="flex items-center gap-1.5 rounded-xl bg-white/80 px-2.5 py-2 text-[11px] font-bold text-indigo-800">
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                  <span>{step}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelClass}><User className="w-3.5 h-3.5 inline mr-1" />{isFrench ? 'Prénom *' : 'الاسم الأول *'}</label>
@@ -129,6 +152,15 @@ export default function OnboardingCrecheModal({ onDone }: { onDone: () => void }
           </div>
 
           {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+
+          <div className="flex items-start gap-2.5 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-600">
+            <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500" />
+            <p className="leading-relaxed">
+              {isFrench
+                ? 'Besoin d’aide pendant l’installation ? Utilisez la bulle Support en bas de l’écran pour nous écrire directement.'
+                : 'هل تحتاجون إلى المساعدة أثناء الإعداد؟ استعملوا فقاعة الدعم أسفل الشاشة للتواصل معنا مباشرة.'}
+            </p>
+          </div>
         </div>
 
         <div className="p-4 sm:p-6 sm:pt-0">
