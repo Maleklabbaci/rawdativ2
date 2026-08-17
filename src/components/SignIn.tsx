@@ -4,10 +4,10 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { supabase } from '../supabase';
 import {
   AlertCircle,
-  Baby,
   Building,
   CheckCircle2,
   Clock3,
+  Download,
   Globe2,
   KeyRound,
   Lock,
@@ -78,6 +78,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
     requestNote: 'Votre mot de passe est géré de façon sécurisée par Supabase et n’est jamais envoyé à l’administrateur. Après acceptation, vous pourrez vous connecter immédiatement avec vos identifiants.',
     requestButton: 'Envoyer ma demande',
     parentNote: 'L’espace parent sera ajouté séparément dans une prochaine version de Rawdha+.',
+    androidInstall: 'Installer l’application Android',
     requestSuccess: 'Votre demande a bien été envoyée. Après acceptation, ouvrez /login/ pour vous connecter avec le mot de passe que vous venez de définir.',
     requiredError: 'Veuillez remplir tous les champs obligatoires, y compris le mot de passe.',
     passwordLengthError: 'Le mot de passe doit contenir au moins 8 caractères.',
@@ -122,6 +123,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
     requestNote: 'كلمة المرور تاعك محمية بشكل آمن عبر Supabase وما تتبعثش للمسؤول. بعد قبول الطلب، تقدري تدخلي مباشرة بمعلوماتك.',
     requestButton: 'إرسال الطلب',
     parentNote: 'فضاء الأولياء راح نضيفوه بشكل منفصل في نسخة جاية من روضة+.',
+    androidInstall: 'تثبيت تطبيق أندرويد',
     requestSuccess: 'تم إرسال طلبك بنجاح. بعد القبول، افتحي /login/ وسجلي الدخول بكلمة المرور التي اخترتها.',
     requiredError: 'يرجى ملء جميع الخانات الإلزامية، بما فيها كلمة المرور.',
     passwordLengthError: 'لازم كلمة المرور تكون فيها 8 أحرف على الأقل.',
@@ -260,9 +262,11 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
         <div className="absolute -bottom-20 -right-20 w-96 h-96 bg-amber-100/20 rounded-full blur-3xl" />
 
         <div className="relative z-10 flex items-center gap-3">
-          <div className="p-3 bg-white/20 backdrop-blur-md rounded-2xl border border-white/30 shadow-inner">
-            <Baby className="w-8 h-8 text-white" />
-          </div>
+          <img
+            src="/rawdah-logo.png"
+            alt="Logo Rawdha+"
+            className="h-14 w-14 rounded-2xl border border-white/35 shadow-lg"
+          />
           <div>
             <h2 className="text-2xl font-bold tracking-wider font-display drop-shadow-sm">RAWDHA+</h2>
             <p className="hidden sm:block text-xs text-white/80 tracking-widest">{copy.brandSubtitle}</p>
@@ -447,6 +451,16 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
           <p className="text-center text-xs text-slate-400 leading-relaxed">
             {copy.parentNote}
           </p>
+
+          <div className="flex justify-center pt-1">
+            <a
+              href="https://github.com/Maleklabbaci/rawdativ2/releases/download/android-v1.0.0/RawdhaPlus-v1.0.0-android.apk"
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 shadow-sm transition hover:border-[#e9673a] hover:bg-orange-50 hover:text-[#d94b38] focus:outline-none focus:ring-2 focus:ring-orange-200"
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              <span>{copy.androidInstall}</span>
+            </a>
+          </div>
         </div>
       </main>
     </div>

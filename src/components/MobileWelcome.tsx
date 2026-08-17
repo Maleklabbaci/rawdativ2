@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Baby, BadgeCheck, Download } from 'lucide-react';
+import { BadgeCheck } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 
 export default function MobileWelcome() {
@@ -12,8 +12,6 @@ export default function MobileWelcome() {
     title: 'L’excellence dans la gestion de votre crèche.',
     description: 'Présences, enfants, équipe, activités, repas et facturation réunis dans un espace clair et sécurisé.',
     continue: 'Accéder à la connexion',
-    installAndroid: 'Installer l’application Android',
-    installHint: 'Téléchargement direct de l’APK Android',
     footer: '© 2026 RAWDHA+. Tous droits réservés.',
   } : {
     subtitle: 'منصة احترافية لتسيير الحضانة',
@@ -21,8 +19,6 @@ export default function MobileWelcome() {
     title: 'كل ما تحتاجه لتسيير حضانتك بسهولة.',
     description: 'الحضور، الأطفال، الفريق، الأنشطة، الوجبات والفواتير في فضاء واضح وآمن.',
     continue: 'الدخول إلى صفحة الاتصال',
-    installAndroid: 'تثبيت تطبيق أندرويد',
-    installHint: 'تحميل مباشر لملف أندرويد',
     footer: '© 2026 روضة+. جميع الحقوق محفوظة.',
   };
 
@@ -54,9 +50,11 @@ export default function MobileWelcome() {
 
         <div className="relative z-10 flex min-h-[100dvh] flex-col justify-between p-6 pt-28 text-white">
           <div className="flex items-center gap-3">
-            <div className="rounded-2xl border border-white/30 bg-white/20 p-3 shadow-inner backdrop-blur-md">
-              <Baby className="h-8 w-8 text-white" />
-            </div>
+            <img
+              src="/rawdah-logo.png"
+              alt="Logo Rawdha+"
+              className="h-14 w-14 rounded-2xl border border-white/35 shadow-lg"
+            />
             <div>
               <h1 className="font-display text-2xl font-bold tracking-wider drop-shadow-sm">RAWDHA+</h1>
               <p className="text-[10px] tracking-[0.14em] text-white/80">{copy.subtitle}</p>
@@ -79,15 +77,7 @@ export default function MobileWelcome() {
                 <span>{copy.continue}</span>
                 <span aria-hidden="true">↓</span>
               </button>
-              <a
-                href="https://github.com/Maleklabbaci/rawdativ2/releases/download/android-v1.0.0/RawdhaPlus-v1.0.0-android.apk"
-                className="inline-flex items-center gap-2 rounded-full border border-white/45 bg-white px-4 py-3 text-sm font-bold text-[#d94b38] shadow-lg transition hover:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-white/80"
-              >
-                <Download className="h-4 w-4" aria-hidden="true" />
-                <span>{copy.installAndroid}</span>
-              </a>
             </div>
-            <p className="text-xs text-white/75">{copy.installHint}</p>
           </div>
 
           <p className="border-t border-white/25 pt-4 text-xs text-white/70">{copy.footer}</p>
