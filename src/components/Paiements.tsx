@@ -14,7 +14,8 @@ import {
   HelpCircle,
   FileText,
   Edit,
-  Copy
+  Copy,
+  MessageCircle
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
@@ -23,6 +24,34 @@ import { Enfant, Paiement } from '../types';
 import { formatCurrency } from '../utils/format';
 import { motion, AnimatePresence } from 'motion/react';
 import Facture from './Facture';
+
+const normalizeAlgerianWhatsApp = (raw?: string) => {
+  const digits = (raw || '').replace(/\D/g, '');
+  if (!digits) return null;
+
+  let normalized = digits;
+  if (normalized.startsWith('00213')) normalized = normalized.slice(2);
+  else if (normalized.startsWith('0') && normalized.length === 10) normalized = `213${normalized.slice(1)}`;
+  else if (normalized.length === 9 && /^[567]/.test(normalized)) normalized = `213${normalized}`;
+
+  return /^213[567]\d{8}$/.test(normalized) ? normalized : null;
+};
+
+const buildWhatsAppRelanceLink = (paiement: RichPaiement, enfant: Enfant | undefined, isArabic: boolean) => {
+  if (!enfant) return null;
+  const phone = enfant.parents
+    .map(parent => normalizeAlgerianWhatsApp(parent.telephone))
+    .find((value): value is string => Boolean(value));
+  if (!phone) return null;
+
+  const childName = `${enfant.prenom} ${enfant.nom}`;
+  const dueDate = paiement.dateEcheance || (isArabic ? 'غير محدد' : 'non précisée');
+  const message = isArabic
+    ? `السلام عليكم، نذكركم بأن فاتورة ${childName} الخاصة بـ ${paiement.moisConcerne} بمبلغ ${formatCurrency(paiement.montant)} دج ${paiement.statut === 'Retard' ? 'متأخرة وغير مسددة' : 'في انتظار التسديد'}. تاريخ الاستحقاق: ${dueDate}. شكراً لتواصلكم مع إدارة الروضة.`
+    : `Bonjour,\n\nNous vous rappelons que la facture de ${childName} pour ${paiement.moisConcerne} (${formatCurrency(paiement.montant)}) est ${paiement.statut === 'Retard' ? 'en retard et reste impayée' : 'en attente de règlement'}. Échéance : ${dueDate}.\n\nMerci de prendre contact avec la direction de la crèche.\n\nCordialement,\nLa direction de Rawdha+`;
+
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+};
 
 interface RichPaiement extends Paiement {
   moyenPaiement?: 'Espèces' | 'Chèque' | 'Virement' | 'Carte';
@@ -378,13 +407,28 @@ export default function Paiements() {
                           </button>
 
                           {p.statut !== 'Payé' && (
-                            <button
-                              className={`p-1.5 rounded-lg transition cursor-pointer ${copiedPaiementId === p.id ? 'text-emerald-600 bg-emerald-50' : 'text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50'}`}
-                              onClick={() => handleCopyRelance(p, enfant)}
-                              title={isArabic ? 'نسخ رسالة التذكير' : 'Copier une relance'}
-                            >
-                              <Copy size={16} />
-                            </button>
+                            <>
+                              {buildWhatsAppRelanceLink(p, enfant, isArabic) && (
+                                <a
+                                  href={buildWhatsAppRelanceLink(p, enfant, isArabic) || undefined}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(event) => event.stopPropagation()}
+                                  className="p-1.5 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
+                                  title={isArabic ? 'إرسال تذكير عبر واتساب' : 'Relancer via WhatsApp'}
+                                  aria-label={isArabic ? 'إرسال تذكير عبر واتساب' : 'Relancer via WhatsApp'}
+                                >
+                                  <MessageCircle size={16} />
+                                </a>
+                              )}
+                              <button
+                                className={`p-1.5 rounded-lg transition cursor-pointer ${copiedPaiementId === p.id ? 'text-emerald-600 bg-emerald-50' : 'text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50'}`}
+                                onClick={() => handleCopyRelance(p, enfant)}
+                                title={isArabic ? 'نسخ رسالة التذكير' : 'Copier une relance'}
+                              >
+                                <Copy size={16} />
+                              </button>
+                            </>
                           )}
 
                           <button 
