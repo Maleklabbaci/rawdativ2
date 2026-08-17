@@ -135,9 +135,20 @@ export default function PublicAdmission() {
     setSubmitting(false);
     if (rpcError) {
       const code = rpcError.message || '';
-      setError(code.includes('invalid_link')
+      const message = code.includes('invalid_link')
         ? (isAr ? 'هذا الرابط غير صالح أو منتهي الصلاحية.' : 'Ce lien est invalide ou a expiré.')
-        : (isAr ? 'تعذر إرسال الطلب. يرجى المحاولة مرة أخرى.' : "Impossible d'envoyer la demande. Veuillez réessayer."));
+        : code.includes('duplicate_request')
+          ? (isAr ? 'تم إرسال طلب مماثل بالفعل.' : 'Une demande identique est déjà en attente pour cet enfant.')
+          : code.includes('rate_limited')
+            ? (isAr ? 'تم بلوغ الحد المؤقت للمحاولات. يرجى المحاولة لاحقاً.' : 'Trop de tentatives pour le moment. Veuillez réessayer plus tard.')
+            : code.includes('invalid_phone')
+              ? (isAr ? 'يرجى إدخال رقم هاتف جزائري صالح.' : 'Veuillez saisir un numéro de téléphone algérien valide.')
+              : code.includes('invalid_email')
+                ? (isAr ? 'يرجى التحقق من البريد الإلكتروني.' : "Veuillez vérifier l'adresse e-mail.")
+                : code.includes('invalid_birth_date')
+                  ? (isAr ? 'تاريخ الميلاد غير صالح.' : 'La date de naissance est invalide.')
+                  : (isAr ? 'تعذر إرسال الطلب. يرجى المحاولة مرة أخرى.' : "Impossible d'envoyer la demande. Veuillez réessayer.");
+      setError(message);
       return;
     }
     setSubmitted(true);
