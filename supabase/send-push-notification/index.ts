@@ -8,7 +8,7 @@ const corsHeaders = {
 };
 
 const FIREBASE_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
-const FCM_PROJECT_ID = 'rawdah-notifications';
+const FCM_PROJECT_ID = 'rawdha-notifications';
 const MAX_TITLE_LENGTH = 120;
 const MAX_MESSAGE_LENGTH = 600;
 

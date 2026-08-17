@@ -1,5 +1,9 @@
 import { Capacitor } from '@capacitor/core';
 import {
+  LocalNotifications,
+  type ActionPerformed as LocalNotificationActionPerformed,
+} from '@capacitor/local-notifications';
+import {
   PushNotifications,
   type PermissionStatus,
   type PushNotificationSchema,
@@ -13,7 +17,8 @@ export type PushSetupResult =
   | { status: 'registered' }
   | { status: 'error'; error: Error };
 
-const APP_VERSION = '1.0.2';
+const APP_VERSION = '1.0.3';
+const FOREGROUND_CHANNEL_ID = 'rawdha_foreground_alerts';
 let listenersConfigured = false;
 
 /**
@@ -52,12 +57,51 @@ function dispatchForegroundNotification(notification: PushNotificationSchema) {
   );
 }
 
-function dispatchPushAction(action: ActionPerformed) {
+function dispatchPushData(data: Record<string, unknown>) {
   window.dispatchEvent(
     new CustomEvent('rawdha:push-action', {
-      detail: action.notification.data || {},
+      detail: data,
     }),
   );
+}
+
+function dispatchPushAction(action: ActionPerformed) {
+  dispatchPushData(action.notification.data || {});
+}
+
+/**
+ * Android ne crée pas forcément une entrée système pour un push reçu pendant
+ * que l’application est ouverte. Cette alerte locale rend le message visible
+ * dans le tiroir Android sans modifier le traitement Firebase d’origine.
+ */
+async function presentForegroundSystemNotification(notification: PushNotificationSchema) {
+  try {
+    let permission = await LocalNotifications.checkPermissions();
+    if (permission.display === 'prompt') {
+      permission = await LocalNotifications.requestPermissions();
+    }
+
+    if (permission.display !== 'granted') return;
+
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          id: Date.now() % 2_000_000_000,
+          title: notification.title || 'Rawdha+',
+          body: notification.body || 'Vous avez une nouvelle information.',
+          channelId: FOREGROUND_CHANNEL_ID,
+          extra: notification.data || {},
+          schedule: { at: new Date(Date.now() + 300), allowWhileIdle: true },
+          isExactNotification: false,
+          autoCancel: true,
+          foreground: true,
+        },
+      ],
+    });
+  } catch (error) {
+    // Une alerte interne reste visible dans Rawdha+ si Android bloque une alerte système.
+    console.error('Rawdha+ : impossible d’afficher la notification système.', error);
+  }
 }
 
 /**
@@ -86,6 +130,15 @@ export async function registerAndroidPushNotifications(userId: string): Promise<
         sound: 'default',
       });
 
+      await LocalNotifications.createChannel({
+        id: FOREGROUND_CHANNEL_ID,
+        name: 'Alertes Rawdha+',
+        description: 'Alertes visibles lorsque Rawdha+ est ouverte',
+        importance: 5,
+        visibility: 1,
+        vibration: true,
+      });
+
       await PushNotifications.addListener('registration', async (token) => {
         const activeUserId = window.sessionStorage.getItem('rawdha_push_user_id');
         if (!activeUserId) return;
@@ -102,13 +155,21 @@ export async function registerAndroidPushNotifications(userId: string): Promise<
         console.error('Rawdha+ : échec d’enregistrement Firebase.', error);
       });
 
-      await PushNotifications.addListener('pushNotificationReceived', (notification) => {
+      await PushNotifications.addListener('pushNotificationReceived', async (notification) => {
         dispatchForegroundNotification(notification);
+        await presentForegroundSystemNotification(notification);
       });
 
       await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
         dispatchPushAction(action);
       });
+
+      await LocalNotifications.addListener(
+        'localNotificationActionPerformed',
+        (action: LocalNotificationActionPerformed) => {
+          dispatchPushData(action.notification.extra || {});
+        },
+      );
 
       listenersConfigured = true;
     }
