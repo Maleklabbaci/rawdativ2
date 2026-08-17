@@ -8,6 +8,8 @@ import { DbProvider, useDb } from './contexts/DbContext';
 import SignIn from './components/SignIn';
 import Dashboard from './components/Dashboard';
 import Sidebar from './components/Sidebar';
+import { ToastProvider } from './contexts/ToastContext';
+import { ToastContainer } from './components/ToastContainer';
 // ✅ FIX (bundle size): ces pages ne sont chargées que quand l'utilisateur y navigue
 // réellement, au lieu d'être toutes téléchargées dès le login (chunk unique 962 Ko avant).
 // ✅ Récupération des chunks périmés : un onglet ouvert avant un déploiement peut
@@ -601,11 +603,14 @@ if (isSubscriptionExpired) {
 export default function App() {
   return (
     <LanguageProvider>
-      <AuthProvider>
-        <DbProvider>
-          <AppContent />
-        </DbProvider>
-      </AuthProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <DbProvider>
+            <AppContent />
+            <ToastContainer />
+          </DbProvider>
+        </AuthProvider>
+      </ToastProvider>
     </LanguageProvider>
   );
 }

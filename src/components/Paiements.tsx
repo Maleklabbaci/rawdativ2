@@ -20,6 +20,7 @@ import {
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { Enfant, Paiement } from '../types';
 import { formatCurrency } from '../utils/format';
 import { motion, AnimatePresence } from 'motion/react';
@@ -64,6 +65,7 @@ interface RichPaiement extends Paiement {
 export default function Paiements() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
+  const { showToast } = useToast();
 
   const { 
     paiements: allDbPaiements, 
@@ -114,8 +116,15 @@ export default function Paiements() {
       await navigator.clipboard.writeText(message);
       setCopiedPaiementId(paiement.id);
       window.setTimeout(() => setCopiedPaiementId(null), 2200);
+      showToast(
+        isArabic ? 'تم نسخ رسالة التذكير. يمكنك لصقها في واتساب.' : 'Relance copiée. Vous pouvez la coller dans WhatsApp.',
+        'success'
+      );
     } catch {
-      window.alert(isArabic ? 'تعذر نسخ رسالة التذكير.' : 'La relance n’a pas pu être copiée automatiquement.');
+      showToast(
+        isArabic ? 'تعذر نسخ رسالة التذكير.' : 'La relance n’a pas pu être copiée automatiquement.',
+        'error'
+      );
     }
   };
 
