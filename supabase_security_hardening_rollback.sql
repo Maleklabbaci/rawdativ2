@@ -15,11 +15,24 @@ grant execute on function public.handle_new_director_signup() to anon, authentic
 grant execute on function public.rls_auto_enable() to anon, authenticated;
 grant execute on function public.sync_auth_last_activity_to_compte() to anon, authenticated;
 
+-- Restaurer l'exécution des helpers d'identité et d'administration.
+grant execute on function public.current_user_role() to anon, authenticated;
+grant execute on function public.current_user_creche_id() to anon, authenticated;
+grant execute on function public.current_user_enfant_id() to anon, authenticated;
+grant execute on function public.is_admin() to anon, authenticated;
+grant execute on function public.rawdha_current_role() to anon, authenticated;
+grant execute on function public.rawdha_is_admin() to anon, authenticated;
+
+-- Restaurer l'accès de la table legacy si le rollback est explicitement demandé.
+grant all on table public.demandes_directeur to anon;
+
 -- Revenir au search_path mutable d'avant le durcissement.
 alter function public.current_user_role() reset search_path;
 alter function public.current_user_creche_id() reset search_path;
 alter function public.current_user_enfant_id() reset search_path;
 alter function public.is_admin() reset search_path;
+alter function public.rawdha_current_role() reset search_path;
+alter function public.rawdha_is_admin() reset search_path;
 
 -- Restaurer les privilèges anon des tables. À retirer de ce rollback si le
 -- projet avait déjà été durci manuellement avant la migration.
