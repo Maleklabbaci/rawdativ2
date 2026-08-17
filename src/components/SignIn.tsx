@@ -158,7 +158,7 @@ export default function SignIn() {
   };
 
   return (
-    <div className="min-h-[100dvh] w-full min-w-0 overflow-x-hidden bg-[#fcfdff] flex flex-col lg:flex-row font-sans">
+    <div dir="ltr" className="min-h-[100dvh] w-full min-w-0 overflow-x-hidden bg-[#fcfdff] flex flex-col lg:flex-row font-sans">
       <div className="lg:w-[46%] bg-gradient-to-tr from-amber-400 via-rose-400 to-indigo-600 relative overflow-hidden flex flex-col justify-between p-5 sm:p-8 lg:p-16 text-white select-none">
         <div className="absolute -top-12 -left-12 w-64 h-64 bg-white/10 rounded-full blur-2xl" />
         <div className="absolute -bottom-20 -right-20 w-96 h-96 bg-white/15 rounded-full blur-3xl animate-pulse" />

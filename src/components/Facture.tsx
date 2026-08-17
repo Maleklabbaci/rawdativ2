@@ -120,51 +120,52 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
   body {
     font-family: ${isArabic ? "'Amiri', Arial, sans-serif" : "'Inter', Arial, sans-serif"};
     background: #f8fafc;
-    padding: 24px;
+    padding: 12px;
     color: #0f172a;
   }
   .card {
-    max-width: 720px;
+    max-width: 1120px;
     margin: 0 auto;
     background: #ffffff;
-    border-radius: 16px;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
-    padding: 40px;
+    border-radius: 18px;
+    box-shadow: 0 6px 28px rgba(30,41,59,0.10);
+    padding: 30px 38px;
+    border-top: 8px solid #4f46e5;
   }
-  .header { text-align: center; padding-bottom: 24px; margin-bottom: 32px; border-bottom: 2px solid #4f46e5; }
+  .header { text-align: center; padding-bottom: 18px; margin-bottom: 24px; border-bottom: 2px solid #4f46e5; }
   .logo-circle { width: 64px; height: 64px; background: #e0e7ff; border-radius: 999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px auto; font-size: 26px; overflow: hidden; }
   .logo-circle img { width: 100%; height: 100%; object-fit: contain; padding: 6px; }
-  .title { font-size: 28px; font-weight: 900; color: #0f172a; margin-bottom: 4px; }
+  .title { font-size: 30px; font-weight: 900; letter-spacing: 0.04em; color: #0f172a; margin-bottom: 4px; }
   .subtitle { font-size: 13px; color: #64748b; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-bottom: 32px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; margin-bottom: 24px; }
   .label { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 10px; letter-spacing: 0.03em; }
   .value-strong { font-size: 16px; font-weight: 700; color: #0f172a; }
   .value-muted { font-size: 13px; color: #475569; margin-top: 4px; }
   .row-between { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
   .row-between span:first-child { color: #475569; }
   .row-between span:last-child { font-weight: 600; color: #0f172a; }
-  .info-box { background: #f8fafc; border-radius: 12px; padding: 20px; margin-bottom: 32px; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 32px; }
+  .info-box { background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%); border: 1px solid #e0e7ff; border-radius: 14px; padding: 18px 20px; margin-bottom: 24px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; overflow: hidden; border-radius: 10px; }
   thead tr { background: #4f46e5; color: #ffffff; }
   th { padding: 12px 16px; font-size: 13px; font-weight: 600; text-align: ${align1}; }
   th:last-child { text-align: ${align2}; }
   td { padding: 16px; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
   td:last-child { text-align: ${align2}; }
   .amount-cell { font-weight: 700; font-size: 17px; color: #4f46e5; }
-  .total-box { display: flex; justify-content: space-between; align-items: center; background: #eef2ff; border: 2px solid #c7d2fe; border-radius: 10px; padding: 16px 20px; margin-bottom: 14px; }
+  .total-box { display: flex; justify-content: space-between; align-items: center; background: #eef2ff; border: 2px solid #c7d2fe; border-radius: 12px; padding: 14px 18px; margin-bottom: 10px; }
   .total-label { font-weight: 700; color: #0f172a; }
   .total-value { font-size: 24px; font-weight: 900; color: #4f46e5; }
   .status-badge { padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 700; text-align: center; text-transform: uppercase; background: ${status.bg}; color: ${status.text}; }
-  .sign-block { border-top: 2px solid #cbd5e1; padding-top: 28px; display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 32px; }
+  .sign-block { border-top: 2px solid #cbd5e1; padding-top: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 24px; }
   .sign-label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 48px; }
   .sign-line { border-bottom: 1px solid #94a3b8; height: 1px; margin-bottom: 8px; }
   .sign-name { font-size: 11px; font-weight: 700; color: #475569; }
-  .footer { margin-top: 32px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8; }
+  .footer { margin-top: 22px; padding-top: 14px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8; }
   @media print {
     body { background: #fff; padding: 0; }
     .card { box-shadow: none; max-width: 100%; }
   }
-  @page { size: A4; margin: 12mm; }
+  @page { size: A4 landscape; margin: 10mm; }
 </style>
 </head>
 <body>
@@ -272,7 +273,7 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" dir={isArabic ? 'rtl' : 'ltr'}>
-      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center">
           <h2 className="text-2xl font-bold text-slate-900">{t('invoice')}</h2>
@@ -301,7 +302,7 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
         </div>
 
         {/* Content - Gardé exactement comme tu l'avais */}
-        <div ref={factureRef} className="p-8 bg-white print:p-0" style={{ fontFamily: 'Arial, sans-serif' }}>
+        <div ref={factureRef} className="p-6 sm:p-8 bg-white print:p-0" style={{ fontFamily: 'Arial, sans-serif' }}>
           {/* Logo & Title */}
           <div className="text-center mb-8 pb-6 border-b-2 border-indigo-600">
             <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-3 overflow-hidden">
