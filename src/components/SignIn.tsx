@@ -255,7 +255,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
 
   return (
     <div dir={isFrench ? 'ltr' : 'rtl'} className="min-h-[100dvh] w-full min-w-0 overflow-x-hidden bg-[#fcfdff] flex flex-col lg:flex-row font-sans">
-      <div className={`absolute top-4 z-50 flex items-center gap-1 rounded-full bg-white/90 p-1 shadow-sm border border-slate-200 ${isFrench ? 'right-4' : 'left-4'}`}>
+      <div className={`absolute top-4 z-50 flex items-center gap-1 rounded-full bg-white/90 p-1 shadow-sm border border-slate-200 transition-opacity duration-300 ${showMobileIntro ? 'pointer-events-none opacity-0 lg:pointer-events-auto lg:opacity-100' : 'pointer-events-auto opacity-100'} ${isFrench ? 'right-4' : 'left-4'}`}>
         <button type="button" onClick={() => setLanguage('fr')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${isFrench ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-indigo-700'}`}>Français</button>
         <button type="button" onClick={() => setLanguage('ar')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${!isFrench ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-indigo-700'}`}>العربية</button>
       </div>
