@@ -177,7 +177,7 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
 <body>
   <div class="card">
     <div class="header">
-      <div class="logo-circle">${creche?.logoUrl ? `<img src="${creche.logoUrl}" alt="Logo" />` : '🏫'}</div>
+      <div class="logo-circle">${creche?.logoUrl ? `<img src="${creche.logoUrl}" alt="Logo" />` : '<img src="/favicon.png" alt="Logo Rawdha+" />'}</div>
       <div class="title">${t('invoice')}</div>
       <div class="subtitle">${invoiceNumber}</div>
     </div>
@@ -307,119 +307,87 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
           </div>
         </div>
 
-        {/* Content - Gardé exactement comme tu l'avais */}
-        <div ref={factureRef} className="p-6 sm:p-8 bg-white print:p-0" style={{ fontFamily: 'Arial, sans-serif' }}>
-          {/* Logo & Title */}
-          <div className="text-center mb-8 pb-6 border-b-2 border-indigo-600">
-            <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-3 overflow-hidden">
-              {creche?.logoUrl ? (
-                <img src={creche.logoUrl} alt="Logo" className="w-full h-full object-contain p-1" />
-              ) : (
-                <span className="text-2xl">🏫</span>
-              )}
-            </div>
-            <h1 className="text-3xl font-black text-slate-900 mb-1">{t('invoice')}</h1>
-            <p className="text-sm text-slate-500">{invoiceNumber}</p>
-          </div>
-
-          {/* Creche & Invoice Info */}
-          <div className="grid grid-cols-2 gap-8 mb-8">
-            <div>
-              <h3 className="text-sm font-bold text-slate-500 uppercase mb-3">{t('creche')}</h3>
-              <div className="space-y-2">
-                <p className="text-lg font-bold text-slate-900">{creche?.nom}</p>
-                <p className="text-sm text-slate-600">{creche?.adresse}</p>
-              </div>
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-500 uppercase mb-3">{t('invoice')}</h3>
-              <div className="space-y-4 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-slate-600">{t('paymentMethod')}:</span>
-                  <span className="font-semibold text-slate-900">{paiement?.moyenPaiement || 'Espèces'}</span>
+        {/* Aperçu du reçu personnalisé — style crèche, synchronisé avec l’impression */}
+        <div ref={factureRef} className="bg-slate-50/80 p-4 sm:p-6 print:p-0" style={{ fontFamily: 'Arial, sans-serif' }}>
+          <div className="mx-auto max-w-5xl overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-sm">
+            <div className="bg-gradient-to-r from-sky-50 via-indigo-50 to-violet-50 px-5 py-5 sm:px-8">
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white p-2 shadow-sm ring-1 ring-sky-100">
+                    {creche?.logoUrl ? (
+                      <img src={creche.logoUrl} alt="Logo" className="h-full w-full object-contain" />
+                    ) : (
+                      <img src="/favicon.png" alt="Logo Rawdha+" className="h-full w-full object-contain" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-500">Rawdha+ • Crèche & maternelle</p>
+                    <h1 className="mt-1 text-2xl font-black text-slate-900 sm:text-3xl">{creche?.nom || 'Rawdha+'}</h1>
+                    <p className="mt-1 text-sm text-slate-600">{creche?.adresse || 'Adresse de l’établissement'}</p>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">{t('number')}:</span>
-                  <span className="font-semibold text-slate-900">{invoiceNumber}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">{t('date')}:</span>
-                  <span className="font-semibold text-slate-900">{invoiceDate}</span>
+                <div className="rounded-2xl bg-white/90 px-5 py-4 text-left shadow-sm ring-1 ring-indigo-100 sm:min-w-[245px]">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-indigo-600">{isArabic ? 'إيصال الدفع' : 'Reçu de paiement'}</p>
+                  <p className="mt-2 text-sm font-bold text-slate-900">{invoiceNumber}</p>
+                  <p className="mt-1 text-xs text-slate-500">{invoiceDate}</p>
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Child & Parent Info */}
-          <div className="grid grid-cols-2 gap-8 mb-8 p-6 bg-slate-50 rounded-xl">
-            <div>
-              <h3 className="text-sm font-bold text-slate-500 uppercase mb-3">{t('child')}</h3>
-              <p className="font-semibold text-slate-900">{enfant?.prenom} {enfant?.nom}</p>
-              <p className="text-sm text-slate-600">{enfant?.dateNaissance} • {enfant?.genre}</p>
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-500 uppercase mb-3">{t('parent')}</h3>
-              <p className="font-semibold text-slate-900">{parentInfo?.prenom} {parentInfo?.nom}</p>
-              <p className="text-sm text-slate-600">{parentInfo?.telephone}</p>
-              {parentInfo?.email && <p className="text-sm text-slate-600">{parentInfo?.email}</p>}
-            </div>
-          </div>
+            <div className="space-y-5 p-5 sm:p-8">
+              <div className="grid gap-5 md:grid-cols-2">
+                <div className="rounded-2xl border border-sky-100 bg-sky-50/60 p-5">
+                  <div className="mb-4 flex items-center gap-3">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-lg shadow-sm">🧒</span>
+                    <h3 className="text-sm font-black uppercase tracking-wide text-sky-700">{isArabic ? 'معلومات الطفل' : 'Informations de l’enfant'}</h3>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between gap-3 border-b border-sky-100 pb-2"><span className="text-slate-500">Nom et prénom</span><strong className="text-right text-slate-900">{enfant?.prenom} {enfant?.nom}</strong></div>
+                    <div className="flex justify-between gap-3 border-b border-sky-100 pb-2"><span className="text-slate-500">Parent / tuteur</span><strong className="text-right text-slate-900">{parentInfo?.prenom} {parentInfo?.nom}</strong></div>
+                    <div className="flex justify-between gap-3"><span className="text-slate-500">Date de naissance</span><strong className="text-right text-slate-900">{enfant?.dateNaissance || '—'}</strong></div>
+                  </div>
+                </div>
 
-          {/* Invoice Table */}
-          <table className="w-full mb-8">
-            <thead>
-              <tr className="bg-indigo-600 text-white">
-                <th className="px-4 py-3 text-left text-sm font-semibold">{t('description')}</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold">{t('month')}</th>
-                <th className="px-4 py-3 text-right text-sm font-semibold">{t('amount')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-b border-slate-200">
-                <td className="px-4 py-4 text-slate-900 font-medium">{t('monthlyFee')}</td>
-                <td className="px-4 py-4 text-slate-600">{paiement?.moisConcerne}</td>
-                <td className="px-4 py-4 text-right">
-                  <span className="font-bold text-lg text-indigo-600">
-                    {paiement?.montant?.toLocaleString() || '0'} DA
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-
-          {/* Total & Status */}
-          <div className="grid grid-cols-2 gap-8 mb-8">
-            <div></div>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center p-4 bg-indigo-50 rounded-lg border-2 border-indigo-200">
-                <span className="font-bold text-slate-900">{t('totalAmount')}:</span>
-                <span className="text-2xl font-black text-indigo-600">
-                  {paiement?.montant?.toLocaleString() || '0'} DA
-                </span>
+                <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-5">
+                  <div className="mb-4 flex items-center gap-3">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-lg shadow-sm">💳</span>
+                    <h3 className="text-sm font-black uppercase tracking-wide text-violet-700">{isArabic ? 'تفاصيل الدفع' : 'Détails du règlement'}</h3>
+                  </div>
+                  <div className="flex items-end justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{t('paymentMethod')}</p>
+                      <p className="mt-1 font-bold text-slate-900">{paiement?.moyenPaiement || 'Espèces'}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{t('totalAmount')}</p>
+                      <p className="mt-1 text-3xl font-black text-indigo-600">{paiement?.montant?.toLocaleString() || '0'} <span className="text-base">DA</span></p>
+                    </div>
+                  </div>
+                  <div className={`mt-4 rounded-xl px-4 py-2 text-center text-xs font-black uppercase tracking-widest ${getStatusColor()}`}>{getStatusLabel()}</div>
+                </div>
               </div>
-              <div className={`px-4 py-3 rounded-lg text-sm font-bold text-center ${getStatusColor()}`}>
-                {getStatusLabel().toUpperCase()}
+
+              <div className="overflow-hidden rounded-2xl border border-slate-200">
+                <div className="grid grid-cols-[1fr_0.7fr_0.7fr] bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-3 text-xs font-black uppercase tracking-wide text-white sm:px-5">
+                  <span>{t('description')}</span><span>{t('month')}</span><span className="text-right">{t('amount')}</span>
+                </div>
+                <div className="grid grid-cols-[1fr_0.7fr_0.7fr] items-center px-4 py-4 text-sm sm:px-5">
+                  <strong className="text-slate-900">{t('monthlyFee')}</strong><span className="text-slate-600">{paiement?.moisConcerne || '—'}</span><strong className="text-right text-indigo-600">{paiement?.montant?.toLocaleString() || '0'} DA</strong>
+                </div>
               </div>
-            </div>
-          </div>
 
-          {/* Signature Block */}
-          <div className="border-t-2 border-slate-300 pt-8 grid grid-cols-2 gap-8">
-            <div>
-              <p className="text-xs text-slate-500 font-semibold uppercase mb-12">{t('signature')}</p>
-              <div className="h-20 border-b border-slate-400"></div>
-              <p className="text-xs text-slate-600 mt-2 font-semibold">{creche?.nom}</p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-500 font-semibold uppercase mb-12">{t('signature')}</p>
-              <div className="h-20 border-b border-slate-400"></div>
-              <p className="text-xs text-slate-600 mt-2 font-semibold">{parentInfo?.nom}</p>
-            </div>
-          </div>
+              <div className="flex items-center justify-between gap-5 rounded-2xl bg-gradient-to-r from-amber-50 via-white to-emerald-50 p-4 ring-1 ring-amber-100 sm:px-6">
+                <p className="text-sm font-semibold text-slate-600">Merci pour votre confiance</p>
+                <div className="text-right"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Montant reçu</p><p className="text-2xl font-black text-indigo-700">{paiement?.montant?.toLocaleString() || '0'} DA</p></div>
+              </div>
 
-          {/* Footer */}
-          <div className="mt-8 pt-6 border-t border-slate-200 text-center text-xs text-slate-500">
-            <p>© {new Date().getFullYear()} RAWDHA+ - Plateforme de Gestion</p>
+              <div className="grid gap-5 border-t border-dashed border-slate-300 pt-5 md:grid-cols-2">
+                <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs font-black uppercase tracking-wide text-slate-500">{isArabic ? 'ختم وتوقيع الحضانة' : 'Cachet et signature de la crèche'}</p><div className="mt-10 border-b border-slate-400"></div><p className="mt-2 text-xs font-semibold text-slate-500">{creche?.nom}</p></div>
+                <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs font-black uppercase tracking-wide text-slate-500">{isArabic ? 'توقيع الولي' : 'Signature du parent'}</p><div className="mt-10 border-b border-slate-400"></div><p className="mt-2 text-xs font-semibold text-slate-500">{parentInfo?.prenom} {parentInfo?.nom}</p></div>
+              </div>
+
+              <p className="text-center text-xs text-slate-400">© {new Date().getFullYear()} RAWDHA+ — Plateforme de gestion de crèche</p>
+            </div>
           </div>
         </div>
       </div>
