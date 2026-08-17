@@ -9,8 +9,12 @@ import SignIn from './components/SignIn';
 import MobileWelcome from './components/MobileWelcome';
 import Dashboard from './components/Dashboard';
 import Sidebar from './components/Sidebar';
-import { ToastProvider } from './contexts/ToastContext';
+import { ToastProvider, useToast } from './contexts/ToastContext';
 import { ToastContainer } from './components/ToastContainer';
+import {
+  clearPushSessionUser,
+  registerAndroidPushNotifications,
+} from './services/pushNotifications';
 // ✅ FIX (bundle size): ces pages ne sont chargées que quand l'utilisateur y navigue
 // réellement, au lieu d'être toutes téléchargées dès le login (chunk unique 962 Ko avant).
 // ✅ Récupération des chunks périmés : un onglet ouvert avant un déploiement peut
@@ -125,6 +129,7 @@ function AppContent() {
   const [showCouponInput, setShowCouponInput] = useState(false); // ✅ champ coupon replié par défaut, pour ne pas distraire du CTA principal // ✅ champ code coupon sur l'écran d'abonnement expiré
   const { language, setLanguage, t } = useLanguage();
   const { loading: dbLoading, comptes } = useDb();
+  const { showToast } = useToast();
   // routeVersion est volontairement lu ici : il force le recalcul des routes après
   // toute modification interne de l’historique, sans dépendre d’un PopStateEvent.
   void routeVersion;
@@ -209,6 +214,55 @@ function AppContent() {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  // Les notifications natives sont initialisées uniquement après connexion : le jeton
+  // Firebase reste ainsi associé au bon compte Rawdha+ et à aucune session anonyme.
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id) {
+      clearPushSessionUser();
+      return;
+    }
+
+    let cancelled = false;
+    void registerAndroidPushNotifications(user.id).then((result) => {
+      if (cancelled || result.status !== 'error') return;
+      console.error('Rawdha+ : notifications Android indisponibles.', result.error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, user?.id]);
+
+  // Une alerte reçue lorsque l’application est déjà ouverte est rendue visible dans
+  // Rawdha+ au lieu d’être silencieusement ignorée par le système Android.
+  useEffect(() => {
+    const handleForegroundPush = (event: Event) => {
+      const notification = (event as CustomEvent<{ title?: string; body?: string }>).detail;
+      if (!notification) return;
+      const content = [notification.title, notification.body].filter(Boolean).join(' — ');
+      if (content) showToast(content, 'info', 6500);
+    };
+
+    window.addEventListener('rawdha:push-received', handleForegroundPush);
+    return () => window.removeEventListener('rawdha:push-received', handleForegroundPush);
+  }, [showToast]);
+
+  // Toucher une notification Android ouvre l’écran sélectionné par l’administrateur.
+  // Les liens externes sont limités à HTTP(S) afin de ne jamais exécuter d’URI non sûre.
+  useEffect(() => {
+    const handlePushAction = (event: Event) => {
+      const detail = (event as CustomEvent<{ page?: unknown; url?: unknown }>).detail;
+      const page = typeof detail?.page === 'string' ? detail.page : '';
+      const url = typeof detail?.url === 'string' ? detail.url : '';
+
+      if (page && PAGE_PATHS[page]) navigateToPage(page);
+      if (/^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
+    };
+
+    window.addEventListener('rawdha:push-action', handlePushAction);
+    return () => window.removeEventListener('rawdha:push-action', handlePushAction);
+  }, [currentPage]);
 
   useEffect(() => {
     if (isAuthenticated || isPublicAdmission || isPublicPrivacy) return;

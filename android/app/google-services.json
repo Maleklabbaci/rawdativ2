@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "512177384592",
+    "project_id": "rawdha-notifications",
+    "storage_bucket": "rawdha-notifications.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:512177384592:android:4415bda42c972491097c15",
+        "android_client_info": {
+          "package_name": "dz.rawdha.plus"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB9f8vjH9CRGdNW-TEsGsntjv0xB81Z8Zs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

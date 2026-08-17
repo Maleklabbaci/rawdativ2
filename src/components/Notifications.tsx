@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
+import { supabase } from '../supabase';
 import { Megaphone, Send, Trash2, Users, CheckCheck, Palette, Eye } from 'lucide-react';
 
 const PRESET_COLORS = [
@@ -29,6 +30,7 @@ export default function Notifications() {
   const [icon, setIcon] = useState('📢');
   const [sending, setSending] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [pushStatus, setPushStatus] = useState<{ tone: 'success' | 'warning'; message: string } | null>(null);
 
   // ✅ Destinataire : tous les directeurs, ou un seul en particulier
   const [recipientId, setRecipientId] = useState('all_directeurs');
@@ -54,8 +56,9 @@ export default function Notifications() {
   const handleSend = async () => {
     if (!title.trim() || !message.trim()) return;
     setSending(true);
+    setPushStatus(null);
     try {
-      await addNotification({
+      const announcementId = await addNotification({
         title: title.trim(),
         message: message.trim(),
         recipientRole: recipientId,
@@ -73,6 +76,42 @@ export default function Notifications() {
           ...(ctaType === 'link' ? { ctaUrl: ctaUrl.trim() } : { ctaPage }),
         } : {}),
       });
+
+      const { data: pushData, error: pushError } = await supabase.functions.invoke('send-push-notification', {
+        body: {
+          target: recipientId,
+          title: title.trim(),
+          message: message.trim(),
+          notificationId: announcementId,
+          page: ctaLabel.trim() && ctaType === 'page' ? ctaPage : 'notifications',
+          url: ctaLabel.trim() && ctaType === 'link' ? ctaUrl.trim() : '',
+        },
+      });
+
+      if (pushError) {
+        console.error('Erreur envoi push:', pushError);
+        setPushStatus({
+          tone: 'warning',
+          message: isFrench
+            ? 'Annonce interne enregistrée. La notification Android n’a pas pu être envoyée.'
+            : 'تم حفظ الإعلان داخل المنصة، لكن تعذر إرسال إشعار أندرويد.',
+        });
+      } else if (!pushData?.attempted) {
+        setPushStatus({
+          tone: 'warning',
+          message: isFrench
+            ? 'Annonce enregistrée. Aucun téléphone Android autorisé n’est encore connecté.'
+            : 'تم حفظ الإعلان. لا يوجد هاتف أندرويد مسجّل ومسموح له بالإشعارات بعد.',
+        });
+      } else {
+        setPushStatus({
+          tone: pushData.failed ? 'warning' : 'success',
+          message: isFrench
+            ? `Notification Android envoyée : ${pushData.delivered}/${pushData.attempted} appareil(s) livré(s).`
+            : `تم إرسال إشعار أندرويد إلى ${pushData.delivered} من أصل ${pushData.attempted} جهاز.`,
+        });
+      }
+
       setTitle('');
       setMessage('');
       setCtaLabel('');
@@ -81,7 +120,7 @@ export default function Notifications() {
       setTimeout(() => setSuccess(false), 2500);
     } catch (err) {
       console.error('Erreur envoi notification:', err);
-      alert(isFrench ? 'Échec de l\'envoi.' : 'فشل الإرسال.');
+      alert(isFrench ? 'Échec de l\'enregistrement de l\'annonce.' : 'فشل حفظ الإعلان.');
     } finally {
       setSending(false);
     }
@@ -305,7 +344,12 @@ export default function Notifications() {
           </button>
           {success && (
             <p className="text-xs font-semibold text-emerald-600 flex items-center gap-1.5">
-              <CheckCheck className="w-4 h-4" /> {isFrench ? 'Annonce envoyée !' : 'تم إرسال الإعلان!'}
+              <CheckCheck className="w-4 h-4" /> {isFrench ? 'Annonce enregistrée !' : 'تم حفظ الإعلان!'}
+            </p>
+          )}
+          {pushStatus && (
+            <p className={`text-xs font-semibold flex items-center gap-1.5 ${pushStatus.tone === 'success' ? 'text-emerald-600' : 'text-amber-700'}`}>
+              <CheckCheck className="w-4 h-4" /> {pushStatus.message}
             </p>
           )}
         </div>

@@ -20,6 +20,10 @@
             </intent-filter>
         </activity>
 
+        <!-- Les alertes reçues lorsque l’application est fermée reprennent l’icône Rawdha+. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -30,6 +34,8 @@
     </application>
 
     <!-- Permissions -->
-
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 13+ : l’utilisateur est invité à autoriser les alertes Rawdha+. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 </manifest>
