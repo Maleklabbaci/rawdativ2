@@ -120,52 +120,58 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
   body {
     font-family: ${isArabic ? "'Amiri', Arial, sans-serif" : "'Inter', Arial, sans-serif"};
     background: #f8fafc;
-    padding: 12px;
+    padding: 8px;
     color: #0f172a;
   }
   .card {
-    max-width: 1120px;
+    width: 100%;
+    max-width: 1160px;
+    min-height: 100%;
     margin: 0 auto;
-    background: #ffffff;
+    background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
     border-radius: 18px;
     box-shadow: 0 6px 28px rgba(30,41,59,0.10);
-    padding: 30px 38px;
-    border-top: 8px solid #4f46e5;
+    padding: 18px 26px;
+    border-top: 6px solid #4f46e5;
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
-  .header { text-align: center; padding-bottom: 18px; margin-bottom: 24px; border-bottom: 2px solid #4f46e5; }
-  .logo-circle { width: 64px; height: 64px; background: #e0e7ff; border-radius: 999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px auto; font-size: 26px; overflow: hidden; }
-  .logo-circle img { width: 100%; height: 100%; object-fit: contain; padding: 6px; }
-  .title { font-size: 30px; font-weight: 900; letter-spacing: 0.04em; color: #0f172a; margin-bottom: 4px; }
-  .subtitle { font-size: 13px; color: #64748b; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; margin-bottom: 24px; }
-  .label { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 10px; letter-spacing: 0.03em; }
-  .value-strong { font-size: 16px; font-weight: 700; color: #0f172a; }
-  .value-muted { font-size: 13px; color: #475569; margin-top: 4px; }
-  .row-between { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
+  .header { text-align: center; padding: 10px 14px 12px; margin-bottom: 14px; border: 1px solid #dbeafe; border-bottom: 3px solid #4f46e5; border-radius: 14px; background: linear-gradient(135deg, #eff6ff 0%, #f5f3ff 100%); }
+  .logo-circle { width: 46px; height: 46px; background: #e0e7ff; border-radius: 999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 6px auto; font-size: 22px; overflow: hidden; }
+  .logo-circle img { width: 100%; height: 100%; object-fit: contain; padding: 5px; }
+  .title { font-size: 23px; font-weight: 900; letter-spacing: 0.04em; color: #0f172a; margin-bottom: 2px; }
+  .subtitle { font-size: 11px; color: #64748b; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 12px; }
+  .label { font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 5px; letter-spacing: 0.03em; }
+  .value-strong { font-size: 14px; font-weight: 700; color: #0f172a; }
+  .value-muted { font-size: 11px; color: #475569; margin-top: 2px; }
+  .row-between { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 3px; }
   .row-between span:first-child { color: #475569; }
   .row-between span:last-child { font-weight: 600; color: #0f172a; }
-  .info-box { background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%); border: 1px solid #e0e7ff; border-radius: 14px; padding: 18px 20px; margin-bottom: 24px; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; overflow: hidden; border-radius: 10px; }
+  .info-box { background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%); border: 1px solid #dbeafe; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 12px; overflow: hidden; border-radius: 9px; }
   thead tr { background: #4f46e5; color: #ffffff; }
-  th { padding: 12px 16px; font-size: 13px; font-weight: 600; text-align: ${align1}; }
+  th { padding: 8px 12px; font-size: 11px; font-weight: 700; text-align: ${align1}; }
   th:last-child { text-align: ${align2}; }
-  td { padding: 16px; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
+  td { padding: 9px 12px; border-bottom: 1px solid #e2e8f0; font-size: 12px; }
   td:last-child { text-align: ${align2}; }
-  .amount-cell { font-weight: 700; font-size: 17px; color: #4f46e5; }
-  .total-box { display: flex; justify-content: space-between; align-items: center; background: #eef2ff; border: 2px solid #c7d2fe; border-radius: 12px; padding: 14px 18px; margin-bottom: 10px; }
-  .total-label { font-weight: 700; color: #0f172a; }
-  .total-value { font-size: 24px; font-weight: 900; color: #4f46e5; }
-  .status-badge { padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 700; text-align: center; text-transform: uppercase; background: ${status.bg}; color: ${status.text}; }
-  .sign-block { border-top: 2px solid #cbd5e1; padding-top: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 24px; }
-  .sign-label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 48px; }
-  .sign-line { border-bottom: 1px solid #94a3b8; height: 1px; margin-bottom: 8px; }
-  .sign-name { font-size: 11px; font-weight: 700; color: #475569; }
-  .footer { margin-top: 22px; padding-top: 14px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8; }
+  .amount-cell { font-weight: 800; font-size: 14px; color: #4f46e5; }
+  .total-box { display: flex; justify-content: space-between; align-items: center; background: #eef2ff; border: 2px solid #c7d2fe; border-radius: 10px; padding: 9px 12px; margin-bottom: 6px; }
+  .total-label { font-weight: 800; font-size: 12px; color: #0f172a; }
+  .total-value { font-size: 20px; font-weight: 900; color: #4f46e5; }
+  .status-badge { padding: 7px; border-radius: 8px; font-size: 11px; font-weight: 800; text-align: center; text-transform: uppercase; background: ${status.bg}; color: ${status.text}; }
+  .sign-block { border-top: 1px solid #cbd5e1; padding-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 12px; page-break-inside: avoid; break-inside: avoid; }
+  .sign-label { font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 18px; }
+  .sign-line { border-bottom: 1px solid #94a3b8; height: 1px; margin-bottom: 5px; }
+  .sign-name { font-size: 10px; font-weight: 700; color: #475569; }
+  .footer { margin-top: 10px; padding-top: 8px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 9px; color: #94a3b8; }
   @media print {
+    html, body { width: 100%; height: 100%; overflow: hidden; }
     body { background: #fff; padding: 0; }
-    .card { box-shadow: none; max-width: 100%; }
+    .card { box-shadow: none; max-width: none; height: 100%; overflow: hidden; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   }
-  @page { size: A4 landscape; margin: 10mm; }
+  @page { size: A4 landscape; margin: 5mm; }
 </style>
 </head>
 <body>
@@ -203,7 +209,7 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
         ${parentInfo?.email ? `<div class="value-muted">${parentInfo.email}</div>` : ''}
       </div>
     </div>
-    <div style="height:32px;"></div>
+    <div style="height:12px;"></div>
 
     <table>
       <thead>
@@ -234,14 +240,14 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
 
     <div class="sign-block">
       <div>
-        <div class="sign-label">${t('signature')}</div>
+        <div class="sign-label">${isArabic ? 'ختم وتوقيع الحضانة' : 'Cachet et signature de la crèche'}</div>
         <div class="sign-line"></div>
         <div class="sign-name">${creche?.nom || ''}</div>
       </div>
       <div>
-        <div class="sign-label">${t('signature')}</div>
+        <div class="sign-label">${isArabic ? 'توقيع الولي' : 'Signature du parent'}</div>
         <div class="sign-line"></div>
-        <div class="sign-name">${parentInfo?.nom || ''}</div>
+        <div class="sign-name">${parentInfo?.prenom || ''} ${parentInfo?.nom || ''}</div>
       </div>
     </div>
 
