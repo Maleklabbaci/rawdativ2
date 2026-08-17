@@ -120,7 +120,7 @@ function AppContent() {
   const { loading: dbLoading, comptes } = useDb();
   const isPublicAdmission = window.location.pathname.replace(/\/+$/, '') === '/admission';
   const isPublicPrivacy = window.location.pathname.replace(/\/+$/, '') === '/confidentialite';
-  const isAccessRequest = normalizeAuthPath(window.location.pathname) === '/login';
+  const isAccessRequest = normalizeAuthPath(window.location.pathname) === '/signin';
 
   const navigateToPage = (page: string, options?: { replace?: boolean }) => {
     const nextPage = PAGE_PATHS[page] ? page : 'dashboard';
@@ -191,7 +191,7 @@ function AppContent() {
 
     // Une session expirée ne doit pas laisser une URL privée comme /dashboard
     // alors que l’écran affiché est celui de connexion.
-    window.history.replaceState({}, '', `/signin/${queryAndHash}`);
+    window.history.replaceState({}, '', `/login/${queryAndHash}`);
   }, [isAuthenticated, isPublicAdmission, isPublicPrivacy]);
 
   useEffect(() => {

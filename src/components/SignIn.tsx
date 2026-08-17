@@ -116,7 +116,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
       }
 
       resetRequestForm();
-      setSuccess('Votre demande a bien été envoyée. Après acceptation, ouvrez /signin/ pour vous connecter avec le mot de passe que vous venez de définir.');
+      setSuccess('Votre demande a bien été envoyée. Après acceptation, ouvrez /login/ pour vous connecter avec le mot de passe que vous venez de définir.');
     } catch (requestError) {
       console.error('Erreur envoi demande directeur:', requestError);
       const message = requestError instanceof Error ? requestError.message : '';
@@ -232,7 +232,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
               {view === 'signin' ? 'Pas encore de compte ?' : 'Vous avez déjà un compte ?'}
             </span>
             <a
-              href={view === 'signin' ? '/login/' : '/signin/'}
+              href={view === 'signin' ? '/signin/' : '/login/'}
               className="font-bold text-indigo-700 hover:text-indigo-900 underline underline-offset-2"
             >
               {view === 'signin' ? 'Demander un accès' : 'Se connecter'}
