@@ -251,21 +251,24 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
         <button type="button" onClick={() => setLanguage('fr')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${isFrench ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-indigo-700'}`}>Français</button>
         <button type="button" onClick={() => setLanguage('ar')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${!isFrench ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-indigo-700'}`}>العربية</button>
       </div>
-      <div className="lg:w-[46%] bg-gradient-to-tr from-amber-400 via-rose-400 to-indigo-600 relative overflow-hidden flex flex-col justify-between p-5 sm:p-8 lg:p-16 text-white select-none">
-        <div className="absolute -top-12 -left-12 w-64 h-64 bg-white/10 rounded-full blur-2xl" />
-        <div className="absolute -bottom-20 -right-20 w-96 h-96 bg-white/15 rounded-full blur-3xl animate-pulse" />
+      <aside className="lg:w-1/2 relative min-h-[390px] lg:min-h-[100dvh] overflow-hidden flex flex-col justify-between p-5 sm:p-8 lg:p-16 text-white select-none bg-[url('/login-nursery-hero-a.jpg')] bg-cover bg-center">
+        {/* La photo donne le contexte "crèche" ; le voile protège lisibilité et identité Rawdha+. */}
+        <div className="absolute inset-0 bg-gradient-to-br from-[#d93e34]/[0.92] via-[#eb6138]/[0.82] to-[#f4a033]/[0.78]" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#9e2f32]/45 via-transparent to-white/10" />
+        <div className="absolute -top-12 -left-12 w-64 h-64 bg-white/15 rounded-full blur-2xl" />
+        <div className="absolute -bottom-20 -right-20 w-96 h-96 bg-amber-100/20 rounded-full blur-3xl" />
 
-        <div className="relative flex items-center gap-3">
+        <div className="relative z-10 flex items-center gap-3">
           <div className="p-3 bg-white/20 backdrop-blur-md rounded-2xl border border-white/30 shadow-inner">
             <Baby className="w-8 h-8 text-white" />
           </div>
           <div>
             <h2 className="text-2xl font-bold tracking-wider font-display drop-shadow-sm">RAWDHA+</h2>
-            <p className="text-xs text-white/80 tracking-widest">{copy.brandSubtitle}</p>
+            <p className="hidden sm:block text-xs text-white/80 tracking-widest">{copy.brandSubtitle}</p>
           </div>
         </div>
 
-        <div className="relative my-auto space-y-4 sm:space-y-6 max-w-md py-8 sm:py-16">
+        <div className="relative z-10 my-auto space-y-4 sm:space-y-6 max-w-md py-8 sm:py-12 lg:py-16">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/15 backdrop-blur-md text-xs font-semibold rounded-full border border-white/20">
             <BadgeCheck className="w-3.5 h-3.5 text-amber-200" />
             <span>{copy.badge}</span>
@@ -276,20 +279,20 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
           <p className="text-white/90 text-sm sm:text-lg leading-relaxed">
             {copy.heroDescription}
           </p>
-          <div className="grid gap-3 text-sm text-white/90">
+          <div className="hidden sm:grid gap-3 text-sm text-white/90">
             <div className="flex items-center gap-3"><ShieldCheck className="w-5 h-5 text-white" /> {copy.security}</div>
             <div className="flex items-center gap-3"><Clock3 className="w-5 h-5 text-white" /> {copy.activation}</div>
             <div className="flex items-center gap-3"><MessageSquare className="w-5 h-5 text-white" /> {copy.whatsapp}</div>
           </div>
         </div>
 
-        <div className="relative flex justify-between items-center border-t border-white/20 pt-6">
+        <div className="relative z-10 hidden sm:flex justify-between items-center border-t border-white/25 pt-5 lg:pt-6">
           <p className="text-sm text-white/70">{copy.footer}</p>
           <span className="text-xs font-mono text-white/70">v1.3.0</span>
         </div>
-      </div>
+      </aside>
 
-      <div className="lg:w-[54%] min-w-0 flex items-center justify-center p-4 sm:p-8 lg:p-16">
+      <main className="lg:w-1/2 min-w-0 flex items-center justify-center bg-[#fcfdff] p-4 pt-24 sm:p-8 sm:pt-24 lg:p-16">
         <div className="w-full max-w-xl min-w-0 space-y-5 sm:space-y-7 animate-slide-up">
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-indigo-600 font-bold text-sm">
@@ -444,7 +447,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
             {copy.parentNote}
           </p>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
