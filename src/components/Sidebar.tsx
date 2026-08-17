@@ -15,6 +15,10 @@ import {
   MapPin,
   Bell,
   MessageSquareQuote,
+  MessageCircle,
+  Headset,
+  HelpCircle,
+  ClipboardList,
   BarChart3,
   X,
   PanelLeftClose,
@@ -46,6 +50,11 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
       { key: 'activites', label: 'activities', icon: Sparkles, color: 'text-purple-500' },
       { key: 'repas', label: 'meals', icon: Utensils, color: 'text-orange-500' },
       { key: 'parametres', label: 'settings', icon: Settings, color: 'text-slate-500' },
+      { key: 'notifications', label: 'notifications', icon: Bell, color: 'text-pink-500' },
+      { key: 'communication', label: 'communication', icon: MessageCircle, color: 'text-emerald-500' },
+      { key: 'demarrage', label: 'demarrage', icon: ClipboardList, color: 'text-indigo-400' },
+      { key: 'aide', label: 'aide', icon: HelpCircle, color: 'text-slate-400' },
+      { key: 'support', label: 'support', icon: Headset, color: 'text-teal-400' },
     ];
   }
 
@@ -57,8 +66,13 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
       return language === 'ar' ? 'الإشعارات' : 'Notifications';
     }
     if (key === 'communication') {
-      return language === 'ar' ? 'الرسائل والتقييمات والملاحظات' : 'Messages, Avis & Retours';
+      return user?.role === 'directeur'
+        ? (language === 'ar' ? 'التواصل مع العائلات' : 'Communication')
+        : (language === 'ar' ? 'الرسائل والتقييمات والملاحظات' : 'Messages, Avis & Retours');
     }
+    if (key === 'demarrage') return language === 'ar' ? 'البدء' : 'Démarrage';
+    if (key === 'aide') return language === 'ar' ? 'الدليل' : 'Aide';
+    if (key === 'support') return language === 'ar' ? 'الدعم' : 'Support';
     return t(originalLabel);
   };
 
@@ -71,13 +85,10 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
             : 'left-0 border-r border-slate-800 ' + (isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0')
         }`}
       >
-        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
-        <div className="absolute bottom-16 left-0 w-32 h-32 bg-pink-500/10 rounded-full blur-2xl pointer-events-none" />
-
         <div className={`border-b border-slate-800 transition-all duration-300 ${isCollapsed ? 'p-4 lg:p-3' : 'p-4 lg:p-6'}`}>
           <div className={`flex items-center justify-between gap-3.5 ${isCollapsed ? 'lg:justify-center' : ''}`}>
             <div className="flex items-center gap-3.5 overflow-hidden">
-              <div className="p-2.5 bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 rounded-2xl shadow-lg shadow-indigo-500/20 text-white flex-shrink-0 w-11 h-11 flex items-center justify-center overflow-hidden">
+              <div className="p-2.5 bg-indigo-600 rounded-lg text-white flex-shrink-0 w-11 h-11 flex items-center justify-center overflow-hidden">
                 {creche?.logoUrl ? (
                   <img src={creche.logoUrl} alt="Logo" className="w-full h-full object-contain" />
                 ) : (
@@ -85,7 +96,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
                 )}
               </div>
               <div className={`truncate ${isCollapsed ? 'lg:hidden' : ''}`}>
-                <h1 className="text-xl font-black tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent">
+                <h1 className="text-xl font-bold tracking-tight text-white">
                   RAWDHA+
                 </h1>
                 <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest block -mt-1 truncate">
@@ -138,7 +149,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
                 {isActive && (
                   <motion.div 
                     layoutId="activeTabIndicator"
-                    className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-violet-600 rounded-xl shadow-md shadow-indigo-600/15"
+                    className="absolute inset-0 bg-indigo-700 rounded-lg"
                     transition={{ type: "spring", stiffness: 350, damping: 28 }}
                   />
                 )}

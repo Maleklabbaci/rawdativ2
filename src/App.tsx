@@ -1,6 +1,6 @@
 
 import { useState, useEffect, lazy, Suspense, type ComponentType } from 'react';
-import { School, LogOut, Menu, CircleHelp, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { School, LogOut, Menu, CircleHelp, Bell, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
@@ -28,6 +28,9 @@ const PAGE_PATHS: Record<string, string> = {
   comptes: '/comptes',
   notifications: '/notifications',
   communication: '/communication',
+  demarrage: '/demarrage',
+  aide: '/aide',
+  support: '/support',
   rapports: '/reports',
   parametres: '/parametres',
 };
@@ -84,21 +87,20 @@ const Repas = lazyWithRecovery(() => import('./components/Repas'));
 const Parametres = lazyWithRecovery(() => import('./components/Parametres'));
 const Comptes = lazyWithRecovery(() => import('./components/Comptes'));
 const Notifications = lazyWithRecovery(() => import('./components/Notifications'));
+const NotificationsDirecteur = lazyWithRecovery(() => import('./components/NotificationsDirecteur'));
+const Communication = lazyWithRecovery(() => import('./components/Communication'));
 const CommunicationAdmin = lazyWithRecovery(() => import('./components/CommunicationAdmin'));
+const Demarrage = lazyWithRecovery(() => import('./components/Demarrage'));
+const Aide = lazyWithRecovery(() => import('./components/Aide'));
+const Support = lazyWithRecovery(() => import('./components/Support'));
 const Rapports = lazyWithRecovery(() => import('./components/Rapports'));
 const Admissions = lazyWithRecovery(() => import('./components/Admissions'));
 const Community = lazyWithRecovery(() => import('./components/Community'));
 import PublicAdmission from './components/PublicAdmission';
 import PrivacyPolicy from './components/PrivacyPolicy';
-import NotificationBell from './components/NotificationBell';
 import SubscriptionStatusBadge from './components/SubscriptionStatusBadge';
-import NotificationPopup from './components/NotificationPopup';
-import ChatBubble from './components/ChatBubble';
 import { AlertCircle, Lock, Check } from 'lucide-react';
-import OnboardingCrecheModal, { hasCompletedOnboarding } from './components/OnboardingCrecheModal';
-import WelcomeDirectorModal from './components/WelcomeDirectorModal';
-import LanguageChoiceModal from './components/LanguageChoiceModal';
-import HelpCenterModal from './components/HelpCenterModal';
+import { hasCompletedOnboarding } from './components/OnboardingCrecheModal';
 
 function AppContent() {
   const { isAuthenticated, user, creche, logout, loading: authLoading } = useAuth();
@@ -106,7 +108,6 @@ function AppContent() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isBrowserFullscreen, setIsBrowserFullscreen] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
   const [couponCode, setCouponCode] = useState('');
   const [showCouponInput, setShowCouponInput] = useState(false); // ✅ champ coupon replié par défaut, pour ne pas distraire du CTA principal // ✅ champ code coupon sur l'écran d'abonnement expiré
   const { language, setLanguage, t } = useLanguage();
@@ -128,80 +129,15 @@ function AppContent() {
   // ✅ Onboarding premier login : on vérifie une fois si le directeur a déjà rempli
   // ses infos de crèche (existence du doc "parametres/creche_{id}"). null = pas encore vérifié.
   const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
-  const [showWelcome, setShowWelcome] = useState(false);
-  const [showLanguageChoice, setShowLanguageChoice] = useState(false);
-
   useEffect(() => {
     if (user?.role === 'directeur') {
-      const welcomeKey = `rawdha_welcome_seen_${user.id}`;
-      const languageKey = `rawdha_language_selected_${user.id}`;
-      const introCompletedKey = `rawdha_director_intro_completed_v2_${user.id}`;
-      const readStoredFlag = (key: string) => {
-        const value = localStorage.getItem(key)?.trim().toLowerCase();
-        return value === '1' || value === 'true' || value === 'yes' || value === 'done';
-      };
-      const welcomeSeen = readStoredFlag(welcomeKey) || readStoredFlag('rawdha_welcome_seen');
-      const accountLanguageSelected = readStoredFlag(languageKey);
-      // Les anciennes versions stockaient la langue sans identifiant de compte.
-      // Cette valeur est aussi la preuve que l’ancien onboarding a déjà été
-      // franchi : elle doit donc fermer les deux fenêtres, pas uniquement celle
-      // du choix de langue.
-      const globalLanguage = localStorage.getItem('rawdha_language')?.trim().toLowerCase();
-      const globalLanguageSelected = globalLanguage === 'fr' || globalLanguage === 'ar';
-      const globalIntroCompleted = readStoredFlag('rawdha_director_intro_completed');
-      const languageSelected = accountLanguageSelected || globalLanguageSelected;
-      const introCompleted = readStoredFlag(introCompletedKey)
-        || globalIntroCompleted
-        || globalLanguageSelected
-        || (welcomeSeen && languageSelected);
-
-      // Migration vers les marqueurs par compte et vers le marqueur global de
-      // compatibilité. Une langue globale valide provient de l’ancien parcours
-      // déjà utilisé : elle ferme donc les deux fenêtres historiques pour éviter
-      // de bloquer un ancien compte à chaque connexion.
-      if (globalLanguageSelected && !accountLanguageSelected) {
-        localStorage.setItem(languageKey, '1');
-      }
-      if (introCompleted) {
-        localStorage.setItem(introCompletedKey, '1');
-        localStorage.setItem('rawdha_director_intro_completed', '1');
-        localStorage.setItem('rawdha_welcome_seen', '1');
-      }
-      setShowWelcome(!introCompleted && !welcomeSeen);
-      setShowLanguageChoice(!introCompleted && !languageSelected);
-    } else {
-      setShowWelcome(false);
-      setShowLanguageChoice(false);
-    }
-  }, [user?.id, user?.role]);
-
-  const chooseInitialLanguage = (selectedLanguage: 'fr' | 'ar') => {
-    setLanguage(selectedLanguage);
-    if (user?.id) {
-      localStorage.setItem(`rawdha_language_selected_${user.id}`, '1');
-    }
-    // Double écriture volontaire : la clé globale est conservée pour les
-    // anciens comptes et la clé par compte pour les prochaines connexions.
-    localStorage.setItem('rawdha_language', selectedLanguage);
-    localStorage.setItem('rawdha_language_selected', '1');
-    setShowLanguageChoice(false);
-  };
-
-  const closeWelcome = () => {
-    if (user?.id) {
-      localStorage.setItem(`rawdha_welcome_seen_${user.id}`, '1');
-      localStorage.setItem(`rawdha_language_selected_${user.id}`, '1');
-      localStorage.setItem(`rawdha_director_intro_completed_v2_${user.id}`, '1');
-      localStorage.setItem('rawdha_welcome_seen', '1');
-      localStorage.setItem('rawdha_director_intro_completed', '1');
-    }
-    setShowWelcome(false);
-    setShowLanguageChoice(false);
-  };
-
-  useEffect(() => {
-    if (user?.role === 'directeur') {
-      hasCompletedOnboarding(user.id).then(done => setNeedsOnboarding(!done));
+      hasCompletedOnboarding(user.id).then(done => {
+        setNeedsOnboarding(!done);
+        if (!done && window.location.pathname !== PAGE_PATHS.demarrage) {
+          window.history.replaceState({}, '', PAGE_PATHS.demarrage);
+          setCurrentPage('demarrage');
+        }
+      });
     } else {
       setNeedsOnboarding(false);
     }
@@ -476,8 +412,6 @@ if (isSubscriptionExpired) {
           </div>
         </div>
 
-        {/* Support Chat Bubble (Déjà présent et fonctionnel) */}
-        <ChatBubble />
       </div>
     );
   }
@@ -496,8 +430,11 @@ if (isSubscriptionExpired) {
         case 'activites': return <Activites />;
         case 'repas': return <Repas />;
         case 'comptes': return <Comptes />;
-        case 'notifications': return <Notifications />;
-        case 'communication': return <CommunicationAdmin />;
+        case 'notifications': return user?.role === 'directeur' ? <NotificationsDirecteur onNavigateToPaiements={() => navigateToPage('paiements')} /> : <Notifications />;
+        case 'communication': return user?.role === 'directeur' ? <Communication /> : <CommunicationAdmin />;
+        case 'demarrage': return <Demarrage onDone={() => { setNeedsOnboarding(false); navigateToPage('dashboard'); }} />;
+        case 'aide': return <Aide />;
+        case 'support': return <Support />;
         case 'rapports': return <Rapports />;
         case 'parametres': return <Parametres />;
         default: return <Dashboard />;
@@ -580,15 +517,17 @@ if (isSubscriptionExpired) {
                   </div>
                 )}
 
-                {/* Cloche de notifications — uniquement pour les directeurs */}
+                {/* Notifications : accès à une page classique, sans panneau flottant */}
                 {user?.role === 'directeur' && (
-                  <NotificationBell onNavigateToPaiements={() => navigateToPage('paiements')} />
+                  <button type="button" onClick={() => navigateToPage('notifications')} aria-label={language === 'ar' ? 'الإشعارات' : 'Notifications'} title={language === 'ar' ? 'الإشعارات' : 'Notifications'} className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 cursor-pointer">
+                    <Bell className="w-4 h-4" />
+                  </button>
                 )}
 
                 <div className="flex shrink-0 items-center gap-1">
                   <button
                     type="button"
-                    onClick={() => setShowHelp(true)}
+                    onClick={() => navigateToPage('aide')}
                     title={language === 'ar' ? 'شرح المنصة' : 'Comment fonctionne Rawdha+ ?'}
                     className="flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 transition hover:bg-indigo-100 cursor-pointer"
                   >
@@ -651,36 +590,10 @@ if (isSubscriptionExpired) {
 
         {/* Page Content */}
 <main className="min-w-0 overflow-x-hidden p-3 sm:p-6 lg:p-10 max-w-[1600px] mx-auto">
-  {showLanguageChoice && user?.role === 'directeur' && (
-    <LanguageChoiceModal onChoose={chooseInitialLanguage} />
-  )}
-  {!showLanguageChoice && showWelcome && user?.role === 'directeur' && (
-    <WelcomeDirectorModal
-      user={user}
-      language={language as 'fr' | 'ar'}
-      onLanguageChange={setLanguage}
-      onDone={closeWelcome}
-    />
-  )}
-  {!showLanguageChoice && !showWelcome && needsOnboarding && (
-    <OnboardingCrecheModal onDone={() => setNeedsOnboarding(false)} />
-  )}
   {renderPage()}
         </main>
       </div>
 
-      <HelpCenterModal
-        isOpen={showHelp}
-        onClose={() => setShowHelp(false)}
-        currentPage={currentPage}
-        language={language as 'fr' | 'ar'}
-      />
-
-      {/* Le support, les avis et les retours sont disponibles pour tous les comptes sauf l’admin. */}
-      {user && user.role !== 'admin' && <ChatBubble />}
-
-      {/* Popup d'annonce admin personnalisé — uniquement pour les directeurs */}
-      {user?.role === 'directeur' && <NotificationPopup onNavigate={navigateToPage} />}
     </div>
   );
 }

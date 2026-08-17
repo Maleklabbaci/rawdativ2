@@ -27,7 +27,6 @@ export default function Notifications() {
   const [textColor, setTextColor] = useState('#ffffff');
   const [buttonColor, setButtonColor] = useState('#ffffff');
   const [icon, setIcon] = useState('📢');
-  const [showAsPopup, setShowAsPopup] = useState(true);
   const [sending, setSending] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -39,11 +38,6 @@ export default function Notifications() {
   const [ctaType, setCtaType] = useState<'link' | 'page'>('link');
   const [ctaUrl, setCtaUrl] = useState('');
   const [ctaPage, setCtaPage] = useState('paiements');
-
-  // ✅ Répétition forcée (pour insister sur une annonce importante)
-  const [repeatEnabled, setRepeatEnabled] = useState(false);
-  const [repeatCount, setRepeatCount] = useState(3);
-  const [repeatIntervalSeconds, setRepeatIntervalSeconds] = useState(10);
 
   const directeurs = comptes.filter(c => c.role === 'directeur');
 
@@ -72,19 +66,17 @@ export default function Notifications() {
         textColor,
         buttonColor,
         icon,
-        showAsPopup,
+        showAsPopup: false,
         ...(ctaLabel.trim() ? {
           ctaLabel: ctaLabel.trim(),
           ctaType,
           ...(ctaType === 'link' ? { ctaUrl: ctaUrl.trim() } : { ctaPage }),
         } : {}),
-        ...(repeatEnabled ? { repeatCount, repeatIntervalSeconds } : {}),
       });
       setTitle('');
       setMessage('');
       setCtaLabel('');
       setCtaUrl('');
-      setRepeatEnabled(false);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 2500);
     } catch (err) {
@@ -227,20 +219,11 @@ export default function Notifications() {
               />
             </div>
 
-            {/* Mode d'affichage */}
-            <label className="flex items-center gap-2.5 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={showAsPopup}
-                onChange={e => setShowAsPopup(e.target.checked)}
-                className="w-4 h-4 accent-indigo-600 cursor-pointer"
-              />
-              <span className="text-xs font-semibold text-slate-600">
-                {isFrench
-                  ? 'Afficher en popup plein écran (sinon, juste dans la cloche 🔔)'
-                  : 'عرض كنافذة منبثقة (إن لم يكن مفعلاً، ستظهر فقط في الجرس 🔔)'}
-              </span>
-            </label>
+            <p className="text-xs leading-5 text-slate-500">
+              {isFrench
+                ? 'Les annonces sont publiées dans la page Notifications des directeurs.'
+                : 'تظهر الإعلانات في صفحة الإشعارات الخاصة بالمديرين.'}
+            </p>
           </div>
 
           {/* ✅ Destinataire */}
@@ -264,7 +247,7 @@ export default function Notifications() {
             </select>
           </div>
 
-          {/* ✅ Bouton d'action optionnel dans le popup */}
+          {/* Bouton d'action optionnel dans la notification */}
           <div className="border border-slate-100 rounded-xl p-4 space-y-3">
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
               {isFrench ? "Bouton d'action (optionnel)" : 'زر إجراء (اختياري)'}
@@ -311,48 +294,6 @@ export default function Notifications() {
             )}
           </div>
 
-          {/* ✅ Répétition forcée */}
-          <div className="border border-slate-100 rounded-xl p-4 space-y-3">
-            <label className="flex items-center gap-2.5 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={repeatEnabled}
-                onChange={e => setRepeatEnabled(e.target.checked)}
-                className="w-4 h-4 accent-indigo-600 cursor-pointer"
-              />
-              <span className="text-xs font-semibold text-slate-600">
-                {isFrench ? "Forcer le popup à réapparaître (annonce importante)" : 'إجبار النافذة على الظهور مجدداً'}
-              </span>
-            </label>
-            {repeatEnabled && (
-              <div className="flex gap-3 items-center pl-6">
-                <label className="text-xs text-slate-500">
-                  {isFrench ? 'Répéter' : 'كرر'}
-                  <select
-                    value={repeatCount}
-                    onChange={e => setRepeatCount(Number(e.target.value))}
-                    className="mx-2 px-2 py-1.5 border border-slate-200 rounded-lg text-xs"
-                  >
-                    <option value={2}>2</option>
-                    <option value={3}>3</option>
-                    <option value={4}>4</option>
-                    <option value={5}>5</option>
-                  </select>
-                  {isFrench ? 'fois, toutes les' : 'مرات، كل'}
-                  <select
-                    value={repeatIntervalSeconds}
-                    onChange={e => setRepeatIntervalSeconds(Number(e.target.value))}
-                    className="mx-2 px-2 py-1.5 border border-slate-200 rounded-lg text-xs"
-                  >
-                    <option value={5}>5s</option>
-                    <option value={10}>10s</option>
-                    <option value={20}>20s</option>
-                    <option value={30}>30s</option>
-                  </select>
-                </label>
-              </div>
-            )}
-          </div>
 
           <button
             onClick={handleSend}
@@ -439,11 +380,6 @@ export default function Notifications() {
                         {isTargeted && (
                           <span className="text-[10px] font-bold text-slate-400">
                             → {targetDir ? `${targetDir.prenom} ${targetDir.nom}` : n.recipientRole}
-                          </span>
-                        )}
-                        {n.showAsPopup !== false && (
-                          <span className="text-[9px] font-bold uppercase text-violet-500 bg-violet-50 px-1.5 py-0.5 rounded-full">
-                            {isFrench ? 'Popup' : 'نافذة'}
                           </span>
                         )}
                       </div>
