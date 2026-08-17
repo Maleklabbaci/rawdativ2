@@ -178,12 +178,19 @@ function AppContent() {
   useEffect(() => {
     if (isAuthenticated || isPublicAdmission || isPublicPrivacy) return;
     const normalizedPath = normalizeAuthPath(window.location.pathname);
+    const queryAndHash = `${window.location.search}${window.location.hash}`;
+
     if (AUTH_PATHS.has(normalizedPath)) {
-      const canonicalPath = `${normalizedPath}/`;
-      if (window.location.pathname !== canonicalPath) {
+      const canonicalPath = `${normalizedPath}/${queryAndHash}`;
+      if (window.location.pathname !== `${normalizedPath}/`) {
         window.history.replaceState({}, '', canonicalPath);
       }
+      return;
     }
+
+    // Une session expirée ne doit pas laisser une URL privée comme /dashboard
+    // alors que l’écran affiché est celui de connexion.
+    window.history.replaceState({}, '', `/signin/${queryAndHash}`);
   }, [isAuthenticated, isPublicAdmission, isPublicPrivacy]);
 
   useEffect(() => {
