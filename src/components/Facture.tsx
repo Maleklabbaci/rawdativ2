@@ -19,8 +19,8 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
   const t = (key: string) => {
     const translations: Record<string, Record<string, string>> = {
       fr: {
-        invoice: 'FACTURE',
-        number: 'N° Facture',
+        invoice: 'REÇU DE PAIEMENT',
+        number: 'N° Reçu',
         date: 'Date',
         creche: 'Établissement',
         address: 'Adresse',
@@ -32,18 +32,19 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
         amount: 'Montant',
         status: 'Statut',
         month: 'Mois concerné',
-        totalAmount: 'Montant Total',
+        totalAmount: 'Montant reçu',
         signature: 'Signature & Tampon',
-        download: 'Télécharger PDF',
+        download: 'Imprimer / PDF',
         print: 'Imprimer',
         paid: 'Payé',
         pending: 'En attente',
         late: 'Retard',
-        monthlyFee: 'Frais mensuels de garderie',
+        paymentMethod: 'Mode de règlement',
+        monthlyFee: 'Règlement des frais de scolarité',
       },
       ar: {
-        invoice: 'الفاتورة',
-        number: 'رقم الفاتورة',
+        invoice: 'وصل دفع',
+        number: 'رقم الوصل',
         date: 'التاريخ',
         creche: 'المؤسسة',
         address: 'العنوان',
@@ -55,14 +56,15 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
         amount: 'المبلغ',
         status: 'الحالة',
         month: 'الشهر المعني',
-        totalAmount: 'المبلغ الإجمالي',
+        totalAmount: 'المبلغ المقبوض',
         signature: 'التوقيع والختم',
-        download: 'تحميل PDF',
+        download: 'طباعة / PDF',
         print: 'طباعة',
         paid: 'مدفوع',
         pending: 'قيد الانتظار',
         late: 'متأخر',
-        monthlyFee: 'رسوم الحضانة الشهرية',
+        paymentMethod: 'طريقة الدفع',
+        monthlyFee: 'تسديد رسوم التمدرس',
       },
     };
     return translations[language]?.[key] || translations.fr[key] || key;
@@ -81,7 +83,7 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
   };
 
   const parentInfo: Partial<Parent> = enfant?.parents?.[0] || {};
-  const invoiceNumber = `FAC-${paiement?.id?.slice(0, 8).toUpperCase() || 'INCONNU'}`;
+  const invoiceNumber = `REC-${paiement?.id?.slice(0, 8).toUpperCase() || 'INCONNU'}`;
   const invoiceDate = new Date().toLocaleDateString(
     language === 'ar' ? 'ar-DZ' : 'fr-FR'
   );
@@ -183,6 +185,7 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
         <div class="label">${t('invoice')}</div>
         <div class="row-between"><span>${t('number')}:</span><span>${invoiceNumber}</span></div>
         <div class="row-between"><span>${t('date')}:</span><span>${invoiceDate}</span></div>
+        <div class="row-between"><span>${t('paymentMethod')}:</span><span>${paiement?.moyenPaiement || 'Espèces'}</span></div>
       </div>
     </div>
 
@@ -323,7 +326,11 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-500 uppercase mb-3">{t('invoice')}</h3>
-              <div className="space-y-2 text-sm">
+              <div className="space-y-4 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">{t('paymentMethod')}:</span>
+                  <span className="font-semibold text-slate-900">{paiement?.moyenPaiement || 'Espèces'}</span>
+                </div>
                 <div className="flex justify-between">
                   <span className="text-slate-600">{t('number')}:</span>
                   <span className="font-semibold text-slate-900">{invoiceNumber}</span>

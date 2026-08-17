@@ -363,7 +363,7 @@ export default function Paiements() {
                               setSelectedFacturePaiement(p);
                               setShowFacture(true);
                             }}
-                            title={isArabic ? 'عرض الفاتورة الرسمية' : 'Voir la facture'}
+                            title={isArabic ? 'عرض وصل الدفع الرسمي' : 'Voir le reçu de paiement'}
                           >
                             <FileText size={16} />
                           </button>
@@ -702,7 +702,7 @@ export default function Paiements() {
                 <div className="p-4 sm:p-6 bg-slate-50 border-b border-dashed border-slate-200 text-slate-800 relative flex-shrink-0">
                   <div className="flex justify-between items-start">
                     <div>
-                      <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">{isArabic ? 'تفاصيل السداد الرسمية' : 'REÇU DE FACTURATION'}</span>
+                      <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">{isArabic ? 'وصل الدفع الرسمي' : 'REÇU DE PAIEMENT'}</span>
                       <h4 className="text-lg font-black text-slate-900 mt-1">N° #{selectedPaiement.id?.slice(0, 8).toUpperCase() || '2938173'}</h4>
                     </div>
                     <button 
