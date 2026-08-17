@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { supabase } from '../supabase';
@@ -49,6 +49,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
     activation: 'Activation rapide après examen de la demande',
     whatsapp: 'Confirmation directe par WhatsApp',
     footer: '© 2026 RAWDHA+. Tous droits réservés.',
+    mobileContinue: 'Accéder à la connexion',
     space: 'ESPACE DIRECTEUR ET GESTION',
     signinTitle: 'Connectez-vous',
     signinDescription: 'Utilisez l’adresse e-mail et le mot de passe choisis lors de votre inscription.',
@@ -93,6 +94,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
     activation: 'تفعيل سريع بعد دراسة الطلب',
     whatsapp: 'تأكيد مباشر عبر واتساب',
     footer: '© 2026 روضة+. جميع الحقوق محفوظة.',
+    mobileContinue: 'الدخول إلى صفحة الاتصال',
     space: 'فضاء المديرة والتسيير',
     signinTitle: 'تسجيل الدخول',
     signinDescription: 'استعملي البريد الإلكتروني وكلمة المرور اللذين اخترتهما عند التسجيل.',
@@ -144,6 +146,12 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [showMobileIntro, setShowMobileIntro] = useState(true);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShowMobileIntro(false), 3200);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const resetRequestForm = () => {
     setDirectorNom('');
@@ -247,11 +255,53 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
 
   return (
     <div dir={isFrench ? 'ltr' : 'rtl'} className="min-h-[100dvh] w-full min-w-0 overflow-x-hidden bg-[#fcfdff] flex flex-col lg:flex-row font-sans">
-      <div className={`absolute top-4 z-30 flex items-center gap-1 rounded-full bg-white/90 p-1 shadow-sm border border-slate-200 ${isFrench ? 'right-4' : 'left-4'}`}>
+      <div className={`absolute top-4 z-50 flex items-center gap-1 rounded-full bg-white/90 p-1 shadow-sm border border-slate-200 ${isFrench ? 'right-4' : 'left-4'}`}>
         <button type="button" onClick={() => setLanguage('fr')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${isFrench ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-indigo-700'}`}>Français</button>
         <button type="button" onClick={() => setLanguage('ar')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${!isFrench ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-indigo-700'}`}>العربية</button>
       </div>
-      <aside className="lg:w-1/2 relative min-h-[390px] lg:min-h-[100dvh] overflow-hidden flex flex-col justify-between p-5 sm:p-8 lg:p-16 text-white select-none bg-[url('/login-nursery-hero-a.jpg')] bg-cover bg-center">
+
+      <section
+        className={`lg:hidden fixed inset-0 z-40 overflow-hidden bg-[url('/login-nursery-hero-a.jpg')] bg-cover bg-center transition-opacity duration-700 ease-out ${showMobileIntro ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+        aria-hidden={!showMobileIntro}
+      >
+        <div className="absolute inset-0 bg-gradient-to-br from-[#d93e34]/[0.93] via-[#eb6138]/[0.84] to-[#f4a033]/[0.78]" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#9e2f32]/55 via-transparent to-white/10" />
+        <div className="absolute -top-20 -left-20 h-64 w-64 rounded-full bg-white/15 blur-3xl" />
+        <div className="absolute -bottom-20 -right-20 h-96 w-96 rounded-full bg-amber-100/20 blur-3xl" />
+
+        <div className="relative z-10 flex h-full flex-col justify-between p-6 pt-28 text-white">
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl border border-white/30 bg-white/20 p-3 shadow-inner backdrop-blur-md">
+              <Baby className="h-8 w-8 text-white" />
+            </div>
+            <div>
+              <h2 className="font-display text-2xl font-bold tracking-wider drop-shadow-sm">RAWDHA+</h2>
+              <p className="text-[10px] tracking-[0.14em] text-white/80">{copy.brandSubtitle}</p>
+            </div>
+          </div>
+
+          <div className="space-y-5 pb-10">
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3 py-1 text-xs font-semibold backdrop-blur-md">
+              <BadgeCheck className="h-3.5 w-3.5 text-amber-200" />
+              <span>{copy.badge}</span>
+            </div>
+            <h1 className="font-display text-4xl font-extrabold leading-[0.98] tracking-tight">{copy.heroTitle}</h1>
+            <p className="max-w-sm text-sm leading-relaxed text-white/90">{copy.heroDescription}</p>
+            <button
+              type="button"
+              onClick={() => setShowMobileIntro(false)}
+              className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/35 bg-white/15 px-5 py-3 text-sm font-bold text-white shadow-lg backdrop-blur-md transition hover:bg-white/25 focus:outline-none focus:ring-2 focus:ring-white/80"
+            >
+              <span>{copy.mobileContinue}</span>
+              <span aria-hidden="true">↓</span>
+            </button>
+          </div>
+
+          <p className="border-t border-white/25 pt-4 text-xs text-white/70">{copy.footer}</p>
+        </div>
+      </section>
+
+      <aside className="hidden lg:flex lg:w-1/2 relative min-h-[390px] lg:min-h-[100dvh] overflow-hidden flex-col justify-between p-5 sm:p-8 lg:p-16 text-white select-none bg-[url('/login-nursery-hero-a.jpg')] bg-cover bg-center">
         {/* La photo donne le contexte "crèche" ; le voile protège lisibilité et identité Rawdha+. */}
         <div className="absolute inset-0 bg-gradient-to-br from-[#d93e34]/[0.92] via-[#eb6138]/[0.82] to-[#f4a033]/[0.78]" />
         <div className="absolute inset-0 bg-gradient-to-t from-[#9e2f32]/45 via-transparent to-white/10" />
