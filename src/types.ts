@@ -225,6 +225,9 @@ export interface DemandeAdmission {
   parentAdresse?: string;
   parentProfession?: string;
   parentLien: 'Mère' | 'Père' | 'Tuteur';
+  consentementDonnees?: boolean;
+  consentementDate?: string;
+  privacyVersion?: string;
   documentsRequis?: Enfant['documentsRequis'];
   documentsFichiers?: Enfant['documentsFichiers'];
   motifRefus?: string;

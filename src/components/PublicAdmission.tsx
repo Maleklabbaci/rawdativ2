@@ -34,6 +34,7 @@ type FormState = {
   parentAdresse: string;
   parentProfession: string;
   parentLien: 'Mère' | 'Père' | 'Tuteur';
+  consentementDonnees: boolean;
   documentsRequis: Record<DocumentKey, boolean>;
   documentsFichiers: Partial<Record<DocumentKey, UploadData>>;
 };
@@ -42,7 +43,7 @@ const initialForm: FormState = {
   nom: '', prenom: '', dateNaissance: '', genre: 'Garçon', groupeAge: 'Bébés',
   allergie: '', regimeAlimentaire: '', bloodGroup: '', weightKg: '', pediatricianName: '',
   vaccinations: '', notesMedicales: '', parentNom: '', parentPrenom: '', parentTelephone: '',
-  parentEmail: '', parentAdresse: '', parentProfession: '', parentLien: 'Mère',
+  parentEmail: '', parentAdresse: '', parentProfession: '', parentLien: 'Mère', consentementDonnees: false,
   documentsRequis: { certificatMedical: false, carnetVaccination: false, justificatifDomicile: false, photoIdentite: false },
   documentsFichiers: {},
 };
@@ -120,6 +121,10 @@ export default function PublicAdmission() {
       setError(isAr ? 'يرجى ملء جميع الحقول الإلزامية.' : 'Veuillez remplir tous les champs obligatoires.');
       return;
     }
+    if (!form.consentementDonnees) {
+      setError(isAr ? 'يرجى الموافقة على معالجة البيانات قبل الإرسال.' : 'Veuillez accepter le traitement des données avant l’envoi.');
+      return;
+    }
     setSubmitting(true);
     const { error: rpcError } = await supabase.rpc('rawdha_submit_admission', {
       p_token: token,
@@ -137,7 +142,9 @@ export default function PublicAdmission() {
       const code = rpcError.message || '';
       const message = code.includes('invalid_link')
         ? (isAr ? 'هذا الرابط غير صالح أو منتهي الصلاحية.' : 'Ce lien est invalide ou a expiré.')
-        : code.includes('duplicate_request')
+        : code.includes('consent_required')
+          ? (isAr ? 'الموافقة على معالجة البيانات مطلوبة لإرسال الطلب.' : 'Votre consentement au traitement des données est requis pour envoyer la demande.')
+          : code.includes('duplicate_request')
           ? (isAr ? 'تم إرسال طلب مماثل بالفعل.' : 'Une demande identique est déjà en attente pour cet enfant.')
           : code.includes('rate_limited')
             ? (isAr ? 'تم بلوغ الحد المؤقت للمحاولات. يرجى المحاولة لاحقاً.' : 'Trop de tentatives pour le moment. Veuillez réessayer plus tard.')
@@ -253,7 +260,14 @@ export default function PublicAdmission() {
                 </div>
               </section>
 
-              <div className="flex flex-col gap-3 border-t border-slate-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
+              <div className="border-t border-slate-100 pt-6">
+                <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 text-xs leading-5 text-slate-700">
+                  <input type="checkbox" checked={form.consentementDonnees} onChange={e => updateField('consentementDonnees', e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-indigo-600" />
+                  <span>{isAr ? 'أوافق على معالجة بياناتي وبيانات الطفل من طرف الروضة لدراسة طلب التسجيل والتواصل معنا. يمكنني قراءة سياسة الخصوصية قبل الإرسال.' : "J’accepte que la crèche traite mes données et celles de l’enfant pour étudier la demande d’admission et nous contacter. Je peux consulter la politique de confidentialité avant l’envoi."} <button type="button" onClick={() => window.open('/confidentialite', '_blank', 'noopener,noreferrer')} className="font-black text-indigo-700 underline underline-offset-2">{isAr ? 'سياسة الخصوصية' : 'Politique de confidentialité'}</button></span>
+                </label>
+              </div>
+
+              <div className="flex flex-col gap-3 pt-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="max-w-md text-xs leading-5 text-slate-500">{isAr ? 'لن يتم قبول الطفل تلقائياً. ستراجع إدارة الروضة الطلب أولاً.' : "L'enfant ne sera pas ajouté automatiquement. La direction vérifiera d'abord la demande."}</p>
                 <button type="submit" disabled={submitting} className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3.5 text-sm font-black text-white sm:w-auto shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"><Send className="h-4 w-4" />{submitting ? (isAr ? 'جاري الإرسال...' : 'Envoi en cours...') : (isAr ? 'إرسال الطلب' : 'Envoyer la demande')}</button>
               </div>

@@ -89,6 +89,7 @@ const Rapports = lazyWithRecovery(() => import('./components/Rapports'));
 const Admissions = lazyWithRecovery(() => import('./components/Admissions'));
 const Community = lazyWithRecovery(() => import('./components/Community'));
 import PublicAdmission from './components/PublicAdmission';
+import PrivacyPolicy from './components/PrivacyPolicy';
 import NotificationBell from './components/NotificationBell';
 import SubscriptionStatusBadge from './components/SubscriptionStatusBadge';
 import NotificationPopup from './components/NotificationPopup';
@@ -111,6 +112,7 @@ function AppContent() {
   const { language, setLanguage, t } = useLanguage();
   const { loading: dbLoading, comptes } = useDb();
   const isPublicAdmission = window.location.pathname.replace(/\/+$/, '') === '/admission';
+  const isPublicPrivacy = window.location.pathname.replace(/\/+$/, '') === '/confidentialite';
 
   const navigateToPage = (page: string, options?: { replace?: boolean }) => {
     const nextPage = PAGE_PATHS[page] ? page : 'dashboard';
@@ -232,7 +234,7 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated || isPublicAdmission) return;
+    if (!isAuthenticated || isPublicAdmission || isPublicPrivacy) return;
     const expectedPath = PAGE_PATHS[currentPage] || PAGE_PATHS.dashboard;
     if (window.location.pathname !== expectedPath) {
       window.history.replaceState({}, '', expectedPath);
@@ -285,6 +287,10 @@ function AppContent() {
       : fallbackPageTitles[currentPage] || 'RAWDHA+';
     document.title = `${pageName} — RAWDHA+`;
   }, [creche?.logoUrl, creche?.nom, currentPage, language, t]);
+
+  if (isPublicPrivacy) {
+    return <PrivacyPolicy />;
+  }
 
   if (isPublicAdmission) {
     return <PublicAdmission />;

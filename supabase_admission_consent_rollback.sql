@@ -1,3 +1,5 @@
+-- Rollback ciblé : restaure la définition QR antérieure à l’exigence de consentement.
+-- Ce fichier réapplique de façon idempotente le durcissement QR précédent ; il ne supprime aucune demande.
 -- Rawdha+ — Durcissement du parcours QR parent
 -- P0 : validation serveur, tokens stricts, rate limit et anti-doublon.
 -- Cette migration ne supprime aucune demande existante.
@@ -188,10 +190,6 @@ begin
     raise exception 'required_fields';
   end if;
 
-  if lower(trim(coalesce(v_payload->>'consentementDonnees', 'false'))) <> 'true' then
-    raise exception 'consent_required';
-  end if;
-
   begin
     v_birth_date := v_date_naissance::date;
   exception when others then
@@ -296,9 +294,6 @@ begin
       'lienId', v_link->>'id',
       'statut', 'en_attente',
       'dateDemande', now() at time zone 'utc',
-      'consentementDonnees', true,
-      'consentementDate', now() at time zone 'utc',
-      'privacyVersion', '2026-08-17',
       'nom', v_nom,
       'prenom', v_prenom,
       'dateNaissance', v_date_naissance,
