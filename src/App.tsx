@@ -124,6 +124,8 @@ function AppContent() {
   const normalizedPathname = normalizeAuthPath(window.location.pathname);
   const isAccessRequest = normalizedPathname === '/signin';
   const isPublicWelcome = normalizedPathname === '/welcome';
+  const isDesktopViewport = typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches;
+  const isMobileWelcomeScreen = isPublicWelcome && !isDesktopViewport;
 
   const navigateToPage = (page: string, options?: { replace?: boolean }) => {
     const nextPage = PAGE_PATHS[page] ? page : 'dashboard';
@@ -184,7 +186,7 @@ function AppContent() {
     const normalizedPath = normalizeAuthPath(window.location.pathname);
     const queryAndHash = `${window.location.search}${window.location.hash}`;
 
-    if (AUTH_PATHS.has(normalizedPath) || normalizedPath === '/welcome') {
+    if (AUTH_PATHS.has(normalizedPath) || (normalizedPath === '/welcome' && !isDesktopViewport)) {
       const canonicalPath = `${normalizedPath}/${queryAndHash}`;
       if (window.location.pathname !== `${normalizedPath}/`) {
         window.history.replaceState({}, '', canonicalPath);
@@ -192,10 +194,9 @@ function AppContent() {
       return;
     }
 
-    // Une session expirée ne doit pas laisser une URL privée comme /dashboard
-    // alors que l’écran affiché est celui de connexion.
-    window.history.replaceState({}, '', `/welcome/${queryAndHash}`);
-  }, [isAuthenticated, isPublicAdmission, isPublicPrivacy]);
+    // L’accueil est réservé au téléphone ; sur ordinateur, on ouvre directement le formulaire.
+    window.history.replaceState({}, '', `${isDesktopViewport ? '/login/' : '/welcome/'}${queryAndHash}`);
+  }, [isAuthenticated, isDesktopViewport, isPublicAdmission, isPublicPrivacy]);
 
   useEffect(() => {
     if (!isAuthenticated || isPublicAdmission || isPublicPrivacy) return;
@@ -228,7 +229,7 @@ function AppContent() {
     link.href = faviconHref;
 
     if (!isAuthenticated && !isPublicAdmission && !isPublicPrivacy) {
-      document.title = isPublicWelcome
+      document.title = isMobileWelcomeScreen
         ? (language === 'ar' ? 'مرحباً — روضة+' : 'Bienvenue — RAWDHA+')
         : isAccessRequest
           ? (language === 'ar' ? 'طلب الوصول — RAWDHA+' : 'Demander un accès — RAWDHA+')
@@ -259,7 +260,7 @@ function AppContent() {
       ? t(pageTitleKeys[currentPage])
       : fallbackPageTitles[currentPage] || 'RAWDHA+';
     document.title = `${pageName} — RAWDHA+`;
-  }, [creche?.logoUrl, creche?.nom, currentPage, isAccessRequest, isAuthenticated, isPublicAdmission, isPublicPrivacy, language, t]);
+  }, [creche?.logoUrl, creche?.nom, currentPage, isAccessRequest, isAuthenticated, isMobileWelcomeScreen, isPublicAdmission, isPublicPrivacy, language, t]);
 
   if (isPublicPrivacy) {
     return <PrivacyPolicy />;
@@ -287,7 +288,7 @@ function AppContent() {
   }
 
   if (!isAuthenticated) {
-    if (isPublicWelcome) return <MobileWelcome />;
+    if (isMobileWelcomeScreen) return <MobileWelcome />;
     return <SignIn mode={isAccessRequest ? 'request' : 'signin'} />;
   }
 
