@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { DbProvider, useDb } from './contexts/DbContext';
 import SignIn from './components/SignIn';
+import MobileWelcome from './components/MobileWelcome';
 import Dashboard from './components/Dashboard';
 import Sidebar from './components/Sidebar';
 import { ToastProvider } from './contexts/ToastContext';
@@ -120,7 +121,9 @@ function AppContent() {
   const { loading: dbLoading, comptes } = useDb();
   const isPublicAdmission = window.location.pathname.replace(/\/+$/, '') === '/admission';
   const isPublicPrivacy = window.location.pathname.replace(/\/+$/, '') === '/confidentialite';
-  const isAccessRequest = normalizeAuthPath(window.location.pathname) === '/signin';
+  const normalizedPathname = normalizeAuthPath(window.location.pathname);
+  const isAccessRequest = normalizedPathname === '/signin';
+  const isPublicWelcome = normalizedPathname === '/welcome';
 
   const navigateToPage = (page: string, options?: { replace?: boolean }) => {
     const nextPage = PAGE_PATHS[page] ? page : 'dashboard';
@@ -181,7 +184,7 @@ function AppContent() {
     const normalizedPath = normalizeAuthPath(window.location.pathname);
     const queryAndHash = `${window.location.search}${window.location.hash}`;
 
-    if (AUTH_PATHS.has(normalizedPath)) {
+    if (AUTH_PATHS.has(normalizedPath) || normalizedPath === '/welcome') {
       const canonicalPath = `${normalizedPath}/${queryAndHash}`;
       if (window.location.pathname !== `${normalizedPath}/`) {
         window.history.replaceState({}, '', canonicalPath);
@@ -191,7 +194,7 @@ function AppContent() {
 
     // Une session expirée ne doit pas laisser une URL privée comme /dashboard
     // alors que l’écran affiché est celui de connexion.
-    window.history.replaceState({}, '', `/login/${queryAndHash}`);
+    window.history.replaceState({}, '', `/welcome/${queryAndHash}`);
   }, [isAuthenticated, isPublicAdmission, isPublicPrivacy]);
 
   useEffect(() => {
@@ -225,9 +228,11 @@ function AppContent() {
     link.href = faviconHref;
 
     if (!isAuthenticated && !isPublicAdmission && !isPublicPrivacy) {
-      document.title = isAccessRequest
-        ? (language === 'ar' ? 'طلب الوصول — RAWDHA+' : 'Demander un accès — RAWDHA+')
-        : (language === 'ar' ? 'تسجيل الدخول — RAWDHA+' : 'Connexion — RAWDHA+');
+      document.title = isPublicWelcome
+        ? (language === 'ar' ? 'مرحباً — روضة+' : 'Bienvenue — RAWDHA+')
+        : isAccessRequest
+          ? (language === 'ar' ? 'طلب الوصول — RAWDHA+' : 'Demander un accès — RAWDHA+')
+          : (language === 'ar' ? 'تسجيل الدخول — RAWDHA+' : 'Connexion — RAWDHA+');
       return;
     }
 
@@ -282,6 +287,7 @@ function AppContent() {
   }
 
   if (!isAuthenticated) {
+    if (isPublicWelcome) return <MobileWelcome />;
     return <SignIn mode={isAccessRequest ? 'request' : 'signin'} />;
   }
 
