@@ -120,6 +120,7 @@ function AppContent() {
   const { loading: dbLoading, comptes } = useDb();
   const isPublicAdmission = window.location.pathname.replace(/\/+$/, '') === '/admission';
   const isPublicPrivacy = window.location.pathname.replace(/\/+$/, '') === '/confidentialite';
+  const isAccessRequest = normalizeAuthPath(window.location.pathname) === '/login';
 
   const navigateToPage = (page: string, options?: { replace?: boolean }) => {
     const nextPage = PAGE_PATHS[page] ? page : 'dashboard';
@@ -224,7 +225,9 @@ function AppContent() {
     link.href = faviconHref;
 
     if (!isAuthenticated && !isPublicAdmission && !isPublicPrivacy) {
-      document.title = language === 'ar' ? 'تسجيل الدخول — RAWDHA+' : 'Connexion — RAWDHA+';
+      document.title = isAccessRequest
+        ? (language === 'ar' ? 'طلب الوصول — RAWDHA+' : 'Demander un accès — RAWDHA+')
+        : (language === 'ar' ? 'تسجيل الدخول — RAWDHA+' : 'Connexion — RAWDHA+');
       return;
     }
 
@@ -251,7 +254,7 @@ function AppContent() {
       ? t(pageTitleKeys[currentPage])
       : fallbackPageTitles[currentPage] || 'RAWDHA+';
     document.title = `${pageName} — RAWDHA+`;
-  }, [creche?.logoUrl, creche?.nom, currentPage, isAuthenticated, isPublicAdmission, isPublicPrivacy, language, t]);
+  }, [creche?.logoUrl, creche?.nom, currentPage, isAccessRequest, isAuthenticated, isPublicAdmission, isPublicPrivacy, language, t]);
 
   if (isPublicPrivacy) {
     return <PrivacyPolicy />;
@@ -279,7 +282,7 @@ function AppContent() {
   }
 
   if (!isAuthenticated) {
-    return <SignIn />;
+    return <SignIn mode={isAccessRequest ? 'request' : 'signin'} />;
   }
 
   // --- Real-time Subscription Expiry Guard (Checks end date & active status) ---

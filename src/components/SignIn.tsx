@@ -36,10 +36,10 @@ function formatAuthError(message: string | null, fallback: string): string {
 const inputClass = 'w-full px-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all font-medium text-base sm:text-sm text-slate-800 bg-white';
 const iconInputClass = `${inputClass} pl-10`;
 
-export default function SignIn() {
+export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request' }) {
   const { isFrench } = useLanguage();
   const { loginWithCredentials } = useAuth();
-  const [view, setView] = useState<'signin' | 'request'>('signin');
+  const view = mode;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [directorNom, setDirectorNom] = useState('');
@@ -116,8 +116,7 @@ export default function SignIn() {
       }
 
       resetRequestForm();
-      setView('signin');
-      setSuccess('Votre demande a bien été envoyée. Après acceptation, connectez-vous directement avec le mot de passe que vous venez de définir.');
+      setSuccess('Votre demande a bien été envoyée. Après acceptation, ouvrez /signin/ pour vous connecter avec le mot de passe que vous venez de définir.');
     } catch (requestError) {
       console.error('Erreur envoi demande directeur:', requestError);
       const message = requestError instanceof Error ? requestError.message : '';
@@ -228,13 +227,16 @@ export default function SignIn() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl">
-            <button type="button" onClick={() => { setView('signin'); setError(''); setSuccess(''); }} className={`py-2.5 rounded-lg text-xs font-bold transition ${view === 'signin' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              Se connecter
-            </button>
-            <button type="button" onClick={() => { setView('request'); setError(''); setSuccess(''); }} className={`py-2.5 rounded-lg text-xs font-bold transition ${view === 'request' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              Demander un accès
-            </button>
+          <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-sm">
+            <span className="text-slate-500">
+              {view === 'signin' ? 'Pas encore de compte ?' : 'Vous avez déjà un compte ?'}
+            </span>
+            <a
+              href={view === 'signin' ? '/login/' : '/signin/'}
+              className="font-bold text-indigo-700 hover:text-indigo-900 underline underline-offset-2"
+            >
+              {view === 'signin' ? 'Demander un accès' : 'Se connecter'}
+            </a>
           </div>
 
           {view === 'signin' ? (
