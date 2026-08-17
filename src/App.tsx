@@ -50,6 +50,10 @@ const pageFromPathname = (pathname: string) => {
   return PAGE_FROM_PATH[normalizedPath] || 'dashboard';
 };
 
+const AUTH_PATHS = new Set(['/signin', '/login']);
+
+const normalizeAuthPath = (pathname: string) => pathname.replace(/\/+$/, '') || '/';
+
 const reloadForStaleChunk = () => {
   if (typeof window === 'undefined') return false;
   try {
@@ -170,6 +174,17 @@ function AppContent() {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (isAuthenticated || isPublicAdmission || isPublicPrivacy) return;
+    const normalizedPath = normalizeAuthPath(window.location.pathname);
+    if (AUTH_PATHS.has(normalizedPath)) {
+      const canonicalPath = `${normalizedPath}/`;
+      if (window.location.pathname !== canonicalPath) {
+        window.history.replaceState({}, '', canonicalPath);
+      }
+    }
+  }, [isAuthenticated, isPublicAdmission, isPublicPrivacy]);
 
   useEffect(() => {
     if (!isAuthenticated || isPublicAdmission || isPublicPrivacy) return;
