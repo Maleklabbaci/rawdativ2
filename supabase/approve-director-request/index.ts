@@ -73,6 +73,18 @@ Deno.serve(async (req: Request) => {
     }
 
     const email = String(request.email || '').trim().toLowerCase();
+    const { data: existingAccounts, error: existingAccountsError } = await adminClient
+      .from('comptes')
+      .select('id, data')
+      .limit(5000);
+    if (existingAccountsError) return jsonResponse({ error: existingAccountsError.message }, 500);
+    const conflictingAccount = (existingAccounts || []).find((row) => {
+      const account = (row.data || {}) as Record<string, unknown>;
+      return row.id !== authUserId && String(account.email || '').trim().toLowerCase() === email;
+    });
+    if (conflictingAccount) {
+      return jsonResponse({ error: 'Cette adresse e-mail appartient déjà à un autre compte Rawdha+.' }, 409);
+    }
     const nom = String(request.nom || '').trim();
     const prenom = String(request.prenom || '').trim();
     const nomCreche = String(request.nomCreche || '').trim();
@@ -85,6 +97,7 @@ Deno.serve(async (req: Request) => {
         prenom,
         nomCreche,
         role: 'directeur',
+        pendingDirector: false,
       },
     });
     if (authUpdateError || !authUpdate.user) {

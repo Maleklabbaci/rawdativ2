@@ -207,11 +207,6 @@ export default function Comptes() {
 
   const handleAcceptDemande = async (demande: DemandeDirecteur) => {
     setDecisionError('');
-    if (comptes.some(compte => compte.email.toLowerCase() === demande.email.toLowerCase())) {
-      setDecisionError('Cette adresse e-mail possède déjà un compte Rawdha+.');
-      return;
-    }
-
     try {
       setDecisionLoading(true);
       await approveDemandeDirecteur(demande.id);

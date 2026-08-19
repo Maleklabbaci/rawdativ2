@@ -118,6 +118,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return null;
     }
 
+    // Le compte Auth est créé en amont pour conserver le mot de passe choisi dans le
+    // formulaire, mais il ne doit jamais ouvrir l’application tant que l’admin n’a
+    // pas accepté la demande. Le flag est retiré uniquement par l’Edge Function
+    // approve-director-request.
+    if (authUserSnapshot?.user_metadata?.pendingDirector === true) {
+      return null;
+    }
+
     const profile = { ...(data.data as object), id: data.id } as UserAccount;
     // Rawdha+ ne propose pas encore d’espace parent : seuls admin et directeur
     // peuvent ouvrir une session de gestion dans cette version.
@@ -254,9 +262,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       const profile = await loadProfile(data.user.id, data.user);
       if (!profile) {
+        // Ne conserve pas une session Auth utilisable en arrière-plan pour un compte
+        // encore en attente ou sans profil Rawdha+.
+        await supabase.auth.signOut().catch(() => undefined);
         return {
           user: null,
-          error: 'Votre authentification est valide, mais votre compte n’est pas encore rattaché à Rawdha+.',
+          error: 'Votre demande est encore en attente de validation par l’administrateur.',
         };
       }
       setUser(profile);

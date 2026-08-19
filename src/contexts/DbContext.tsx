@@ -518,7 +518,14 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     const previous = demandesDirecteur.find(item => item.id === id);
     setDemandesDirecteur(prev => prev.filter(item => item.id !== id));
     try {
-      await deleteCollectionDocument('demandes_directeur', id);
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error } = await supabase.functions.invoke('reject-director-request', {
+        body: { demandeId: id },
+        headers: { Authorization: `Bearer ${session?.access_token || ''}` },
+      });
+      if (error || data?.error) {
+        throw new Error(data?.error || error?.message || 'Erreur refus demande');
+      }
     } catch (err) {
       if (previous) setDemandesDirecteur(prev => [...prev, previous]);
       notifyWriteError('suppression');
