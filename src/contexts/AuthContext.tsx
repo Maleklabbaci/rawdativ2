@@ -260,11 +260,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         console.warn('Vérification différée de l’approbation impossible:', error);
       }
     };
+
+    const channel = supabase
+      .channel(`director-approval:${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'comptes', filter: `id=eq.${user.id}` },
+        (payload) => {
+          const nextData = (payload.new as { data?: Partial<UserAccount> }).data;
+          if (nextData?.approvalStatus === 'approved') void checkApproval();
+        },
+      )
+      .subscribe();
+
     void checkApproval();
     const interval = window.setInterval(checkApproval, 10_000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      void supabase.removeChannel(channel);
     };
   }, [user?.id, user?.role, user?.approvalStatus, loadCrecheSettings]);
 
