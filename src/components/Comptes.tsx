@@ -28,9 +28,20 @@ import {
   Building,
   Clock,
   UserCheck,
-  UserX
+  UserX,
+  MessageCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+
+function normalizeWhatsAppNumber(value?: string): string | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+  let digits = raw.replace(/\D/g, '');
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (digits.startsWith('0')) digits = `213${digits.slice(1)}`;
+  if (digits.length === 9) digits = `213${digits}`;
+  return digits.length >= 11 ? digits : null;
+}
 
 function formatLastActivity(value: string | undefined, language: 'fr' | 'ar'): string | null {
   if (!value) return null;
@@ -237,6 +248,19 @@ export default function Comptes() {
     } finally {
       setDecisionLoading(false);
     }
+  };
+
+  const openWhatsApp = (compte: typeof comptes[number]) => {
+    const phone = normalizeWhatsAppNumber(compte.telephone);
+    if (!phone) {
+      alert(isFrench ? 'Aucun numéro de téléphone valide n’est enregistré pour ce compte.' : 'لا يوجد رقم هاتف صالح لهذا الحساب.');
+      return;
+    }
+
+    const message = isFrench
+      ? `Bonjour ${compte.prenom} ${compte.nom}, ici l’administration de Rawdha+. Nous vous contactons au sujet de votre compte${compte.approvalStatus === 'pending' ? ' et de votre demande de validation' : ''}.`
+      : `مرحباً ${compte.prenom} ${compte.nom}، معكم إدارة Rawdha+ بخصوص حسابكم${compte.approvalStatus === 'pending' ? ' وطلب التحقق الخاص بكم' : ''}.`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
   };
 
   const handleToggleSubscription = async (id: string, currentStatus: boolean) => {
@@ -930,13 +954,24 @@ export default function Comptes() {
                             System
                           </span>
                         ) : (
-                          <button
-                            onClick={() => handleDeleteCompte(c.id, `${c.prenom} ${c.nom}`)}
-                            className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                            title={isFrench ? 'Supprimer l\'utilisateur' : 'حذف الحساب'}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openWhatsApp(c)}
+                              disabled={!normalizeWhatsAppNumber(c.telephone)}
+                              className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                              title={normalizeWhatsAppNumber(c.telephone) ? (isFrench ? 'Contacter sur WhatsApp' : 'التواصل عبر واتساب') : (isFrench ? 'Numéro absent' : 'رقم الهاتف غير موجود')}
+                            >
+                              <MessageCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteCompte(c.id, `${c.prenom} ${c.nom}`)}
+                              className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                              title={isFrench ? 'Supprimer l\'utilisateur' : 'حذف الحساب'}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
