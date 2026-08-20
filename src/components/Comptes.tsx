@@ -849,7 +849,9 @@ export default function Comptes() {
                                   type="date"
                                   value={c.dateFinAbonnement || ''}
                                   onChange={(e) => handleUpdateEndDate(c.id, e.target.value)}
+                                  disabled={c.approvalStatus === 'pending'}
                                   className={`px-2 py-1.5 border rounded-lg text-xs font-black outline-none focus:ring-2 focus:ring-indigo-100 transition ${
+                                    c.approvalStatus === 'pending' ? 'border-amber-200 bg-amber-50 text-amber-700 cursor-not-allowed' :
                                     isExpired 
                                       ? 'border-rose-300 bg-rose-50/50 text-rose-700' 
                                       : 'border-slate-200 hover:border-slate-300 text-slate-700'
@@ -868,6 +870,12 @@ export default function Comptes() {
                               <span className="text-xs font-semibold text-slate-400">Accès Permanent</span>
                             ) : (
                               <div className="flex items-center gap-2">
+                                {c.approvalStatus === 'pending' ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-700 rounded-full border border-amber-200 text-[10px] font-black uppercase">
+                                    En attente
+                                  </span>
+                                ) : (
+                                <>
                                 <button
                                   type="button"
                                   onClick={() => handleToggleSubscription(c.id, c.abonnementActif)}
@@ -893,6 +901,8 @@ export default function Comptes() {
                                     <ToggleLeft className="w-7 h-7 text-slate-300" />
                                   )}
                                 </button>
+                                </>
+                                )}
                               </div>
                             )}
                           </td>
