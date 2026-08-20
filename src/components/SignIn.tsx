@@ -22,6 +22,14 @@ import {
   UserRound,
 } from 'lucide-react';
 
+function isValidAlgerianPhone(value: string): boolean {
+  let digits = value.replace(/\D/g, '');
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (digits.startsWith('213')) digits = digits.slice(3);
+  else if (digits.startsWith('0')) digits = digits.slice(1);
+  return digits.length === 9 && /^[5-7]\d{8}$/.test(digits);
+}
+
 function formatAuthError(message: string | null, fallback: string): string {
   if (!message || message === '{}' || message === '[object Object]') return fallback;
   const normalized = message.toLowerCase();
@@ -167,6 +175,10 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
 
     if (!directorNom.trim() || !directorPrenom.trim() || !directorEmail.trim() || !directorCreche.trim() || !directorPhone.trim() || !directorAddress.trim() || !directorPassword) {
       setError(copy.requiredError);
+      return;
+    }
+    if (!isValidAlgerianPhone(directorPhone)) {
+      setError(isFrench ? 'Veuillez saisir un numéro de téléphone algérien valide.' : 'يرجى إدخال رقم هاتف جزائري صالح.');
       return;
     }
     if (directorPassword.length < 8) {
@@ -396,7 +408,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">{copy.phone}</label>
                   <div className="relative">
                     <Phone className="absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input type="tel" value={directorPhone} onChange={(event) => setDirectorPhone(event.target.value)} className={iconInputClass} placeholder="+213..." required />
+                    <input type="tel" value={directorPhone} onChange={(event) => setDirectorPhone(event.target.value)} className={iconInputClass} placeholder="+213 5 55 12 34 56" required inputMode="tel" autoComplete="tel" />
                   </div>
                 </div>
               </div>

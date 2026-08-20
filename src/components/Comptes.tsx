@@ -146,6 +146,10 @@ export default function Comptes() {
       setFormError(isFrench ? 'Veuillez renseigner le nom de la crèche.' : 'يرجى إدخال اسم الروضة.');
       return;
     }
+    if (isAdmin && !normalizeWhatsAppNumber(telephoneCreche)) {
+      setFormError(isFrench ? 'Veuillez renseigner un numéro de téléphone algérien valide.' : 'يرجى إدخال رقم هاتف جزائري صالح.');
+      return;
+    }
 
     // Check if email already exists
     const exists = comptes.some(c => c.email.toLowerCase() === email.toLowerCase().trim());
@@ -165,6 +169,7 @@ export default function Comptes() {
         email: email.trim().toLowerCase(),
         motDePasse,
         role: roleToSave,
+        telephone: roleToSave === 'directeur' ? telephoneCreche.trim() : undefined,
         abonnementActif,
         ...(roleToSave === 'directeur' ? { nomCreche, dateFinAbonnement } : {}),
         ...(roleToSave === 'parent' && enfantId ? { enfantId } : {})
@@ -564,14 +569,17 @@ export default function Comptes() {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-                          {isFrench ? 'Téléphone crèche' : 'هاتف الحضانة'}
+                          {isFrench ? 'Téléphone crèche *' : 'هاتف الحضانة *'}
                         </label>
                         <input
                           type="text"
                           value={telephoneCreche}
                           onChange={(e) => setTelephoneCreche(e.target.value)}
+                          required
+                          inputMode="tel"
+                          autoComplete="tel"
                           className="w-full px-3 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition text-sm"
-                          placeholder="+213 ..."
+                          placeholder="+213 5 55 12 34 56"
                         />
                       </div>
                       <div>

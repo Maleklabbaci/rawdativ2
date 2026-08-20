@@ -12,6 +12,14 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // ⚠️ En prod, remplace '*' par ton domaine exact pour plus de sécurité :
 // 'https://rawdativ2.vercel.app'
+function isValidAlgerianPhone(value: string): boolean {
+  let digits = value.replace(/\D/g, '');
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (digits.startsWith('213')) digits = digits.slice(3);
+  else if (digits.startsWith('0')) digits = digits.slice(1);
+  return digits.length === 9 && /^[5-7]\d{8}$/.test(digits);
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -69,10 +77,16 @@ Deno.serve(async (req: Request) => {
 
     // 3) Lit les données du nouveau compte envoyées par le formulaire
     const body = await req.json();
-    const { email, motDePasse, nom, prenom, role, nomCreche, dateFinAbonnement, abonnementActif } = body;
+    const { email, motDePasse, nom, prenom, role, telephone, nomCreche, dateFinAbonnement, abonnementActif } = body;
 
-    if (!email || !motDePasse) {
-      return new Response(JSON.stringify({ error: 'Email et mot de passe requis.' }), {
+    if (!email || !motDePasse || !telephone || !String(telephone).trim()) {
+      return new Response(JSON.stringify({ error: 'Email, mot de passe et téléphone requis.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (!isValidAlgerianPhone(String(telephone))) {
+      return new Response(JSON.stringify({ error: 'Numéro de téléphone algérien invalide.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -99,6 +113,7 @@ Deno.serve(async (req: Request) => {
       prenom,
       email: email.toLowerCase().trim(),
       role,
+      telephone: String(telephone).trim(),
       approvalStatus: 'approved',
       nomCreche: nomCreche || null,
       dateFinAbonnement: dateFinAbonnement || null,

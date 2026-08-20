@@ -1,5 +1,13 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+function isValidAlgerianPhone(value: string): boolean {
+  let digits = value.replace(/\D/g, '');
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (digits.startsWith('213')) digits = digits.slice(3);
+  else if (digits.startsWith('0')) digits = digits.slice(1);
+  return digits.length === 9 && /^[5-7]\d{8}$/.test(digits);
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -43,6 +51,7 @@ Deno.serve(async (req: Request) => {
     }
     if (password.length < 8) return jsonResponse({ error: 'Le mot de passe doit contenir au moins 8 caractères.' }, 400);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return jsonResponse({ error: 'Adresse e-mail invalide.' }, 400);
+    if (!isValidAlgerianPhone(telephone)) return jsonResponse({ error: 'Numéro de téléphone algérien invalide.' }, 400);
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
