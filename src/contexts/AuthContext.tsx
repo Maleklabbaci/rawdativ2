@@ -241,6 +241,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, [user?.id, user?.role, user?.approvalStatus, recordLastActivity]);
 
+  // Une session pending reste ouverte, mais vérifie périodiquement si l’admin vient
+  // d’approuver le compte depuis un autre navigateur. Le profil serveur approved
+  // prime alors sur un ancien token Auth encore marqué pendingDirector.
+  useEffect(() => {
+    if (!user?.id || user.role !== 'directeur' || user.approvalStatus !== 'pending') return;
+    let cancelled = false;
+    const checkApproval = async () => {
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser || authUser.id !== user.id) return;
+        const profile = await loadProfile(user.id, authUser);
+        if (!cancelled && profile && profile.approvalStatus !== 'pending') {
+          setUser(profile);
+          void loadCrecheSettings(profile);
+        }
+      } catch (error) {
+        console.warn('Vérification différée de l’approbation impossible:', error);
+      }
+    };
+    void checkApproval();
+    const interval = window.setInterval(checkApproval, 10_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [user?.id, user?.role, user?.approvalStatus, loadCrecheSettings]);
+
   const isAuthenticated = !!user;
 
   const loginWithCredentials = async (email: string, motDePasse: string): Promise<{ user: UserAccount | null; error: string | null }> => {
