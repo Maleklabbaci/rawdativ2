@@ -81,7 +81,7 @@ Deno.serve(async (req: Request) => {
 
     const { error: profileError } = await adminClient
       .from('comptes')
-      .insert({
+      .upsert({
         id: created.user.id,
         data: {
           nom,
@@ -93,8 +93,10 @@ Deno.serve(async (req: Request) => {
           nomCreche,
           dateFinAbonnement: null,
         },
-      });
+      }, { onConflict: 'id' });
     if (profileError) {
+      await adminClient.from('parametres').delete().eq('id', `creche_${created.user.id}`);
+      await adminClient.from('comptes').delete().eq('id', created.user.id);
       await adminClient.auth.admin.deleteUser(created.user.id);
       return jsonResponse({ error: profileError.message }, 500);
     }
@@ -117,6 +119,7 @@ Deno.serve(async (req: Request) => {
       .from('demandes_directeur')
       .insert({ id: requestId, data: requestData });
     if (insertError) {
+      await adminClient.from('parametres').delete().eq('id', `creche_${created.user.id}`);
       await adminClient.from('comptes').delete().eq('id', created.user.id);
       await adminClient.auth.admin.deleteUser(created.user.id);
       return jsonResponse({ error: insertError.message }, 500);
