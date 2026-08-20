@@ -261,6 +261,14 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       'error'
     );
   };
+
+  const isPendingDirector = user?.role === 'directeur' && user.approvalStatus === 'pending';
+  const assertWriteAccess = () => {
+    if (!isPendingDirector) return;
+    const message = 'Votre compte est en attente de validation par l’administrateur. La plateforme est actuellement en lecture seule.';
+    showToast(message, 'info', 7000);
+    throw new Error(message);
+  };
   
   const [enfants, setEnfants] = useState<Enfant[]>([]);
   const [classes, setClasses] = useState<Classe[]>([]);
@@ -411,7 +419,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       let links = await getCollectionData<InscriptionLink>('inscription_liens');
       // Les nouveaux comptes reçoivent leur QR via le trigger SQL. Pour les anciens
       // comptes, on répare automatiquement une seule fois sans afficher de bouton de génération.
-      if (!links.some(link => link.active && link.token)) {
+      if (user.approvalStatus !== 'pending' && !links.some(link => link.active && link.token)) {
         try {
           const provisioned = await ensureInscriptionLink();
           if (provisioned) links = [provisioned, ...links.filter(link => link.id !== provisioned.id)];
@@ -441,7 +449,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       document.removeEventListener('visibilitychange', refreshWhenVisible);
       window.clearInterval(interval);
     };
-  }, [user?.id, user?.role]);
+  }, [user?.id, user?.role, user?.approvalStatus]);
 
   // --- FILTRE DE SÉCURITÉ GLOBAL ---
   // On s'assure que le directeur ne voit que les données rattachées à son propre ID (crecheId === user.id)
@@ -489,6 +497,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const approveDemandeDirecteur = async (id: string) => {
+    assertWriteAccess();
     const { data: { session } } = await supabase.auth.getSession();
     const { data, error } = await supabase.functions.invoke('approve-director-request', {
       body: { demandeId: id },
@@ -503,6 +512,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const updateDemandeDirecteur = async (id: string, data: Partial<DemandeDirecteur>) => {
+    assertWriteAccess();
     const previous = demandesDirecteur.find(item => item.id === id);
     setDemandesDirecteur(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
     try {
@@ -515,6 +525,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const deleteDemandeDirecteur = async (id: string) => {
+    assertWriteAccess();
     const previous = demandesDirecteur.find(item => item.id === id);
     setDemandesDirecteur(prev => prev.filter(item => item.id !== id));
     try {
@@ -535,6 +546,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   // --- ENFANTS ---
   const addEnfant = async (enfant: Omit<Enfant, 'id'>) => {
+    assertWriteAccess();
     const tempId = (enfant as any).id || 'child_' + Date.now();
     const cleanEnfant = normalizeEnfantData({ ...enfant, id: tempId } as Enfant);
     setEnfants(prev => [...prev.filter(item => item.id !== tempId), cleanEnfant]);
@@ -551,6 +563,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const updateEnfant = async (id: string, data: Partial<Enfant>) => {
+    assertWriteAccess();
     const previous = enfants.find(item => item.id === id);
     const normalized = normalizeEnfantData({ ...previous, ...data, id });
     const persistedData: Partial<Enfant> = {
@@ -570,6 +583,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const deleteEnfant = async (id: string) => {
+    assertWriteAccess();
     const previous = enfants.find(item => item.id === id);
     setEnfants(prev => prev.filter(item => item.id !== id));
     setPresences(prev => prev.filter(item => item.enfantId !== id));
@@ -588,6 +602,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   // --- CLASSES ---
   const addClasse = async (classe: Omit<Classe, 'id'>) => {
+    assertWriteAccess();
     const tempId = (classe as any).id || 'class_' + Date.now();
     const cleanClasse = { ...classe, id: tempId } as Classe;
     setClasses(prev => [...prev.filter(item => item.id !== tempId), cleanClasse]);
@@ -603,6 +618,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const updateClasse = async (id: string, data: Partial<Classe>) => {
+    assertWriteAccess();
     const previous = classes.find(item => item.id === id);
     setClasses(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
     try { await updateCollectionDocument<Classe>('classes', id, data); } catch (err) {
@@ -612,6 +628,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const deleteClasse = async (id: string) => {
+    assertWriteAccess();
     const previous = classes.find(item => item.id === id);
     setClasses(prev => prev.filter(item => item.id !== id));
     try { await deleteCollectionDocument('classes', id); } catch (err) {
@@ -622,6 +639,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   // --- PRESENCES ---
   const addPresence = async (presence: Omit<Presence, 'id'>) => {
+    assertWriteAccess();
     const tempId = (presence as any).id || 'pres_' + Date.now();
     const cleanPresence = { ...presence, id: tempId } as Presence;
     setPresences(prev => [...prev.filter(item => item.id !== tempId), cleanPresence]);
@@ -637,6 +655,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const updatePresence = async (id: string, data: Partial<Presence>) => {
+    assertWriteAccess();
     const previous = presences.find(item => item.id === id);
     setPresences(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
     try { await updateCollectionDocument<Presence>('presences', id, data); } catch (err) {
@@ -646,6 +665,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const deletePresence = async (id: string) => {
+    assertWriteAccess();
     const previous = presences.find(item => item.id === id);
     setPresences(prev => prev.filter(item => item.id !== id));
     try { await deleteCollectionDocument('presences', id); } catch (err) {
@@ -654,7 +674,8 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const savePresenceJournee = async (journee: Omit<PresenceJournee, 'id'> & { id?: string }) => {
+  const savePresenceJournee = async (journee: Omit<PresenceJournee, 'id'> & {    assertWriteAccess();
+ id?: string }) => {
     const id = journee.id || `presence_day_${journee.crecheId}_${journee.date}`;
     const record = { ...journee, id } as PresenceJournee;
     const previous = presenceJournees.find(item => item.id === id);
@@ -673,6 +694,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   // --- PAIEMENTS ---
   const addPaiement = async (paiement: Omit<Paiement, 'id'>) => {
+    assertWriteAccess();
     const tempId = (paiement as any).id || 'pay_' + Date.now();
     const cleanPaiement = { ...paiement, id: tempId } as Paiement;
     setPaiements(prev => [...prev.filter(item => item.id !== tempId), cleanPaiement]);
@@ -688,6 +710,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const updatePaiement = async (id: string, data: Partial<Paiement>) => {
+    assertWriteAccess();
     const previous = paiements.find(item => item.id === id);
     setPaiements(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
     try { await updateCollectionDocument<Paiement>('paiements', id, data); } catch (err) {
@@ -697,6 +720,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const deletePaiement = async (id: string) => {
+    assertWriteAccess();
     const previous = paiements.find(item => item.id === id);
     setPaiements(prev => prev.filter(item => item.id !== id));
     try { await deleteCollectionDocument('paiements', id); } catch (err) {
@@ -707,6 +731,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   // --- PERSONNEL ---
   const addPersonnel = async (staff: Omit<Personnel, 'id'>) => {
+    assertWriteAccess();
     const tempId = (staff as any).id || 'staff_' + Date.now();
     const cleanStaff = { ...staff, id: tempId } as Personnel;
     setPersonnel(prev => [...prev.filter(item => item.id !== tempId), cleanStaff]);
@@ -722,6 +747,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const updatePersonnel = async (id: string, data: Partial<Personnel>) => {
+    assertWriteAccess();
     const previous = personnel.find(item => item.id === id);
     setPersonnel(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
     try { await updateCollectionDocument<Personnel>('personnel', id, data); } catch (err) {
@@ -731,6 +757,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const deletePersonnel = async (id: string) => {
+    assertWriteAccess();
     const previous = personnel.find(item => item.id === id);
     setPersonnel(prev => prev.filter(item => item.id !== id));
     try { await deleteCollectionDocument('personnel', id); } catch (err) {
@@ -741,6 +768,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   // --- ACTIVITES ---
   const addActivite = async (activite: Omit<Activite, 'id'>) => {
+    assertWriteAccess();
     const tempId = (activite as any).id || 'act_' + Date.now();
     const cleanActivite = { ...activite, id: tempId } as Activite;
     setActivites(prev => [...prev.filter(item => item.id !== tempId), cleanActivite]);
@@ -756,6 +784,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const updateActivite = async (id: string, data: Partial<Activite>) => {
+    assertWriteAccess();
     const previous = activites.find(item => item.id === id);
     setActivites(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
     try { await updateCollectionDocument<Activite>('activites', id, data); } catch (err) {
@@ -765,6 +794,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const deleteActivite = async (id: string) => {
+    assertWriteAccess();
     const previous = activites.find(item => item.id === id);
     setActivites(prev => prev.filter(item => item.id !== id));
     try { await deleteCollectionDocument('activites', id); } catch (err) {
@@ -775,6 +805,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   // --- REPAS ---
   const addRepas = async (meal: Omit<Repas, 'id'>) => {
+    assertWriteAccess();
     const tempId = (meal as any).id || 'meal_' + Date.now();
     const cleanMeal = { ...meal, id: tempId } as Repas;
     setRepas(prev => [...prev.filter(item => item.id !== tempId), cleanMeal]);
@@ -790,6 +821,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const updateRepas = async (id: string, data: Partial<Repas>) => {
+    assertWriteAccess();
     const previous = repas.find(item => item.id === id);
     setRepas(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
     try { await updateCollectionDocument<Repas>('repas', id, data); } catch (err) {
@@ -799,6 +831,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const deleteRepas = async (id: string) => {
+    assertWriteAccess();
     const previous = repas.find(item => item.id === id);
     setRepas(prev => prev.filter(item => item.id !== id));
     try { await deleteCollectionDocument('repas', id); } catch (err) {
@@ -811,6 +844,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   // Passe par l'Edge Function "create-account" : elle crée le vrai utilisateur Supabase Auth
   // (mot de passe hashé côté serveur) ET la ligne profil, en une seule opération sécurisée.
   const addCompte = async (compte: Omit<UserAccount, 'id'>) => {
+    assertWriteAccess();
     const { data: { session } } = await supabase.auth.getSession();
     const { data, error } = await supabase.functions.invoke('create-account', {
       body: compte,
@@ -828,6 +862,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   // (ex: admin qui essaie de suspendre le compte d'un directeur), l'appelant
   // le sait maintenant au lieu de croire que ça a marché, et l'état local est restauré.
   const updateCompte = async (id: string, data: Partial<UserAccount>) => {
+    assertWriteAccess();
     const previous = comptes.find(item => item.id === id);
     setComptes(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
     try {
@@ -843,6 +878,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   // Supabase Auth + la ligne profil. L'ancienne version ne supprimait que la ligne
   // "comptes", donc l'utilisateur Auth restait actif et le compte semblait "revenir".
   const deleteCompte = async (id: string) => {
+    assertWriteAccess();
     const { data: { session } } = await supabase.auth.getSession();
     const { data, error } = await supabase.functions.invoke('delete-account', {
       body: { id },
@@ -857,6 +893,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   // --- MESSAGES ---
   const addMessage = async (msg: Omit<DiscussionMessage, 'id'>) => {
+    assertWriteAccess();
     const tempId = (msg as any).id || 'msg_' + Date.now();
     const cleanMsg = { ...msg, id: tempId } as DiscussionMessage;
     setMessages(prev => [...prev.filter(item => item.id !== tempId), cleanMsg]);
@@ -872,6 +909,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const updateMessage = async (id: string, data: Partial<DiscussionMessage>) => {
+    assertWriteAccess();
     const previous = messages.find(item => item.id === id);
     setMessages(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
     try { await updateCollectionDocument<DiscussionMessage>('discussion_messages', id, data); } catch (err) {
@@ -881,6 +919,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const deleteMessage = async (id: string) => {
+    assertWriteAccess();
     const previous = messages.find(item => item.id === id);
     setMessages(prev => prev.filter(item => item.id !== id));
     try { await deleteCollectionDocument('discussion_messages', id); } catch (err) {
@@ -891,6 +930,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   // --- AVIS ---
   const addAvis = async (avisData: Omit<Avis, 'id'>) => {
+    assertWriteAccess();
     const tempId = (avisData as any).id || 'avis_' + Date.now();
     const cleanAvis = { ...avisData, id: tempId } as Avis;
     setAvis(prev => [...prev.filter(item => item.id !== tempId), cleanAvis]);
@@ -906,6 +946,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const deleteAvis = async (id: string) => {
+    assertWriteAccess();
     const previous = avis.find(item => item.id === id);
     setAvis(prev => prev.filter(item => item.id !== id));
     try {
@@ -919,6 +960,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   // --- SIGNALEMENTS, BUGS ET SUGGESTIONS ---
   const addSignalement = async (signalementData: Omit<Signalement, 'id'>) => {
+    assertWriteAccess();
     const tempId = 'signalement_' + Date.now();
     const optimistic = { ...signalementData, id: tempId } as Signalement;
     setSignalements(prev => [optimistic, ...prev]);
@@ -934,6 +976,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const updateSignalement = async (id: string, data: Partial<Signalement>) => {
+    assertWriteAccess();
     const previous = signalements.find(item => item.id === id);
     setSignalements(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
     try {
@@ -946,6 +989,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const deleteSignalement = async (id: string) => {
+    assertWriteAccess();
     const previous = signalements.find(item => item.id === id);
     setSignalements(prev => prev.filter(item => item.id !== id));
     try {
@@ -959,6 +1003,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   // --- COMMUNAUTÉ PROFESSIONNELLE PRIVÉE ---
   const addCommunityPost = async (postData: Omit<CommunityPost, 'id'>) => {
+    assertWriteAccess();
     const tempId = 'community_post_' + Date.now();
     const optimistic = normalizeCommunityPost({ ...postData, id: tempId });
     setCommunityPosts(prev => [optimistic, ...prev]);
@@ -1014,6 +1059,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const updateCommunityPost = async (id: string, data: Partial<CommunityPost>) => {
+    assertWriteAccess();
     const previous = communityPosts.find(item => item.id === id);
     setCommunityPosts(prev => prev.map(item => item.id === id ? normalizeCommunityPost({ ...item, ...data }) : item));
     try {
@@ -1026,6 +1072,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const deleteCommunityPost = async (id: string) => {
+    assertWriteAccess();
     const previous = communityPosts.find(item => item.id === id);
     setCommunityPosts(prev => prev.filter(item => item.id !== id));
     try {
@@ -1038,6 +1085,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const addCommunityComment = async (commentData: Omit<CommunityComment, 'id'>) => {
+    assertWriteAccess();
     const tempId = 'community_comment_' + Date.now();
     const optimistic = normalizeCommunityComment({ ...commentData, id: tempId });
     setCommunityComments(prev => [...prev, optimistic]);
@@ -1053,6 +1101,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const updateCommunityComment = async (id: string, data: Partial<CommunityComment>) => {
+    assertWriteAccess();
     const previous = communityComments.find(item => item.id === id);
     setCommunityComments(prev => prev.map(item => item.id === id ? normalizeCommunityComment({ ...item, ...data }) : item));
     try {
@@ -1065,6 +1114,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const deleteCommunityComment = async (id: string) => {
+    assertWriteAccess();
     const previous = communityComments.find(item => item.id === id);
     setCommunityComments(prev => prev.filter(item => item.id !== id));
     try {
@@ -1077,6 +1127,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const toggleCommunityReaction = async (postId: string) => {
+    assertWriteAccess();
     if (!user) throw new Error('Session requise');
     const previousReactions = communityReactions;
     const previousPosts = communityPosts;
@@ -1118,6 +1169,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   // Le QR est provisionné automatiquement par la base à la création d'une crèche.
   // Cette fonction idempotente sert uniquement de filet de sécurité pour les anciens comptes.
   const ensureInscriptionLink = async () => {
+    assertWriteAccess();
     const { data, error } = await supabase.rpc('rawdha_create_inscription_link', {
       p_label: 'QR permanent de la crèche',
       p_expires_at: null,
@@ -1140,6 +1192,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const createInscriptionLink = async (label?: string, expiresAt?: string | null) => {
+    assertWriteAccess();
     const { data, error } = await supabase.rpc('rawdha_create_inscription_link', {
       p_label: label?.trim() || null,
       p_expires_at: expiresAt || null,
@@ -1163,6 +1216,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const toggleInscriptionLink = async (id: string, active: boolean) => {
+    assertWriteAccess();
     const previous = inscriptionLinks.find(item => item.id === id);
     setInscriptionLinks(prev => prev.map(item => item.id === id ? { ...item, active } : item));
     try {
@@ -1175,6 +1229,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const decideAdmission = async (id: string, statut: 'acceptee' | 'refusee', motif?: string) => {
+    assertWriteAccess();
     const previous = demandesAdmission.find(item => item.id === id);
     setDemandesAdmission(prev => prev.map(item => item.id === id ? {
       ...item,
@@ -1199,6 +1254,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   // --- NOTIFICATIONS (annonces admin -> directeurs) ---
   const addNotification = async (notif: Omit<AppNotification, 'id'>) => {
+    assertWriteAccess();
     const tempId = 'notif_' + Date.now();
     const cleanNotif = { ...notif, id: tempId } as AppNotification;
     setNotifications(prev => [cleanNotif, ...prev]);
@@ -1215,6 +1271,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const markNotificationRead = async (id: string, userId: string) => {
+    assertWriteAccess();
     const target = notifications.find(n => n.id === id);
     if (!target || target.readBy?.includes(userId)) return; // déjà lue, on ne réécrit pas pour rien
     const updatedReadBy = [...(target.readBy || []), userId];
@@ -1227,6 +1284,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const deleteNotification = async (id: string) => {
+    assertWriteAccess();
     const previous = notifications.find(item => item.id === id);
     setNotifications(prev => prev.filter(item => item.id !== id));
     try {
@@ -1249,6 +1307,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     if (autoInvoiceRanRef.current) return; // une seule fois par session, pour éviter les doublons
     if (user?.role !== 'directeur') return;
+    if (user.approvalStatus === 'pending') return;
     if (enfants.length === 0) return; // attend que les enfants (Vague 1) soient chargés
 
     const today = new Date();

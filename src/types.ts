@@ -244,6 +244,8 @@ export interface UserAccount {
   /** Jamais renseigné pour les profils Auth ; conservé seulement pour compatibilité des anciens formulaires. */
   motDePasse?: string;
   role: 'admin' | 'directeur' | 'parent';
+  /** Statut serveur : un directeur public reste en lecture seule tant qu’il est pending. */
+  approvalStatus?: 'pending' | 'approved';
   abonnementActif: boolean;
   /** Dernière activité authentifiée de l’utilisateur, stockée en UTC ISO. */
   lastActivityAt?: string;

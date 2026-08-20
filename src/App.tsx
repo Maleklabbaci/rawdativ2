@@ -115,6 +115,7 @@ import { hasCompletedOnboarding } from './components/OnboardingCrecheModal';
 
 function AppContent() {
   const { isAuthenticated, user, creche, logout, loading: authLoading } = useAuth();
+  const isPendingApproval = user?.role === 'directeur' && user.approvalStatus === 'pending';
   // La route est conservée dans l’état React : history.pushState() seul ne déclenche
   // pas de rendu, notamment dans certains WebViews Android.
   const [routeVersion, setRouteVersion] = useState(0);
@@ -168,7 +169,7 @@ function AppContent() {
   // ses infos de crèche (existence du doc "parametres/creche_{id}"). null = pas encore vérifié.
   const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
   useEffect(() => {
-    if (user?.role === 'directeur') {
+    if (user?.role === 'directeur' && user.approvalStatus !== 'pending') {
       hasCompletedOnboarding(user.id).then(done => {
         setNeedsOnboarding(!done);
         if (!done && window.location.pathname !== PAGE_PATHS.demarrage) {
@@ -179,7 +180,7 @@ function AppContent() {
     } else {
       setNeedsOnboarding(false);
     }
-  }, [user?.id, user?.role]);
+  }, [user?.id, user?.role, user?.approvalStatus]);
 
   useEffect(() => {
     const handleFullscreenChange = () => setIsBrowserFullscreen(Boolean(document.fullscreenElement));
@@ -632,8 +633,13 @@ if (isSubscriptionExpired) {
                 </div>
               </div>
               <div className="flex min-w-0 flex-wrap items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto">
-                {/* Statut essai/abonnement — uniquement pour les directeurs */}
-                {user?.role === 'directeur' && (
+                {/* Statut d’approbation / abonnement — uniquement pour les directeurs */}
+                {isPendingApproval ? (
+                  <div className="min-w-0 max-w-full basis-full sm:basis-auto inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-extrabold text-amber-800">
+                    <Lock className="h-4 w-4 flex-shrink-0" />
+                    {language === 'ar' ? 'في انتظار موافقة الإدارة — وضع القراءة فقط' : 'En attente de validation — lecture seule'}
+                  </div>
+                ) : user?.role === 'directeur' && (
                   <div className="min-w-0 max-w-full basis-full sm:basis-auto">
                     <SubscriptionStatusBadge
                     dateFinAbonnement={liveUser?.dateFinAbonnement}
@@ -714,8 +720,19 @@ if (isSubscriptionExpired) {
         </header>
 
         {/* Page Content */}
-<main className="min-w-0 overflow-x-hidden p-3 sm:p-6 lg:p-10 max-w-[1600px] mx-auto">
-  {renderPage()}
+        <main className="min-w-0 overflow-x-hidden p-3 sm:p-6 lg:p-10 max-w-[1600px] mx-auto">
+          {isPendingApproval && (
+            <div className="mb-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">
+              <div className="mt-0.5 rounded-xl bg-amber-100 p-2 text-amber-700"><Lock className="h-5 w-5" /></div>
+              <div>
+                <p className="font-black">{language === 'ar' ? 'حسابك في انتظار موافقة الإدارة' : 'Votre compte est en attente de validation'}</p>
+                <p className="mt-1 text-sm leading-relaxed text-amber-800">
+                  {language === 'ar' ? 'يمكنك تصفح المنصة، لكن لن تتمكن من إضافة أو تعديل أو حذف أي بيانات حتى يؤكد المسؤول حسابك.' : 'Vous pouvez consulter la plateforme, mais aucun ajout, modification ou suppression ne sera autorisé avant la confirmation manuelle de l’administrateur.'}
+                </p>
+              </div>
+            </div>
+          )}
+          {renderPage()}
         </main>
       </div>
 

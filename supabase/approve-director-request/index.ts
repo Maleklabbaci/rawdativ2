@@ -109,6 +109,7 @@ Deno.serve(async (req: Request) => {
       prenom,
       email,
       role: 'directeur',
+      approvalStatus: 'approved',
       abonnementActif: true,
       nomCreche,
       dateFinAbonnement: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),

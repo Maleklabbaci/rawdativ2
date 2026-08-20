@@ -77,6 +77,26 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: createError?.message || 'Impossible de créer le compte Auth.' }, 400);
     }
 
+    const { error: profileError } = await adminClient
+      .from('comptes')
+      .insert({
+        id: created.user.id,
+        data: {
+          nom,
+          prenom,
+          email,
+          role: 'directeur',
+          approvalStatus: 'pending',
+          abonnementActif: false,
+          nomCreche,
+          dateFinAbonnement: null,
+        },
+      });
+    if (profileError) {
+      await adminClient.auth.admin.deleteUser(created.user.id);
+      return jsonResponse({ error: profileError.message }, 500);
+    }
+
     const requestId = crypto.randomUUID();
     const requestData = {
       nom,
@@ -95,6 +115,7 @@ Deno.serve(async (req: Request) => {
       .from('demandes_directeur')
       .insert({ id: requestId, data: requestData });
     if (insertError) {
+      await adminClient.from('comptes').delete().eq('id', created.user.id);
       await adminClient.auth.admin.deleteUser(created.user.id);
       return jsonResponse({ error: insertError.message }, 500);
     }

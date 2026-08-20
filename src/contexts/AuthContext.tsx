@@ -118,15 +118,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return null;
     }
 
-    // Le compte Auth est créé en amont pour conserver le mot de passe choisi dans le
-    // formulaire, mais il ne doit jamais ouvrir l’application tant que l’admin n’a
-    // pas accepté la demande. Le flag est retiré uniquement par l’Edge Function
-    // approve-director-request.
-    if (authUserSnapshot?.user_metadata?.pendingDirector === true) {
-      return null;
-    }
-
-    const profile = { ...(data.data as object), id: data.id } as UserAccount;
+    const rawProfile = { ...(data.data as object), id: data.id } as UserAccount;
+    // Compatibilité avec les anciens comptes : le flag Auth reste la source de vérité
+    // tant que le profil n’a pas encore reçu approvalStatus explicitement.
+    const approvalStatus = rawProfile.role === 'directeur'
+      ? (rawProfile.approvalStatus === 'pending'
+        ? 'pending'
+        : rawProfile.approvalStatus === 'approved'
+          ? 'approved'
+          : authUserSnapshot?.user_metadata?.pendingDirector === true ? 'pending' : 'approved')
+      : undefined;
+    const profile = { ...rawProfile, ...(approvalStatus ? { approvalStatus } : {}) } as UserAccount;
     // Rawdha+ ne propose pas encore d’espace parent : seuls admin et directeur
     // peuvent ouvrir une session de gestion dans cette version.
     if (profile.role !== 'admin' && profile.role !== 'directeur') {
@@ -182,7 +184,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           void loadCrecheSettings(profile).catch((error) => {
             console.error('Chargement différé des paramètres de crèche:', error);
           });
-          void recordLastActivity(profile.id);
+          if (profile.approvalStatus !== 'pending') void recordLastActivity(profile.id);
         }
       } catch (error) {
         console.error('Erreur d’initialisation de la session Rawdha+:', error);
@@ -225,7 +227,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Une activité de session est actualisée au retour dans l’onglet et toutes les
   // cinq minutes tant que Rawdha+ reste ouvert.
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || (user.role === 'directeur' && user.approvalStatus === 'pending')) return;
     const touchActivity = () => {
       if (document.visibilityState === 'visible') void recordLastActivity(user.id);
     };
@@ -237,7 +239,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       document.removeEventListener('visibilitychange', touchActivity);
       window.clearInterval(interval);
     };
-  }, [user?.id, recordLastActivity]);
+  }, [user?.id, user?.role, user?.approvalStatus, recordLastActivity]);
 
   const isAuthenticated = !!user;
 
@@ -262,19 +264,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       const profile = await loadProfile(data.user.id, data.user);
       if (!profile) {
-        // Ne conserve pas une session Auth utilisable en arrière-plan pour un compte
-        // encore en attente ou sans profil Rawdha+.
         await supabase.auth.signOut().catch(() => undefined);
         return {
           user: null,
-          error: 'Votre demande est encore en attente de validation par l’administrateur.',
+          error: 'Votre compte n’est pas encore initialisé dans Rawdha+ ou n’est plus actif.',
         };
       }
       setUser(profile);
       void loadCrecheSettings(profile).catch((error) => {
         console.error('Chargement différé des paramètres de crèche:', error);
       });
-      void recordLastActivity(profile.id);
+      if (profile.approvalStatus !== 'pending') void recordLastActivity(profile.id);
       return { user: profile, error: null };
     } catch (error) {
       console.error('Erreur de connexion Rawdha+:', error);
@@ -297,6 +297,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const updateProfile = async (changes: Partial<UserAccount>) => {
     if (!user?.id) throw new Error('Utilisateur non connecté');
+    if (user.role === 'directeur' && user.approvalStatus === 'pending') {
+      throw new Error('Votre compte est en attente de validation par l’administrateur.');
+    }
     const safeChanges = { ...changes };
     delete (safeChanges as Partial<UserAccount>).id;
     delete (safeChanges as Partial<UserAccount>).role;

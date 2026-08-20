@@ -175,7 +175,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
               <span>
                 {user ? `${user.prenom[0] || ''}${user.nom[0] || ''}`.toUpperCase() : 'AD'}
               </span>
-              <div className="absolute -bottom-1 -right-1 bg-green-500 w-3 h-3 rounded-full border-2 border-slate-900" />
+              <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-slate-900 ${user?.approvalStatus === 'pending' ? 'bg-amber-400' : 'bg-green-500'}`} />
             </div>
             <div className={`flex-1 min-w-0 ${isCollapsed ? 'lg:hidden' : ''}`}>
               <p className="text-xs font-black text-white truncate flex items-center gap-1">
@@ -183,7 +183,9 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
                 {user?.role === 'admin' && <Crown className="w-3 h-3 text-amber-400 flex-shrink-0" />}
               </p>
               <p className="text-[10px] text-slate-400 font-bold truncate">
-                {user ? (user.role === 'admin' ? (language === 'ar' ? 'مدير النظام' : 'Administrateur') : (language === 'ar' ? 'مدير الروضة' : 'Directeur')) : 'Administrateur'}
+                {user?.approvalStatus === 'pending'
+                  ? (language === 'ar' ? 'في انتظار الموافقة — قراءة فقط' : 'En attente — lecture seule')
+                  : user ? (user.role === 'admin' ? (language === 'ar' ? 'مدير النظام' : 'Administrateur') : (language === 'ar' ? 'مدير الروضة' : 'Directeur')) : 'Administrateur'}
               </p>
               <div className="flex items-center gap-1 mt-0.5 text-slate-500 text-[10px]">
                 <MapPin className="w-2.5 h-2.5 text-indigo-400" />
