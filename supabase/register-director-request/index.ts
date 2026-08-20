@@ -63,7 +63,9 @@ Deno.serve(async (req: Request) => {
     const { data: created, error: createError } = await adminClient.auth.admin.createUser({
       email,
       password,
-      email_confirm: false,
+      // La connexion doit être possible en mode lecture seule ; l’accès métier reste
+      // verrouillé par pendingDirector jusqu’à l’approbation admin.
+      email_confirm: true,
       user_metadata: {
         full_name: `${prenom} ${nom}`,
         nom,
