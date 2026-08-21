@@ -589,11 +589,28 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     setPresences(prev => prev.filter(item => item.enfantId !== id));
     setPaiements(prev => prev.filter(item => item.enfantId !== id));
     try {
+      // L’état local peut être incomplet (par exemple après un chargement partiel).
+      // On relit donc les identifiants persistés avant de supprimer l’enfant afin
+      // de ne jamais laisser de présence ou de facture orpheline en base.
+      const [{ data: persistedPresences, error: presencesError }, { data: persistedPaiements, error: paiementsError }] = await Promise.all([
+        supabase.from('presences').select('id').filter('data->>enfantId', 'eq', id),
+        supabase.from('paiements').select('id').filter('data->>enfantId', 'eq', id),
+      ]);
+      if (presencesError) throw presencesError;
+      if (paiementsError) throw paiementsError;
+
+      const presenceIds = new Set([
+        ...presences.filter(p => p.enfantId === id).map(p => p.id),
+        ...(persistedPresences || []).map(row => row.id),
+      ]);
+      const paiementIds = new Set([
+        ...paiements.filter(p => p.enfantId === id).map(p => p.id),
+        ...(persistedPaiements || []).map(row => row.id),
+      ]);
+
       await deleteCollectionDocument('enfants', id);
-      const relatedPresences = presences.filter(p => p.enfantId === id);
-      for (const p of relatedPresences) await deleteCollectionDocument('presences', p.id);
-      const relatedPaiements = paiements.filter(p => p.enfantId === id);
-      for (const p of relatedPaiements) await deleteCollectionDocument('paiements', p.id);
+      for (const presenceId of presenceIds) await deleteCollectionDocument('presences', presenceId);
+      for (const paiementId of paiementIds) await deleteCollectionDocument('paiements', paiementId);
     } catch (err) {
       if (previous) setEnfants(prev => [...prev, previous]); // rollback: on ne peut pas fiablement restaurer présences/paiements liés, mais on prévient
       notifyWriteError('suppression');

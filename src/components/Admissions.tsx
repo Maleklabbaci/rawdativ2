@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ClipboardCheck, Copy, Download, ExternalLink, QrCode, ShieldCheck, UserRound, XCircle, Loader2 } from 'lucide-react';
+import { ClipboardCheck, Copy, Download, ExternalLink, QrCode, ShieldCheck, UserRound, XCircle, Loader2, X } from 'lucide-react';
 import * as QRCode from 'qrcode';
 import { useDb } from '../contexts/DbContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -12,6 +12,9 @@ export default function Admissions() {
   const [selected, setSelected] = useState<DemandeAdmission | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [pendingDecision, setPendingDecision] = useState<{ demande: DemandeAdmission; statut: 'acceptee' | 'refusee' } | null>(null);
+  const [decisionMotif, setDecisionMotif] = useState('');
+  const [decisionError, setDecisionError] = useState('');
   const permanentLink = useMemo(() => inscriptionLinks.find(link => link.active && link.token), [inscriptionLinks]);
   const linkUrl = permanentLink?.token ? `${window.location.origin}/admission?token=${encodeURIComponent(permanentLink.token)}` : '';
   const [qrDataUrl, setQrDataUrl] = useState('');
@@ -43,20 +46,41 @@ export default function Admissions() {
     anchor.click();
   };
 
-  const decide = async (demande: DemandeAdmission, statut: 'acceptee' | 'refusee') => {
-    const confirmation = isAr
-      ? (statut === 'acceptee' ? 'هل تريد قبول هذا الطفل وإضافته إلى قائمة الأطفال؟' : 'هل تريد رفض هذا الطلب؟')
-      : (statut === 'acceptee' ? "Confirmer l'ajout de cet enfant dans la crèche ?" : 'Confirmer le refus de cette demande ?');
-    if (!window.confirm(confirmation)) return;
-    const motif = statut === 'refusee' ? window.prompt(isAr ? 'سبب الرفض (اختياري)' : 'Motif du refus (facultatif)') || '' : '';
+  const decide = async (demande: DemandeAdmission, statut: 'acceptee' | 'refusee', motif = '') => {
     setBusyId(demande.id);
     try {
       await decideAdmission(demande.id, statut, motif);
       setSelected(null);
     } catch (error) {
       console.error('Erreur décision admission:', error);
+      throw error;
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const requestDecision = (demande: DemandeAdmission, statut: 'acceptee' | 'refusee') => {
+    setDecisionError('');
+    setDecisionMotif('');
+    setPendingDecision({ demande, statut });
+  };
+
+  const cancelDecision = () => {
+    if (busyId) return;
+    setPendingDecision(null);
+    setDecisionMotif('');
+    setDecisionError('');
+  };
+
+  const confirmDecision = async () => {
+    if (!pendingDecision) return;
+    setDecisionError('');
+    try {
+      await decide(pendingDecision.demande, pendingDecision.statut, decisionMotif.trim());
+      setPendingDecision(null);
+      setDecisionMotif('');
+    } catch (error) {
+      setDecisionError(error instanceof Error ? error.message : (isAr ? 'تعذر معالجة الطلب.' : 'Impossible de traiter la demande.'));
     }
   };
 
@@ -80,7 +104,21 @@ export default function Admissions() {
         <div className="min-w-0 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-8"><div><h2 className="text-lg font-black text-slate-900">{isAr ? 'ملخص الطلبات' : 'Résumé des demandes'}</h2><p className="mt-1 text-xs text-slate-500">{isAr ? 'كل طلب عبر QR مرتبط بهذه الروضة.' : 'Chaque demande envoyée avec ce QR est rattachée à cette crèche.'}</p></div><div className="mt-5 grid grid-cols-1 min-[390px]:grid-cols-2 gap-3"><div className="rounded-2xl bg-amber-50 p-4"><p className="text-2xl font-black text-amber-700">{pending.length}</p><p className="mt-1 text-xs font-bold text-amber-700">{isAr ? 'في الانتظار' : 'En attente'}</p></div><div className="rounded-2xl bg-indigo-50 p-4"><p className="text-2xl font-black text-indigo-700">{demandesAdmission.length}</p><p className="mt-1 text-xs font-bold text-indigo-700">{isAr ? 'كل الطلبات' : 'Total reçu'}</p></div></div></div>
       </section>
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><div className="flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-indigo-600" /><h2 className="text-xl font-black text-slate-900">{isAr ? 'طلبات التسجيل' : "Demandes d'admission"}</h2></div><p className="mt-1 text-sm text-slate-500">{isAr ? 'راجع الملفات الواردة قبل إضافة الطفل إلى قاعدة التسيير.' : 'Vérifiez les dossiers reçus avant de créer l’enfant dans votre gestion.'}</p></div><span className="rounded-full bg-amber-50 px-4 py-2 text-xs font-black text-amber-700">{pending.length} {isAr ? 'في الانتظار' : 'en attente'}</span></div><div className="mt-6 grid gap-4 lg:grid-cols-2">{demandesAdmission.length === 0 ? <div className="lg:col-span-2 rounded-2xl border border-dashed border-slate-200 p-10 text-center text-sm text-slate-400">{isAr ? 'لا توجد طلبات تسجيل حالياً.' : "Aucune demande d'admission pour le moment."}</div> : [...demandesAdmission].sort((a, b) => b.dateDemande.localeCompare(a.dateDemande)).map(demande => <AdmissionCard key={demande.id} demande={demande} isAr={isAr} selected={selected?.id === demande.id} busy={busyId === demande.id} onSelect={() => setSelected(selected?.id === demande.id ? null : demande)} onDecide={decide} />)}</div></section>
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><div className="flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-indigo-600" /><h2 className="text-xl font-black text-slate-900">{isAr ? 'طلبات التسجيل' : "Demandes d'admission"}</h2></div><p className="mt-1 text-sm text-slate-500">{isAr ? 'راجع الملفات الواردة قبل إضافة الطفل إلى قاعدة التسيير.' : 'Vérifiez les dossiers reçus avant de créer l’enfant dans votre gestion.'}</p></div><span className="rounded-full bg-amber-50 px-4 py-2 text-xs font-black text-amber-700">{pending.length} {isAr ? 'في الانتظار' : 'en attente'}</span></div><div className="mt-6 grid gap-4 lg:grid-cols-2">{demandesAdmission.length === 0 ? <div className="lg:col-span-2 rounded-2xl border border-dashed border-slate-200 p-10 text-center text-sm text-slate-400">{isAr ? 'لا توجد طلبات تسجيل حالياً.' : "Aucune demande d'admission pour le moment."}</div> : [...demandesAdmission].sort((a, b) => b.dateDemande.localeCompare(a.dateDemande)).map(demande => <AdmissionCard key={demande.id} demande={demande} isAr={isAr} selected={selected?.id === demande.id} busy={busyId === demande.id} onSelect={() => setSelected(selected?.id === demande.id ? null : demande)} onDecide={requestDecision} />)}</div></section>
+
+      {pendingDecision && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="admission-decision-title">
+        <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl sm:p-8" dir={isAr ? 'rtl' : 'ltr'}>
+          <div className="flex items-start justify-between gap-4">
+            <div><div className="flex items-center gap-2 text-indigo-700"><ShieldCheck className="h-5 w-5" /><p className="text-xs font-black uppercase tracking-wider">{isAr ? 'تأكيد القرار' : 'Confirmation du décision'}</p></div><h2 id="admission-decision-title" className="mt-2 text-xl font-black text-slate-950">{pendingDecision.statut === 'acceptee' ? (isAr ? 'قبول وإضافة الطفل؟' : 'Accepter et ajouter cet enfant ?') : (isAr ? 'رفض طلب التسجيل؟' : 'Refuser cette demande ?')}</h2></div>
+            <button type="button" onClick={cancelDecision} disabled={Boolean(busyId)} aria-label={isAr ? 'إغلاق' : 'Fermer'} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"><X className="h-5 w-5" /></button>
+          </div>
+          <div className="mt-5 rounded-2xl bg-slate-50 p-4"><p className="text-sm font-black text-slate-900">{pendingDecision.demande.prenom} {pendingDecision.demande.nom}</p><p className="mt-1 text-xs text-slate-500">{pendingDecision.demande.parentPrenom} {pendingDecision.demande.parentNom} • {pendingDecision.demande.parentTelephone}</p></div>
+          <p className="mt-4 text-sm leading-6 text-slate-600">{pendingDecision.statut === 'acceptee' ? (isAr ? 'سيتم إنشاء ملف طفل نشط وربطه بهذه الطلبية. لا يمكن التراجع عن الإنشاء تلقائياً.' : 'Cette confirmation créera un dossier enfant actif et le rattachera à cette demande. La création ne sera pas annulée automatiquement.') : (isAr ? 'سيتم وضع الطلب في حالة مرفوض ويمكن إضافة سبب اختياري.' : 'La demande passera au statut refusé. Vous pouvez ajouter un motif facultatif.')}</p>
+          {pendingDecision.statut === 'refusee' && <textarea value={decisionMotif} onChange={event => setDecisionMotif(event.target.value)} maxLength={1000} rows={3} placeholder={isAr ? 'سبب الرفض (اختياري)' : 'Motif du refus (facultatif)'} className="mt-4 w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none ring-indigo-200 focus:ring-4" />}
+          {decisionError && <p role="alert" className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{decisionError}</p>}
+          <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={cancelDecision} disabled={Boolean(busyId)} className="min-h-11 rounded-xl px-4 py-2 text-sm font-black text-slate-600 hover:bg-slate-100 disabled:opacity-50">{isAr ? 'إلغاء' : 'Annuler'}</button><button type="button" onClick={confirmDecision} disabled={Boolean(busyId)} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 py-2 text-sm font-black text-white disabled:opacity-60 ${pendingDecision.statut === 'acceptee' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}>{busyId ? <Loader2 className="h-4 w-4 animate-spin" /> : pendingDecision.statut === 'acceptee' ? (isAr ? 'تأكيد القبول والإضافة' : 'Confirmer l’acceptation') : (isAr ? 'تأكيد الرفض' : 'Confirmer le refus')}</button></div>
+        </div>
+      </div>}
     </div>
   );
 }
