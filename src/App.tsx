@@ -1,6 +1,6 @@
 
 import { useState, useEffect, lazy, Suspense, type ComponentType } from 'react';
-import { ArrowLeft, ArrowRight, School, LogOut, Menu, CircleHelp, Bell, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Network } from 'lucide-react';
+import { ArrowLeft, ArrowRight, School, LogOut, Menu, CircleHelp, Bell, MessageCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Network } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
@@ -130,7 +130,10 @@ function AppContent() {
   const [couponCode, setCouponCode] = useState('');
   const [showCouponInput, setShowCouponInput] = useState(false); // ✅ champ coupon replié par défaut, pour ne pas distraire du CTA principal // ✅ champ code coupon sur l'écran d'abonnement expiré
   const { language, setLanguage, t } = useLanguage();
-  const { loading: dbLoading, comptes } = useDb();
+  const { loading: dbLoading, comptes, communityFeatures } = useDb();
+  const unreadSocialMessages = communityFeatures.filter(feature => feature.kind === 'private_message' && feature.recipientId === user?.id && feature.payload?.read !== true).length;
+  const unreadSocialNotifications = communityFeatures.filter(feature => feature.kind === 'social_notification' && feature.recipientId === user?.id && feature.payload?.read !== true).length;
+  const socialUnreadCount = unreadSocialMessages + unreadSocialNotifications;
   const { showToast } = useToast();
   // routeVersion est volontairement lu ici : il force le recalcul des routes après
   // toute modification interne de l’historique, sans dépendre d’un PopStateEvent.
@@ -557,6 +560,7 @@ if (isSubscriptionExpired && !isPendingApproval) {
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <h1 className="truncate text-base font-black tracking-tight text-slate-900 sm:text-lg">Rawdha Connect</h1>
                   <span className="hidden rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-black text-indigo-700 sm:inline-flex">Extension Rawdha+</span>
+                  {socialUnreadCount > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-[10px] font-black text-rose-700"><Bell className="h-3 w-3" />{socialUnreadCount > 99 ? '99+' : socialUnreadCount}</span>}
                 </div>
                 <p className="truncate text-[11px] font-semibold text-slate-500">{isAr ? 'المساحة الاجتماعية المهنية لدور الحضانة' : 'L’espace social professionnel des crèches'}</p>
               </div>
@@ -699,6 +703,7 @@ if (isSubscriptionExpired && !isPendingApproval) {
                     <Bell className="w-4 h-4" />
                   </button>
                 )}
+                {unreadSocialMessages > 0 && <button type="button" onClick={() => navigateToPage('community')} aria-label={language === 'ar' ? 'رسائل Rawdha Connect الجديدة' : 'Nouveaux messages Rawdha Connect'} title={language === 'ar' ? 'رسائل Rawdha Connect الجديدة' : 'Nouveaux messages Rawdha Connect'} className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-rose-100 bg-rose-50 text-rose-600 transition hover:bg-rose-100 cursor-pointer"><MessageCircle className="w-4 h-4" /><span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-rose-500 px-1 text-center text-[9px] font-black leading-4 text-white">{unreadSocialMessages > 99 ? '99+' : unreadSocialMessages}</span></button>}
 
                 <div className="flex shrink-0 items-center gap-1">
                   <button

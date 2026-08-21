@@ -1,4 +1,5 @@
 import { useAuth } from '../contexts/AuthContext';
+import { useDb } from '../contexts/DbContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { 
   LayoutDashboard, 
@@ -29,7 +30,11 @@ import { motion } from 'motion/react';
 
 export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, isCollapsed = false, onToggleCollapse }: any) {
   const { user, creche } = useAuth();
+  const { communityFeatures } = useDb();
   const { language, t } = useLanguage();
+  const unreadSocialMessages = communityFeatures.filter(feature => feature.kind === 'private_message' && feature.recipientId === user?.id && feature.payload?.read !== true).length;
+  const unreadSocialNotifications = communityFeatures.filter(feature => feature.kind === 'social_notification' && feature.recipientId === user?.id && feature.payload?.read !== true).length;
+  const socialBadgeCount = unreadSocialMessages + unreadSocialNotifications;
 
   let items: any[] = [];
   if (user?.role === 'admin') {
@@ -167,9 +172,11 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
                   <span className={`text-sm font-semibold tracking-wide ${isCollapsed ? 'lg:hidden' : ''}`}>{getTabLabel(item.key, item.label)}</span>
                 </span>
 
-                {!isActive && !isCollapsed && (
+                {!isActive && !isCollapsed && item.key === 'community' && socialBadgeCount > 0 ? (
+                  <span className="relative z-10 min-w-5 rounded-full bg-rose-500 px-1.5 py-0.5 text-center text-[10px] font-black leading-4 text-white shadow-sm">{socialBadgeCount > 99 ? '99+' : socialBadgeCount}</span>
+                ) : !isActive && !isCollapsed ? (
                   <span className="w-1.5 h-1.5 bg-slate-700 rounded-full opacity-60 group-hover:opacity-100 transition z-10" />
-                )}
+                ) : null}
               </button>
             );
           })}
