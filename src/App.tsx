@@ -7,6 +7,9 @@ import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { DbProvider, useDb } from './contexts/DbContext';
 import SignIn from './components/SignIn';
 import MobileWelcome from './components/MobileWelcome';
+/** Style context — L’Atelier du Matin: la route `/` est une vitrine éditoriale publique,
+ * tandis que les routes de gestion existantes conservent leur interface opérationnelle. */
+import LandingPage from './components/LandingPage';
 import Dashboard from './components/Dashboard';
 import Sidebar from './components/Sidebar';
 import { ToastProvider, useToast } from './contexts/ToastContext';
@@ -141,6 +144,7 @@ function AppContent() {
   const isPublicAdmission = window.location.pathname.replace(/\/+$/, '') === '/admission';
   const isPublicPrivacy = window.location.pathname.replace(/\/+$/, '') === '/confidentialite';
   const normalizedPathname = normalizeAuthPath(window.location.pathname);
+  const isPublicLanding = normalizedPathname === '/';
   const isAccessRequest = normalizedPathname === '/signin';
   const isPublicWelcome = normalizedPathname === '/welcome';
   const isMobileWelcomeScreen = isPublicWelcome && !isDesktopViewport;
@@ -270,7 +274,7 @@ function AppContent() {
   }, [currentPage]);
 
   useEffect(() => {
-    if (isAuthenticated || isPublicAdmission || isPublicPrivacy) return;
+    if (isAuthenticated || isPublicAdmission || isPublicPrivacy || isPublicLanding) return;
     const normalizedPath = normalizeAuthPath(window.location.pathname);
     const queryAndHash = `${window.location.search}${window.location.hash}`;
 
@@ -286,7 +290,7 @@ function AppContent() {
     // L’accueil est réservé au téléphone ; sur ordinateur, on ouvre directement le formulaire.
     window.history.replaceState({}, '', `${isDesktopViewport ? '/login/' : '/welcome/'}${queryAndHash}`);
     setRouteVersion((version) => version + 1);
-  }, [isAuthenticated, isDesktopViewport, isPublicAdmission, isPublicPrivacy]);
+  }, [isAuthenticated, isDesktopViewport, isPublicAdmission, isPublicPrivacy, isPublicLanding]);
 
   useEffect(() => {
     if (!isAuthenticated || isPublicAdmission || isPublicPrivacy) return;
@@ -309,7 +313,7 @@ function AppContent() {
   // ✅ Favicon + titre d'onglet dynamiques : le logo PNG uploadé dans Paramètres
   // remplace l'icône par défaut de RAWDHA+ dans la barre de tâches / onglet du navigateur.
   useEffect(() => {
-    const faviconHref = creche?.logoUrl || '/favicon.png';
+    const faviconHref = isPublicLanding ? 'https://files.manuscdn.com/user_upload_by_module/session_file/310519663894126178/rZmvoQPdCIVaysUS.png' : (creche?.logoUrl || '/favicon.png');
     let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
     if (!link) {
       link = document.createElement('link');
@@ -319,6 +323,10 @@ function AppContent() {
     link.href = faviconHref;
 
     if (!isAuthenticated && !isPublicAdmission && !isPublicPrivacy) {
+      if (isPublicLanding) {
+        document.title = language === 'ar' ? 'Rawdha+ — منصة تسيير الحضانات' : 'Rawdha+ — La plateforme des crèches';
+        return;
+      }
       document.title = isMobileWelcomeScreen
         ? (language === 'ar' ? 'مرحباً — روضة+' : 'Bienvenue — RAWDHA+')
         : isAccessRequest
@@ -350,7 +358,7 @@ function AppContent() {
       ? t(pageTitleKeys[currentPage])
       : fallbackPageTitles[currentPage] || 'RAWDHA+';
     document.title = `${pageName} — RAWDHA+`;
-  }, [creche?.logoUrl, creche?.nom, currentPage, isAccessRequest, isAuthenticated, isMobileWelcomeScreen, isPublicAdmission, isPublicPrivacy, language, t]);
+  }, [creche?.logoUrl, creche?.nom, currentPage, isAccessRequest, isAuthenticated, isMobileWelcomeScreen, isPublicAdmission, isPublicLanding, isPublicPrivacy, language, t]);
 
   if (isPublicPrivacy) {
     return <PrivacyPolicy />;
@@ -358,6 +366,10 @@ function AppContent() {
 
   if (isPublicAdmission) {
     return <PublicAdmission />;
+  }
+
+  if (!isAuthenticated && isPublicLanding) {
+    return <LandingPage onNavigate={(destination) => navigateToPublicPath(destination === 'request' ? '/signin/' : '/login/')} />;
   }
 
   // Les routes publiques ne doivent jamais montrer un écran technique de restauration.
