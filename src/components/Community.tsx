@@ -43,6 +43,7 @@ import { useDb } from '../contexts/DbContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { useToast } from '../contexts/ToastContext';
+import { supabase } from '../supabase';
 import { CommunityComment, CommunityFeature, CommunityPost, CommunityPostCategory, UserAccount } from '../types';
 
 const categories: Array<{ value: CommunityPostCategory | 'tous'; fr: string; ar: string; color: string }> = [
@@ -584,9 +585,9 @@ export default function Community() {
     filteredPosts.slice(0, 8).forEach(post => {
       if (post.authorId === user.id || viewedPostIdsRef.current.has(post.id)) return;
       viewedPostIdsRef.current.add(post.id);
-      void addCommunityFeature({ kind: 'post_view', actorId: user.id, targetId: post.id, recipientId: post.authorId, visibility: 'public', createdAt: new Date().toISOString() }).catch(() => viewedPostIdsRef.current.delete(post.id));
+      void supabase.rpc('rawdha_record_community_post_view', { p_post_id: post.id });
     });
-  }, [activeView, addCommunityFeature, filteredPosts, isAdmin, user]);
+  }, [activeView, filteredPosts, isAdmin, user]);
 
   useEffect(() => {
     if (!user || activeView !== 'messages' || !messageRecipientId) return;
