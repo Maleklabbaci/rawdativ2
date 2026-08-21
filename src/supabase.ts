@@ -67,6 +67,29 @@ function withReadTimeout<T>(promise: PromiseLike<T>, path: string): Promise<T> {
   });
 }
 
+type SupabaseResponseLike = {
+  error?: { status?: number; code?: string; message?: string } | null;
+};
+
+function isAuthSessionError(error: SupabaseResponseLike['error']): boolean {
+  return Boolean(
+    error && (
+      error.status === 401
+      || error.code === 'PGRST301'
+      || /jwt|token|session/i.test(error.message || '')
+    )
+  );
+}
+
+async function withAuthRetry<T extends SupabaseResponseLike>(request: () => PromiseLike<T>): Promise<T> {
+  const firstResult = await request();
+  if (!isAuthSessionError(firstResult.error)) return firstResult;
+
+  const { error: refreshError } = await supabase.auth.refreshSession();
+  if (refreshError) return firstResult;
+  return request();
+}
+
 function generateId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID();
@@ -82,7 +105,7 @@ function generateId(): string {
 export async function getCollectionData<T>(collectionName: string): Promise<T[]> {
   try {
     const { data, error } = await withReadTimeout(
-      supabase.from(collectionName).select('id, data'),
+      withAuthRetry(() => supabase.from(collectionName).select('id, data')),
       collectionName,
     );
     if (error) throw error;
@@ -96,11 +119,11 @@ export async function getCollectionData<T>(collectionName: string): Promise<T[]>
 export async function getCollectionDocument<T>(collectionName: string, id: string): Promise<T | null> {
   try {
     const { data, error } = await withReadTimeout(
-      supabase
+      withAuthRetry(() => supabase
         .from(collectionName)
         .select('id, data')
         .eq('id', id)
-        .maybeSingle(),
+        .maybeSingle()),
       `${collectionName}/${id}`,
     );
     if (error) throw error;
@@ -119,9 +142,9 @@ export async function addCollectionDocument<T extends Record<string, any>>(
   try {
     const { id: providedId, ...cleanedData } = data;
     const id = providedId || generateId();
-    const { error } = await supabase
+    const { error } = await withAuthRetry(() => supabase
       .from(collectionName)
-      .insert({ id, data: cleanedData });
+      .insert({ id, data: cleanedData }));
     if (error) throw error;
     return id;
   } catch (err) {
@@ -137,9 +160,9 @@ export async function setCollectionDocument<T extends { id: string }>(
 ): Promise<void> {
   try {
     const { id: _, ...cleanedData } = data;
-    const { error } = await supabase
+    const { error } = await withAuthRetry(() => supabase
       .from(collectionName)
-      .upsert({ id, data: cleanedData });
+      .upsert({ id, data: cleanedData }));
     if (error) throw error;
   } catch (err) {
     logError(err, OperationType.WRITE, `${collectionName}/${id}`);
@@ -154,18 +177,18 @@ export async function updateCollectionDocument<T>(
 ): Promise<void> {
   try {
     // Merge with existing data since Postgres jsonb columns are replaced wholesale on update.
-    const { data: existing, error: fetchError } = await supabase
+    const { data: existing, error: fetchError } = await withAuthRetry(() => supabase
       .from(collectionName)
       .select('data')
       .eq('id', id)
-      .maybeSingle();
+      .maybeSingle());
     if (fetchError) throw fetchError;
 
     const mergedData = { ...((existing?.data as object) || {}), ...partialData };
-    const { count, error } = await supabase
+    const { count, error } = await withAuthRetry(() => supabase
       .from(collectionName)
       .update({ data: mergedData }, { count: 'exact' })
-      .eq('id', id);
+      .eq('id', id));
     if (error) throw error;
     if (count !== 1) throw new Error(`Document introuvable ou modification non autorisée: ${collectionName}/${id}`);
   } catch (err) {
@@ -179,10 +202,10 @@ export async function deleteCollectionDocument(
   id: string
 ): Promise<void> {
   try {
-    const { count, error } = await supabase
+    const { count, error } = await withAuthRetry(() => supabase
       .from(collectionName)
       .delete({ count: 'exact' })
-      .eq('id', id);
+      .eq('id', id));
     if (error) throw error;
     if (count !== 1) throw new Error(`Document introuvable ou suppression non autorisée: ${collectionName}/${id}`);
   } catch (err) {

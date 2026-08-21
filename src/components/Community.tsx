@@ -584,7 +584,7 @@ export default function Community() {
     filteredPosts.slice(0, 8).forEach(post => {
       if (post.authorId === user.id || viewedPostIdsRef.current.has(post.id)) return;
       viewedPostIdsRef.current.add(post.id);
-      void addCommunityFeature({ kind: 'post_view', actorId: user.id, targetId: post.id, visibility: 'public', createdAt: new Date().toISOString() }).catch(() => viewedPostIdsRef.current.delete(post.id));
+      void addCommunityFeature({ kind: 'post_view', actorId: user.id, targetId: post.id, recipientId: post.authorId, visibility: 'public', createdAt: new Date().toISOString() }).catch(() => viewedPostIdsRef.current.delete(post.id));
     });
   }, [activeView, addCommunityFeature, filteredPosts, isAdmin, user]);
 
