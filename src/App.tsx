@@ -551,18 +551,18 @@ if (isSubscriptionExpired && !isPendingApproval) {
     return (
       <div className="min-h-screen bg-[#f5f7fb]" dir={isAr ? 'rtl' : 'ltr'}>
         <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur">
-          <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-600/20">
+          <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-2 px-3 py-2.5 sm:gap-4 sm:px-6 sm:py-3">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-600/20">
                 <Network className="h-5 w-5" />
               </div>
               <div className="min-w-0">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <h1 className="truncate text-base font-black tracking-tight text-slate-900 sm:text-lg">Rawdha Connect</h1>
+                  <h1 className="max-w-[145px] truncate text-sm font-black tracking-tight text-slate-900 sm:max-w-none sm:text-lg">Rawdha Connect</h1>
                   <span className="hidden rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-black text-indigo-700 sm:inline-flex">Extension Rawdha+</span>
                   {socialUnreadCount > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-[10px] font-black text-rose-700"><Bell className="h-3 w-3" />{socialUnreadCount > 99 ? '99+' : socialUnreadCount}</span>}
                 </div>
-                <p className="truncate text-[11px] font-semibold text-slate-500">{isAr ? 'المساحة الاجتماعية المهنية لدور الحضانة' : 'L’espace social professionnel des crèches'}</p>
+                <p className="max-w-[145px] truncate text-[10px] font-semibold text-slate-500 sm:max-w-none sm:text-[11px]">{isAr ? 'المساحة الاجتماعية المهنية لدور الحضانة' : 'L’espace social professionnel des crèches'}</p>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -570,11 +570,11 @@ if (isSubscriptionExpired && !isPendingApproval) {
                 <img src="/rawdah-logo.png" alt="Rawdha+" className="h-5 w-5 rounded-md object-contain" />
                 <span>{isAr ? 'متصل بمنصة Rawdha+' : 'Connecté à la plateforme Rawdha+'}</span>
               </div>
-              <div className="flex shrink-0 items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
-                <button type="button" onClick={() => setLanguage('fr')} aria-pressed={!isAr} className={`rounded-lg px-2 py-1.5 text-[10px] font-black transition ${!isAr ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>FR</button>
-                <button type="button" onClick={() => setLanguage('ar')} aria-pressed={isAr} className={`rounded-lg px-2 py-1.5 text-[10px] font-black transition ${isAr ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>عربي</button>
+              <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-0.5 sm:gap-1 sm:rounded-xl sm:p-1">
+                <button type="button" onClick={() => setLanguage('fr')} aria-pressed={!isAr} className={`rounded-lg px-1.5 py-1 text-[9px] font-black transition sm:px-2 sm:py-1.5 sm:text-[10px] ${!isAr ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>FR</button>
+                <button type="button" onClick={() => setLanguage('ar')} aria-pressed={isAr} className={`rounded-lg px-1.5 py-1 text-[9px] font-black transition sm:px-2 sm:py-1.5 sm:text-[10px] ${isAr ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>عربي</button>
               </div>
-              <button type="button" onClick={() => navigateToPage('dashboard')} className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs font-black text-indigo-700 shadow-sm transition hover:bg-indigo-50 active:scale-[0.98] sm:px-4">
+              <button type="button" onClick={() => navigateToPage('dashboard')} className="inline-flex items-center gap-1 rounded-xl border border-indigo-200 bg-white px-2 py-2 text-[11px] font-black sm:gap-2 sm:py-2.5 sm:text-xs text-indigo-700 shadow-sm transition hover:bg-indigo-50 active:scale-[0.98] sm:px-4">
                 {isAr ? <ArrowRight className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
                 <span className="hidden sm:inline">{isAr ? 'العودة إلى التسيير' : 'Retour à la gestion'}</span>
                 <span className="sm:hidden">{isAr ? 'التسيير' : 'Gestion'}</span>
@@ -653,7 +653,7 @@ if (isSubscriptionExpired && !isPendingApproval) {
         <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 sticky top-0 z-30 shadow-xs">
           <div className="min-w-0 px-3 sm:px-6 lg:px-10 py-3 sm:py-4">
             <div className="flex min-w-0 flex-col sm:flex-row gap-3 sm:gap-4 justify-between sm:items-center">
-              <div className="flex min-w-0 items-center gap-3">
+              <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                 {/* Mobile Menu Button */}
                 <button
                   id="mobile-sidebar-toggle"
