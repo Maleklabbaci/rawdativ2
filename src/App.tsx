@@ -1,6 +1,6 @@
 
 import { useState, useEffect, lazy, Suspense, type ComponentType } from 'react';
-import { School, LogOut, Menu, CircleHelp, Bell, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { ArrowLeft, ArrowRight, School, LogOut, Menu, CircleHelp, Bell, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Network } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
@@ -539,6 +539,50 @@ if (isSubscriptionExpired && !isPendingApproval) {
           </div>
         </div>
 
+      </div>
+    );
+  }
+
+  if (currentPage === 'community') {
+    const isAr = language === 'ar';
+    return (
+      <div className="min-h-screen bg-[#f5f7fb]" dir={isAr ? 'rtl' : 'ltr'}>
+        <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur">
+          <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-600/20">
+                <Network className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <h1 className="truncate text-base font-black tracking-tight text-slate-900 sm:text-lg">Rawdha Connect</h1>
+                  <span className="hidden rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-black text-indigo-700 sm:inline-flex">Extension Rawdha+</span>
+                </div>
+                <p className="truncate text-[11px] font-semibold text-slate-500">{isAr ? 'المساحة الاجتماعية المهنية لدور الحضانة' : 'L’espace social professionnel des crèches'}</p>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <div className="hidden items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-500 lg:flex">
+                <img src="/rawdah-logo.png" alt="Rawdha+" className="h-5 w-5 rounded-md object-contain" />
+                <span>{isAr ? 'متصل بمنصة Rawdha+' : 'Connecté à la plateforme Rawdha+'}</span>
+              </div>
+              <div className="flex shrink-0 items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
+                <button type="button" onClick={() => setLanguage('fr')} aria-pressed={!isAr} className={`rounded-lg px-2 py-1.5 text-[10px] font-black transition ${!isAr ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>FR</button>
+                <button type="button" onClick={() => setLanguage('ar')} aria-pressed={isAr} className={`rounded-lg px-2 py-1.5 text-[10px] font-black transition ${isAr ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>عربي</button>
+              </div>
+              <button type="button" onClick={() => navigateToPage('dashboard')} className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs font-black text-indigo-700 shadow-sm transition hover:bg-indigo-50 active:scale-[0.98] sm:px-4">
+                {isAr ? <ArrowRight className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
+                <span className="hidden sm:inline">{isAr ? 'العودة إلى التسيير' : 'Retour à la gestion'}</span>
+                <span className="sm:hidden">{isAr ? 'التسيير' : 'Gestion'}</span>
+              </button>
+            </div>
+          </div>
+        </header>
+        <main className="min-h-[calc(100vh-73px)]">
+          <Suspense fallback={<div className="flex min-h-[50vh] items-center justify-center text-sm font-bold text-slate-400">{isAr ? 'جارٍ تحميل Rawdha Connect...' : 'Chargement de Rawdha Connect...'}</div>}>
+            <Community />
+          </Suspense>
+        </main>
       </div>
     );
   }
