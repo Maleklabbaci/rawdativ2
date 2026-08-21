@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Enfant, Presence, PresenceJournee, Paiement, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction } from '../types';
+import { Enfant, Presence, PresenceJournee, Paiement, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction, CommunityFeature } from '../types';
 import { 
   getCollectionData, 
   addCollectionDocument, 
@@ -173,6 +173,7 @@ interface DbContextType {
   communityPosts: CommunityPost[];
   communityComments: CommunityComment[];
   communityReactions: CommunityReaction[];
+  communityFeatures: CommunityFeature[];
   inscriptionLinks: InscriptionLink[];
   demandesAdmission: DemandeAdmission[];
   notifications: AppNotification[];
@@ -202,6 +203,9 @@ interface DbContextType {
   updateCommunityComment: (id: string, comment: Partial<CommunityComment>) => Promise<void>;
   deleteCommunityComment: (id: string) => Promise<void>;
   toggleCommunityReaction: (postId: string) => Promise<void>;
+  addCommunityFeature: (feature: Omit<CommunityFeature, 'id'>) => Promise<string>;
+  updateCommunityFeature: (id: string, feature: Partial<CommunityFeature>) => Promise<void>;
+  deleteCommunityFeature: (id: string) => Promise<void>;
 
   ensureInscriptionLink: () => Promise<(InscriptionLink & { token: string }) | null>;
   createInscriptionLink: (label?: string, expiresAt?: string | null) => Promise<InscriptionLink & { token: string }>;
@@ -286,6 +290,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const [communityPosts, setCommunityPosts] = useState<CommunityPost[]>([]);
   const [communityComments, setCommunityComments] = useState<CommunityComment[]>([]);
   const [communityReactions, setCommunityReactions] = useState<CommunityReaction[]>([]);
+  const [communityFeatures, setCommunityFeatures] = useState<CommunityFeature[]>([]);
   const [inscriptionLinks, setInscriptionLinks] = useState<InscriptionLink[]>([]);
   const [demandesAdmission, setDemandesAdmission] = useState<DemandeAdmission[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -378,11 +383,12 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         getCollectionData<CommunityPost>('community_posts'),
         getCollectionData<CommunityComment>('community_comments'),
         getCollectionData<CommunityReaction>('community_reactions'),
+        getCollectionData<CommunityFeature>('community_features'),
         getCollectionData<InscriptionLink>('inscription_liens'),
         getCollectionData<DemandeAdmission>('demandes_admission'),
         getCollectionData<AppNotification>('notifications'),
       ])
-        .then(([dbClasses, dbActivites, dbRepas, dbMessages, dbAvis, dbSignalements, dbCommunityPosts, dbCommunityComments, dbCommunityReactions, dbInscriptionLinks, dbDemandesAdmission, dbNotifications]) => {
+        .then(([dbClasses, dbActivites, dbRepas, dbMessages, dbAvis, dbSignalements, dbCommunityPosts, dbCommunityComments, dbCommunityReactions, dbCommunityFeatures, dbInscriptionLinks, dbDemandesAdmission, dbNotifications]) => {
           setClasses(dbClasses);
           setActivites(dbActivites);
           setRepas(dbRepas);
@@ -392,6 +398,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
           setCommunityPosts((Array.isArray(dbCommunityPosts) ? dbCommunityPosts : []).filter(Boolean).map(normalizeCommunityPost));
           setCommunityComments((Array.isArray(dbCommunityComments) ? dbCommunityComments : []).filter(Boolean).map(normalizeCommunityComment));
           setCommunityReactions((Array.isArray(dbCommunityReactions) ? dbCommunityReactions : []).filter(Boolean).map(normalizeCommunityReaction));
+          setCommunityFeatures((Array.isArray(dbCommunityFeatures) ? dbCommunityFeatures : []).filter(Boolean) as CommunityFeature[]);
           setInscriptionLinks(dbInscriptionLinks);
           setDemandesAdmission(dbDemandesAdmission);
           setNotifications(dbNotifications);
@@ -475,6 +482,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const scopedCommunityPosts = user?.role === 'directeur' || user?.role === 'admin' ? communityPosts : [];
   const scopedCommunityComments = user?.role === 'directeur' || user?.role === 'admin' ? communityComments : [];
   const scopedCommunityReactions = user?.role === 'directeur' || user?.role === 'admin' ? communityReactions : [];
+  const scopedCommunityFeatures = user?.role === 'directeur' || user?.role === 'admin' ? communityFeatures : [];
 
 
   // --- DEMANDES DIRECTEUR ---
@@ -1185,6 +1193,48 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const addCommunityFeature = async (featureData: Omit<CommunityFeature, 'id'>) => {
+    assertWriteAccess();
+    const tempId = `community_feature_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const optimistic = { ...featureData, id: tempId } as CommunityFeature;
+    setCommunityFeatures(prev => [optimistic, ...prev]);
+    try {
+      const freshId = await addCollectionDocument('community_features', featureData);
+      setCommunityFeatures(prev => prev.map(item => item.id === tempId ? { ...optimistic, id: freshId } : item));
+      return freshId;
+    } catch (err) {
+      setCommunityFeatures(prev => prev.filter(item => item.id !== tempId));
+      notifyWriteError('ajout');
+      throw err;
+    }
+  };
+
+  const updateCommunityFeature = async (id: string, data: Partial<CommunityFeature>) => {
+    assertWriteAccess();
+    const previous = communityFeatures.find(item => item.id === id);
+    setCommunityFeatures(prev => prev.map(item => item.id === id ? { ...item, ...data, updatedAt: new Date().toISOString() } : item));
+    try {
+      await updateCollectionDocument<CommunityFeature>('community_features', id, data);
+    } catch (err) {
+      if (previous) setCommunityFeatures(prev => prev.map(item => item.id === id ? previous : item));
+      notifyWriteError('modification');
+      throw err;
+    }
+  };
+
+  const deleteCommunityFeature = async (id: string) => {
+    assertWriteAccess();
+    const previous = communityFeatures.find(item => item.id === id);
+    setCommunityFeatures(prev => prev.filter(item => item.id !== id));
+    try {
+      await deleteCollectionDocument('community_features', id);
+    } catch (err) {
+      if (previous) setCommunityFeatures(prev => [previous, ...prev]);
+      notifyWriteError('suppression');
+      throw err;
+    }
+  };
+
   // --- ADMISSIONS PAR LIEN PRIVÉ ---
   // Le QR est provisionné automatiquement par la base à la création d'une crèche.
   // Cette fonction idempotente sert uniquement de filet de sécurité pour les anciens comptes.
@@ -1394,6 +1444,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       communityPosts: scopedCommunityPosts,
       communityComments: scopedCommunityComments,
       communityReactions: scopedCommunityReactions,
+      communityFeatures: scopedCommunityFeatures,
       inscriptionLinks: scopedInscriptionLinks,
       demandesAdmission: scopedDemandesAdmission,
       notifications,
@@ -1415,6 +1466,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       updateCommunityComment,
       deleteCommunityComment,
       toggleCommunityReaction,
+      addCommunityFeature,
+      updateCommunityFeature,
+      deleteCommunityFeature,
       ensureInscriptionLink,
       createInscriptionLink,
       toggleInscriptionLink,

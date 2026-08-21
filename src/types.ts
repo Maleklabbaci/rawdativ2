@@ -263,6 +263,10 @@ export interface UserAccount {
   /** Nombre d’enfants actifs rattachés, utilisé pour le badge public. */
   certificationEnfants?: number;
   siteWeb?: string;
+  specialites?: string[];
+  horaires?: string;
+  services?: string[];
+  classesCount?: number;
   enfantId?: string;
 }
 
@@ -310,6 +314,13 @@ export interface CommunityPost {
   prix?: number;
   contact?: string;
   imageUrls?: string[];
+  hashtags?: string[];
+  poll?: {
+    question: string;
+    options: string[];
+    votes?: Record<string, number>;
+    voterIds?: string[];
+  };
   /** Identifiant du post d’origine lorsqu’il s’agit d’une republication. */
   originalPostId?: string;
   /** Instantané minimal du post source pour garder une republication lisible. */
@@ -355,6 +366,30 @@ export interface CommunityReaction {
   postId: string;
   userId: string;
   createdAt: string;
+}
+
+export type CommunityFeatureKind =
+  | 'follow'
+  | 'saved_post'
+  | 'social_notification'
+  | 'poll_vote'
+  | 'report'
+  | 'pin'
+  | 'profile_details'
+  | 'private_message'
+  | 'post_view';
+
+/** Extension sociale persistante ; les champs métier additionnels sont regroupés dans payload. */
+export interface CommunityFeature {
+  id: string;
+  kind: CommunityFeatureKind;
+  actorId: string;
+  targetId?: string;
+  recipientId?: string;
+  visibility?: 'public' | 'private';
+  createdAt: string;
+  updatedAt?: string;
+  payload?: Record<string, unknown>;
 }
 
 export type SignalementType = 'bug' | 'probleme' | 'suggestion' | 'amelioration';

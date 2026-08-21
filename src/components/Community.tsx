@@ -1,6 +1,9 @@
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  BarChart3,
+  BellRing,
+  Bookmark,
   BriefcaseBusiness,
   Building2,
   Camera,
@@ -8,13 +11,19 @@ import {
   ChevronDown,
   ChevronRight,
   Clock3,
+  Eye,
+  Flag,
   Globe2,
+  Hash,
   Heart,
   Image as ImageIcon,
   Link2,
   MapPin,
   MessageCircle,
   MoreHorizontal,
+  Pin,
+  UserCheck,
+  UserPlus,
   Plus,
   Repeat2,
   Search,
@@ -32,7 +41,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useDb } from '../contexts/DbContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
-import { CommunityComment, CommunityPost, CommunityPostCategory, UserAccount } from '../types';
+import { CommunityComment, CommunityFeature, CommunityPost, CommunityPostCategory, UserAccount } from '../types';
 
 const categories: Array<{ value: CommunityPostCategory | 'tous'; fr: string; ar: string; color: string }> = [
   { value: 'tous', fr: 'Tout le fil', ar: 'كل المنشورات', color: 'bg-slate-100 text-slate-700' },
@@ -113,6 +122,36 @@ const uiCopy = {
     noProfilePresentation: 'Ce Directeur n’a pas encore ajouté de présentation.',
     addPresentation: 'Ajoutez une présentation professionnelle à votre profil.',
     noProfilePosts: 'Aucune publication pour le moment.',
+    follow: 'Suivre',
+    following: 'Abonné',
+    notifications: 'Notifications',
+    notificationsEmpty: 'Aucune notification pour le moment.',
+    saved: 'Enregistrés',
+    savedEmpty: 'Aucune publication enregistrée.',
+    messages: 'Messages',
+    messagePlaceholder: 'Écrire un message professionnel...',
+    sendMessage: 'Envoyer',
+    searchProfiles: 'Rechercher une crèche ou un Directeur',
+    hashtags: 'Mots-clés',
+    album: 'Album photo',
+    poll: 'Sondage',
+    pollQuestion: 'Votre question',
+    pollOption: 'Option',
+    addOption: 'Ajouter une option',
+    vote: 'Voter',
+    voted: 'Votre vote est enregistré',
+    views: 'vues',
+    reach: 'portée',
+    pinned: 'Publication épinglée',
+    pin: 'Épingler',
+    unpin: 'Désépingler',
+    report: 'Signaler',
+    reportSent: 'Signalement envoyé',
+    discover: 'Découvrir',
+    specialties: 'Spécialités',
+    hours: 'Horaires',
+    services: 'Services',
+    classes: 'classes',
   },
   ar: {
     home: 'الرئيسية',
@@ -182,6 +221,36 @@ const uiCopy = {
     noProfilePresentation: 'لم يضف هذا المدير نبذة تعريفية بعد.',
     addPresentation: 'أضف نبذة مهنية إلى ملفك.',
     noProfilePosts: 'لا توجد منشورات حالياً.',
+    follow: 'متابعة',
+    following: 'متابَع',
+    notifications: 'الإشعارات',
+    notificationsEmpty: 'لا توجد إشعارات حالياً.',
+    saved: 'المحفوظات',
+    savedEmpty: 'لا توجد منشورات محفوظة.',
+    messages: 'الرسائل',
+    messagePlaceholder: 'اكتب رسالة مهنية...',
+    sendMessage: 'إرسال',
+    searchProfiles: 'ابحث عن حضانة أو مدير',
+    hashtags: 'الكلمات المفتاحية',
+    album: 'ألبوم صور',
+    poll: 'استطلاع',
+    pollQuestion: 'سؤالك',
+    pollOption: 'خيار',
+    addOption: 'إضافة خيار',
+    vote: 'تصويت',
+    voted: 'تم تسجيل تصويتك',
+    views: 'مشاهدة',
+    reach: 'الوصول',
+    pinned: 'منشور مثبت',
+    pin: 'تثبيت',
+    unpin: 'إلغاء التثبيت',
+    report: 'إبلاغ',
+    reportSent: 'تم إرسال البلاغ',
+    discover: 'اكتشف',
+    specialties: 'التخصصات',
+    hours: 'ساعات العمل',
+    services: 'الخدمات',
+    classes: 'أقسام',
   },
 } as const;
 
@@ -259,6 +328,10 @@ type PublicProfile = {
   ville?: string;
   siteWeb?: string;
   telephone?: string;
+  specialites?: string[];
+  horaires?: string;
+  services?: string[];
+  classesCount?: number;
   estCertifie?: boolean;
   certificationEnfants?: number;
   isCurrent?: boolean;
@@ -310,6 +383,7 @@ export default function Community() {
     communityPosts,
     communityComments,
     communityReactions,
+    communityFeatures,
     enfants,
     comptes,
     addCommunityPost,
@@ -319,6 +393,9 @@ export default function Community() {
     addCommunityComment,
     deleteCommunityComment,
     toggleCommunityReaction,
+    addCommunityFeature,
+    updateCommunityFeature,
+    deleteCommunityFeature,
   } = useDb();
 
   const isAr = language === 'ar';
@@ -328,8 +405,15 @@ export default function Community() {
   const certificationChildrenCount = isAdmin ? 30 : Math.max(registeredChildrenCount, user?.certificationEnfants || 0);
   const isCurrentUserCertified = isAdmin || Boolean(user?.estCertifie) || certificationChildrenCount >= 30;
   const [activeCategory, setActiveCategory] = useState<CommunityPostCategory | 'tous'>('tous');
-  const [activeView, setActiveView] = useState<'feed' | 'profile' | 'reposts'>('feed');
+  const [activeView, setActiveView] = useState<'feed' | 'profile' | 'reposts' | 'saved' | 'notifications' | 'messages'>('feed');
   const [search, setSearch] = useState('');
+  const [profileSearch, setProfileSearch] = useState('');
+  const [composerMode, setComposerMode] = useState<'post' | 'album' | 'poll'>('post');
+  const [pollQuestion, setPollQuestion] = useState('');
+  const [pollOptions, setPollOptions] = useState(['', '']);
+  const [messageDraft, setMessageDraft] = useState('');
+  const [messageRecipientId, setMessageRecipientId] = useState<string | null>(null);
+  const viewedPostIdsRef = useRef(new Set<string>());
   const [showComposer, setShowComposer] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
@@ -341,7 +425,7 @@ export default function Community() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileImageUploading, setProfileImageUploading] = useState<'avatar' | 'logo' | null>(null);
   const [profileImageError, setProfileImageError] = useState('');
-  const [postImageUrl, setPostImageUrl] = useState('');
+  const [postImageUrls, setPostImageUrls] = useState<string[]>([]);
   const [postImageError, setPostImageError] = useState('');
   const [profileForm, setProfileForm] = useState({
     prenom: user?.prenom || '',
@@ -353,21 +437,11 @@ export default function Community() {
     avatarUrl: user?.avatarUrl || '',
     logoUrl: user?.logoUrl || creche?.logoUrl || '',
     siteWeb: user?.siteWeb || '',
+    specialites: user?.specialites?.join(', ') || '',
+    horaires: user?.horaires || '',
+    services: user?.services?.join(', ') || '',
+    classesCount: user?.classesCount ? String(user.classesCount) : '',
   });
-
-  useEffect(() => {
-    if (!showComposer) return undefined;
-    const previousOverflow = document.body.style.overflow;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setShowComposer(false);
-    };
-    document.body.style.overflow = 'hidden';
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [showComposer]);
 
   useEffect(() => {
     if (!openMenu) return undefined;
@@ -390,6 +464,10 @@ export default function Community() {
       avatarUrl: user?.avatarUrl || '',
       logoUrl: user?.logoUrl || creche?.logoUrl || '',
       siteWeb: user?.siteWeb || '',
+      specialites: user?.specialites?.join(', ') || '',
+      horaires: user?.horaires || '',
+      services: user?.services?.join(', ') || '',
+      classesCount: user?.classesCount ? String(user.classesCount) : '',
     });
   }, [user, creche?.nom, creche?.logoUrl]);
 
@@ -405,6 +483,10 @@ export default function Community() {
       ville: user?.ville,
       siteWeb: user?.siteWeb,
       telephone: user?.telephone,
+      specialites: user?.specialites,
+      horaires: user?.horaires,
+      services: user?.services,
+      classesCount: user?.classesCount,
       estCertifie: isCurrentUserCertified,
       certificationEnfants: certificationChildrenCount,
       isCurrent: true,
@@ -425,6 +507,10 @@ export default function Community() {
       ville: account.ville || fallback?.authorVille || fallback?.ville,
       siteWeb: account.siteWeb,
       telephone: account.telephone,
+      specialites: account.specialites,
+      horaires: account.horaires,
+      services: account.services,
+      classesCount: account.classesCount,
       estCertifie: Boolean(account.estCertifie) || (account.certificationEnfants || 0) >= 30,
       certificationEnfants: Math.max(account.certificationEnfants || 0, fallback?.authorCertificationEnfants || 0),
     };
@@ -463,6 +549,20 @@ export default function Community() {
 
   const selectedProfile = selectedProfileId ? profiles.find(profile => profile.id === selectedProfileId) || null : null;
   const selectedProfilePosts = selectedProfile ? communityPosts.filter(post => post.authorId === selectedProfile.id) : [];
+  const followingIds = useMemo(() => new Set(communityFeatures.filter(feature => feature.kind === 'follow' && feature.actorId === user?.id).map(feature => feature.targetId).filter(Boolean)), [communityFeatures, user?.id]);
+  const savedPostIds = useMemo(() => new Set(communityFeatures.filter(feature => feature.kind === 'saved_post' && feature.actorId === user?.id).map(feature => feature.targetId).filter(Boolean)), [communityFeatures, user?.id]);
+  const pinnedPostIds = useMemo(() => new Set(communityFeatures.filter(feature => feature.kind === 'pin').map(feature => feature.targetId).filter(Boolean)), [communityFeatures]);
+  const unreadSocialNotifications = useMemo(() => communityFeatures.filter(feature => feature.kind === 'social_notification' && feature.recipientId === user?.id && feature.payload?.read !== true), [communityFeatures, user?.id]);
+  const featureFor = (kind: CommunityFeature['kind'], targetId: string, actorId = user?.id) => communityFeatures.find(feature => feature.kind === kind && feature.targetId === targetId && feature.actorId === actorId);
+  const featuresFor = (kind: CommunityFeature['kind'], targetId: string) => communityFeatures.filter(feature => feature.kind === kind && feature.targetId === targetId);
+
+  const filteredProfiles = useMemo(() => {
+    const normalized = profileSearch.trim().toLowerCase();
+    return profiles.filter(profile => {
+      if (!normalized) return true;
+      return [profile.name, profile.nomCreche, profile.ville, profile.bio].filter(Boolean).some(value => String(value).toLowerCase().includes(normalized));
+    });
+  }, [profiles, profileSearch]);
 
   const filteredPosts = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
@@ -477,8 +577,17 @@ export default function Community() {
           .filter(Boolean)
           .some(value => String(value).toLowerCase().includes(normalizedSearch));
       })
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [communityPosts, activeCategory, activeView, search, selectedProfileId, user?.id, isAdmin]);
+      .sort((a, b) => Number(pinnedPostIds.has(b.id)) - Number(pinnedPostIds.has(a.id)) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [communityPosts, activeCategory, activeView, search, selectedProfileId, user?.id, isAdmin, pinnedPostIds]);
+
+  useEffect(() => {
+    if (!user || (!isAdmin && user.role !== 'directeur') || activeView !== 'feed') return;
+    filteredPosts.slice(0, 8).forEach(post => {
+      if (post.authorId === user.id || viewedPostIdsRef.current.has(post.id)) return;
+      viewedPostIdsRef.current.add(post.id);
+      void addCommunityFeature({ kind: 'post_view', actorId: user.id, targetId: post.id, visibility: 'public', createdAt: new Date().toISOString() }).catch(() => viewedPostIdsRef.current.delete(post.id));
+    });
+  }, [activeView, addCommunityFeature, filteredPosts, isAdmin, user]);
 
   if (!user || (!isAdmin && user.role !== 'directeur')) return null;
 
@@ -489,18 +598,26 @@ export default function Community() {
   const openComposer = () => {
     setOpenMenu(null);
     setShowComposer(true);
+    window.requestAnimationFrame(() => document.getElementById('community-inline-composer')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
   };
 
   const handlePostImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    const files: File[] = event.target.files ? Array.from(event.target.files) : [];
     event.target.value = '';
-    if (!file) return;
+    if (!files.length) return;
     setPostImageError('');
+    const remainingSlots = Math.max(0, 6 - postImageUrls.length);
+    if (!remainingSlots) {
+      setPostImageError(isAr ? 'يمكنك إضافة 6 صور كحد أقصى.' : 'Vous pouvez ajouter 6 photos maximum.');
+      return;
+    }
     try {
-      const dataUrl = await compressProfileImage(file, 1280);
-      setPostImageUrl(dataUrl);
+      const selectedFiles = files.slice(0, remainingSlots);
+      const dataUrls = await Promise.all(selectedFiles.map(file => compressProfileImage(file, 1280)));
+      setPostImageUrls(current => [...current, ...dataUrls].slice(0, 6));
+      if (files.length > selectedFiles.length) setPostImageError(isAr ? 'تم الاحتفاظ بأول 6 صور فقط.' : 'Seules les 6 premières photos ont été conservées.');
     } catch (error) {
-      setPostImageError(error instanceof Error ? error.message : 'Impossible de charger cette image.');
+      setPostImageError(error instanceof Error ? error.message : (isAr ? 'تعذر تحميل هذه الصورة.' : 'Impossible de charger cette image.'));
     }
   };
 
@@ -535,6 +652,10 @@ export default function Community() {
         avatarUrl: profileForm.avatarUrl.trim() || undefined,
         logoUrl: profileForm.logoUrl.trim() || undefined,
         siteWeb: profileForm.siteWeb.trim() || undefined,
+        specialites: profileForm.specialites.split(',').map(item => item.trim()).filter(Boolean),
+        horaires: profileForm.horaires.trim() || undefined,
+        services: profileForm.services.split(',').map(item => item.trim()).filter(Boolean),
+        classesCount: profileForm.classesCount.trim() ? Number(profileForm.classesCount) : undefined,
       });
       setActiveView('profile');
     } finally {
@@ -544,9 +665,15 @@ export default function Community() {
 
   const handleSubmitPost = async (event: FormEvent) => {
     event.preventDefault();
+    const validPollOptions = pollOptions.map(option => option.trim()).filter(Boolean);
     if (!form.contenu.trim() || submitting) return;
+    if (composerMode === 'poll' && (!pollQuestion.trim() || validPollOptions.length < 2)) {
+      setPostImageError(isAr ? 'أضف السؤال وخيارين على الأقل.' : 'Ajoutez une question et au moins deux options.');
+      return;
+    }
     setSubmitting(true);
     try {
+      const hashtags = Array.from(new Set(form.contenu.match(/#[\\p{L}\\p{N}_-]+/gu) || [])).slice(0, 8);
       await addCommunityPost({
         authorId: user.id,
         authorName,
@@ -563,7 +690,9 @@ export default function Community() {
         titre: form.titre.trim() || undefined,
         contenu: form.contenu.trim(),
         ville: form.ville.trim() || user.ville || undefined,
-        imageUrls: postImageUrl ? [postImageUrl] : undefined,
+        imageUrls: postImageUrls.length ? postImageUrls : undefined,
+        hashtags: hashtags.length ? hashtags : undefined,
+        poll: composerMode === 'poll' ? { question: pollQuestion.trim(), options: validPollOptions, votes: {}, voterIds: [] } : undefined,
         prix: form.prix.trim() ? Number(form.prix) : undefined,
         contact: form.contact.trim() || undefined,
         statut: 'publie',
@@ -571,7 +700,10 @@ export default function Community() {
         createdAt: new Date().toISOString(),
       });
       setForm(emptyForm);
-      setPostImageUrl('');
+      setPostImageUrls([]);
+      setPollQuestion('');
+      setPollOptions(['', '']);
+      setComposerMode('post');
       setPostImageError('');
       setShowComposer(false);
     } finally {
@@ -631,6 +763,9 @@ export default function Community() {
         contenu: content,
         createdAt: new Date().toISOString(),
       });
+      if (post.authorId !== user.id) {
+        void addCommunityFeature({ kind: 'social_notification', actorId: user.id, recipientId: post.authorId, visibility: 'private', targetId: post.id, createdAt: new Date().toISOString(), payload: { type: 'comment', actorName: authorName, message: isAr ? 'علّق على منشورك' : 'a commenté votre publication' } }).catch(() => undefined);
+      }
       setCommentDrafts(current => ({ ...current, [post.id]: '' }));
       setExpandedComments(current => ({ ...current, [post.id]: true }));
     } finally {
@@ -643,8 +778,67 @@ export default function Community() {
     setSubmitting(true);
     try {
       await repostCommunityPost(post);
+      if (post.authorId !== user.id) {
+        void addCommunityFeature({ kind: 'social_notification', actorId: user.id, recipientId: post.authorId, visibility: 'private', targetId: post.id, createdAt: new Date().toISOString(), payload: { type: 'repost', actorName: authorName, message: isAr ? 'أعاد نشر منشورك' : 'a republié votre publication' } }).catch(() => undefined);
+      }
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleToggleFollow = async (profile: PublicProfile) => {
+    if (profile.id === user.id || profile.isPlatform && isAdmin) return;
+    const existing = featureFor('follow', profile.id);
+    if (existing) await deleteCommunityFeature(existing.id);
+    else {
+      await addCommunityFeature({ kind: 'follow', actorId: user.id, targetId: profile.id, visibility: 'private', createdAt: new Date().toISOString() });
+      void addCommunityFeature({ kind: 'social_notification', actorId: user.id, recipientId: profile.id, visibility: 'private', targetId: profile.id, createdAt: new Date().toISOString(), payload: { type: 'follow', actorName: authorName, message: isAr ? 'يتابع ملفك' : 'vous suit maintenant' } }).catch(() => undefined);
+    }
+  };
+
+  const handleToggleSave = async (post: CommunityPost) => {
+    const existing = featureFor('saved_post', post.id);
+    if (existing) await deleteCommunityFeature(existing.id);
+    else await addCommunityFeature({ kind: 'saved_post', actorId: user.id, targetId: post.id, visibility: 'private', createdAt: new Date().toISOString() });
+  };
+
+  const handlePin = async (post: CommunityPost) => {
+    if (!isAdmin) return;
+    const existing = communityFeatures.find(feature => feature.kind === 'pin' && feature.targetId === post.id);
+    if (existing) await deleteCommunityFeature(existing.id);
+    else await addCommunityFeature({ kind: 'pin', actorId: user.id, targetId: post.id, visibility: 'public', createdAt: new Date().toISOString() });
+    setOpenMenu(null);
+  };
+
+  const handleReport = async (post: CommunityPost) => {
+    if (featureFor('report', post.id)) return;
+    await addCommunityFeature({ kind: 'report', actorId: user.id, targetId: post.id, visibility: 'private', createdAt: new Date().toISOString(), payload: { reason: isAr ? 'محتوى يحتاج إلى مراجعة' : 'Contenu à examiner' } });
+    setOpenMenu(null);
+  };
+
+  const handlePollVote = async (post: CommunityPost, optionIndex: number) => {
+    if (!post.poll || featureFor('poll_vote', post.id)) return;
+    await addCommunityFeature({ kind: 'poll_vote', actorId: user.id, targetId: post.id, visibility: 'public', createdAt: new Date().toISOString(), payload: { optionIndex } });
+  };
+
+  const handleSendMessage = async (event: FormEvent) => {
+    event.preventDefault();
+    const content = messageDraft.trim();
+    if (!content || !messageRecipientId || submitting) return;
+    setSubmitting(true);
+    try {
+      await addCommunityFeature({ kind: 'private_message', actorId: user.id, recipientId: messageRecipientId, visibility: 'private', createdAt: new Date().toISOString(), payload: { content } });
+      setMessageDraft('');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleReaction = async (post: CommunityPost) => {
+    const wasLiked = isLiked(post.id);
+    await toggleCommunityReaction(post.id);
+    if (!wasLiked && post.authorId !== user.id) {
+      void addCommunityFeature({ kind: 'social_notification', actorId: user.id, recipientId: post.authorId, visibility: 'private', targetId: post.id, createdAt: new Date().toISOString(), payload: { type: 'reaction', actorName: authorName, message: isAr ? 'أعجب بمنشورك' : 'a aimé votre publication' } }).catch(() => undefined);
     }
   };
 
@@ -671,8 +865,13 @@ export default function Community() {
         }
       : null;
     const category = categories.find(item => item.value === post.categorie);
+    const pollVoteFeatures = featuresFor('poll_vote', post.id);
+    const pollVoteCounts = post.poll?.options.map((_, optionIndex) => pollVoteFeatures.filter(feature => Number(feature.payload?.optionIndex) === optionIndex).length) || [];
+    const hasVoted = Boolean(featureFor('poll_vote', post.id));
+    const postViewCount = featuresFor('post_view', post.id).length;
     return (
       <article key={post.id} className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
+        {pinnedPostIds.has(post.id) && <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-5 py-2.5 text-xs font-black text-amber-700"><Pin className="h-3.5 w-3.5" />{ui.pinned}</div>}
         {post.originalPostId && <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-5 py-3 text-xs font-semibold text-slate-500"><Repeat2 className="h-4 w-4 text-indigo-600" />{post.authorName} {isAr ? 'أعاد النشر' : 'a republié une publication'}</div>}
         <div className="p-4 sm:p-5">
           <div className="flex items-start justify-between gap-3">
@@ -688,6 +887,9 @@ export default function Community() {
               <button type="button" onClick={() => setOpenMenu(openMenu === post.id ? null : post.id)} aria-haspopup="menu" aria-expanded={openMenu === post.id} aria-label={isAr ? 'خيارات المنشور' : 'Options de la publication'} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><MoreHorizontal className="h-5 w-5" /></button>
               {openMenu === post.id && <div role="menu" aria-label={isAr ? 'خيارات المنشور' : 'Options de la publication'} className="absolute right-0 top-10 z-20 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
                 {canManagePost(post) && <button type="button" onClick={() => { void handleDeletePost(post); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" />{isAr ? 'حذف' : 'Supprimer'}</button>}
+                <button type="button" onClick={() => { void handleToggleSave(post); setOpenMenu(null); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-600 hover:bg-slate-50"><Bookmark className={`h-4 w-4 ${savedPostIds.has(post.id) ? 'fill-current text-indigo-600' : ''}`} />{savedPostIds.has(post.id) ? ui.saved : (isAr ? 'حفظ المنشور' : 'Enregistrer')}</button>
+                {isAdmin && <button type="button" onClick={() => { void handlePin(post); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-600 hover:bg-slate-50"><Pin className="h-4 w-4" />{pinnedPostIds.has(post.id) ? ui.unpin : ui.pin}</button>}
+                {!isAdmin && post.authorId !== user.id && <button type="button" onClick={() => { void handleReport(post); }} disabled={Boolean(featureFor('report', post.id))} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"><Flag className="h-4 w-4" />{featureFor('report', post.id) ? ui.reportSent : ui.report}</button>}
                 {isAdmin && <button type="button" onClick={() => { setOpenMenu(null); void updateCommunityPost(post.id, { statut: post.statut === 'masquee' ? 'publie' : 'masquee' }); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-600 hover:bg-slate-50"><ShieldCheck className="h-4 w-4" />{post.statut === 'masquee' ? ui.restore : ui.hide}</button>}
               </div>}
             </div>
@@ -696,7 +898,9 @@ export default function Community() {
           <div className="mt-4 flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${category?.color || 'bg-slate-100 text-slate-700'}`}><Tag className="mr-1 inline h-3 w-3" />{categoryLabel(post.categorie, language)}</span>{post.statut === 'masquee' && <span className="rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-black text-rose-700">{ui.masked}</span>}</div>
           {post.titre && <h3 className="mt-3 text-lg font-black text-slate-900">{post.titre}</h3>}
           {post.contenu && <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">{post.contenu}</p>}
-          {post.imageUrls?.[0] && <div className="mt-4 overflow-hidden rounded-2xl border border-slate-100 bg-slate-50"><img src={post.imageUrls[0]} alt={post.titre || (isAr ? 'صورة المنشور' : 'Image de la publication')} className="max-h-[520px] w-full object-cover" loading="lazy" /></div>}
+          {post.hashtags?.length ? <div className="mt-3 flex flex-wrap gap-1.5">{post.hashtags.map(tag => <span key={tag} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-[11px] font-black text-indigo-700"><Hash className="h-3 w-3" />{tag}</span>)}</div> : null}
+          {post.imageUrls?.length ? <div className={`mt-4 grid gap-2 overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 p-1 ${post.imageUrls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>{post.imageUrls.slice(0, 6).map((url, index) => <img key={`${url.slice(0, 24)}-${index}`} src={url} alt={`${post.titre || (isAr ? 'صورة المنشور' : 'Image de la publication')} ${index + 1}`} className={`w-full object-cover ${post.imageUrls && post.imageUrls.length === 1 ? 'max-h-[520px]' : 'h-48'}`} loading="lazy" />)}</div> : null}
+          {post.poll && <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4"><div className="flex items-center gap-2 text-xs font-black text-indigo-700"><BarChart3 className="h-4 w-4" />{ui.poll}</div><p className="mt-2 text-sm font-black text-slate-800">{post.poll.question}</p><div className="mt-3 space-y-2">{post.poll.options.map((option, optionIndex) => { const votes = pollVoteCounts[optionIndex] || 0; const totalVotes = pollVoteCounts.reduce((sum, count) => sum + count, 0); const percentage = totalVotes ? Math.round((votes / totalVotes) * 100) : 0; return <button key={`${post.id}-poll-${optionIndex}`} type="button" disabled={hasVoted} onClick={() => void handlePollVote(post, optionIndex)} className="relative w-full overflow-hidden rounded-xl border border-indigo-100 bg-white px-3 py-2.5 text-left text-xs font-black text-slate-700 disabled:cursor-default"><span className="absolute inset-y-0 left-0 bg-indigo-100/70 transition-all" style={{ width: `${percentage}%` }} /><span className="relative flex items-center justify-between gap-2"><span>{option}</span><span className="text-indigo-700">{percentage}%</span></span></button>; })}</div>{hasVoted && <p className="mt-3 text-[11px] font-bold text-indigo-700">{ui.voted}</p>}</div>}
           {post.contact && <div className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-600"><span className="font-black text-slate-800">{ui.contact} </span>{post.contact}</div>}
 
           {original && <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -705,9 +909,9 @@ export default function Community() {
             <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">{original.contenu || ''}</p>
           </div>}
 
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs font-bold text-slate-400"><span aria-live="polite">{reactionCount(post.id)} {ui.likes}</span><span>{comments.length} {comments.length > 1 ? ui.comments : ui.comment} · {communityPosts.filter(item => item.originalPostId === post.id).length} {communityPosts.filter(item => item.originalPostId === post.id).length > 1 ? ui.reposts : ui.repost}</span></div>
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs font-bold text-slate-400"><span aria-live="polite">{reactionCount(post.id)} {ui.likes}</span><span>{comments.length} {comments.length > 1 ? ui.comments : ui.comment} · {communityPosts.filter(item => item.originalPostId === post.id).length} {communityPosts.filter(item => item.originalPostId === post.id).length > 1 ? ui.reposts : ui.repost}{(isAdmin || post.authorId === user.id) && <span className="ml-1 inline-flex items-center gap-1"><Eye className="h-3 w-3" />{postViewCount} {ui.views}</span>}</span></div>
           <div className="mt-2 grid grid-cols-1 min-[420px]:grid-cols-3 gap-1 border-t border-slate-100 pt-2">
-            <button type="button" aria-pressed={isLiked(post.id)} onClick={() => void toggleCommunityReaction(post.id)} className={`inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-xs font-black transition ${isLiked(post.id) ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50 hover:text-indigo-700'}`}><ThumbsUp className={`h-4 w-4 ${isLiked(post.id) ? 'fill-current' : ''}`} />{ui.likes}</button>
+            <button type="button" aria-pressed={isLiked(post.id)} onClick={() => void handleReaction(post)} className={`inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-xs font-black transition ${isLiked(post.id) ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50 hover:text-indigo-700'}`}><ThumbsUp className={`h-4 w-4 ${isLiked(post.id) ? 'fill-current' : ''}`} />{ui.likes}</button>
             <button type="button" onClick={() => setExpandedComments(current => ({ ...current, [post.id]: !current[post.id] }))} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-xs font-black text-slate-500 hover:bg-slate-50 hover:text-indigo-700"><MessageCircle className="h-4 w-4" />{ui.commentAction}</button>
             <button type="button" onClick={() => void handleRepost(post)} disabled={submitting} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-xs font-black text-slate-500 hover:bg-slate-50 hover:text-indigo-700 disabled:opacity-50"><Repeat2 className="h-4 w-4" />{ui.repostAction}</button>
           </div>
@@ -719,6 +923,57 @@ export default function Community() {
       </article>
     );
   };
+  const renderComposer = () => (
+    <motion.section
+      id="community-inline-composer"
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm sm:p-5"
+    >
+      <form onSubmit={handleSubmitPost}>
+        <div className="flex items-start gap-3">
+          <Avatar profile={currentProfile} size="md" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider text-indigo-600">{ui.newPost}</p>
+                <h2 className="mt-1 text-base font-black text-slate-900">{isAr ? 'شارك مع شبكتك' : 'Partager avec votre réseau'}</h2>
+              </div>
+              <button type="button" onClick={() => setShowComposer(false)} className="rounded-xl px-3 py-2 text-xs font-black text-slate-500 hover:bg-slate-100">{isAr ? 'إلغاء' : 'Fermer'}</button>
+            </div>
+            <p className="mt-1 text-xs font-semibold text-slate-500">{crecheName}</p>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2 border-y border-slate-100 py-3" role="tablist" aria-label={isAr ? 'نوع المنشور' : 'Type de publication'}>
+          {([['post', isAr ? 'منشور' : 'Publication'], ['album', ui.album], ['poll', ui.poll]] as const).map(([mode, label]) => <button key={mode} type="button" role="tab" aria-selected={composerMode === mode} onClick={() => setComposerMode(mode)} className={`rounded-xl px-3 py-2 text-xs font-black transition ${composerMode === mode ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'}`}>{mode === 'album' ? <ImageIcon className="mr-1 inline h-3.5 w-3.5" /> : mode === 'poll' ? <BarChart3 className="mr-1 inline h-3.5 w-3.5" /> : <MessageCircle className="mr-1 inline h-3.5 w-3.5" />}{label}</button>)}
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <label className="text-xs font-black text-slate-600">{isAr ? 'الفئة' : 'Catégorie'}
+            <select value={form.categorie} onChange={event => setForm(current => ({ ...current, categorie: event.target.value as CommunityPostCategory }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500">
+              {categories.filter(item => item.value !== 'tous').map(item => <option key={item.value} value={item.value}>{isAr ? item.ar : item.fr}</option>)}
+            </select>
+          </label>
+          <label className="text-xs font-black text-slate-600">{isAr ? 'العنوان' : 'Titre'}
+            <input value={form.titre} onChange={event => setForm(current => ({ ...current, titre: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder={isAr ? 'عنوان المنشور' : 'Titre de votre publication'} />
+          </label>
+          <label className="text-xs font-black text-slate-600 md:col-span-2">{isAr ? 'رسالتك' : 'Votre message'}
+            <textarea required rows={5} maxLength={3000} value={form.contenu} onChange={event => setForm(current => ({ ...current, contenu: event.target.value }))} className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none focus:border-indigo-500" placeholder={isAr ? 'شارك فكرة أو نشاطاً أو فرصة...' : 'Partagez une idée, une activité, une opportunité...'} />
+          </label>
+          {composerMode === 'poll' && <div className="grid gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4 md:col-span-2"><label className="text-xs font-black text-slate-600">{ui.pollQuestion}<input required value={pollQuestion} onChange={event => setPollQuestion(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder={isAr ? 'مثلاً: ما النشاط المفضل للأطفال؟' : 'Ex. : Quelle activité préfèrent les enfants ?'} /></label>{pollOptions.map((option, index) => <label key={`poll-option-${index}`} className="text-xs font-black text-slate-600">{ui.pollOption} {index + 1}<input required value={option} onChange={event => setPollOptions(current => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder={`${ui.pollOption} ${index + 1}`} /></label>)}<button type="button" onClick={() => setPollOptions(current => current.length < 4 ? [...current, ''] : current)} disabled={pollOptions.length >= 4} className="justify-self-start rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-black text-indigo-700 disabled:opacity-40">+ {ui.addOption}</button></div>}
+          {postImageUrls.length > 0 && <div className="grid grid-cols-2 gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-2 md:col-span-2">{postImageUrls.map((url, index) => <div key={`${url.slice(0, 24)}-${index}`} className="group relative overflow-hidden rounded-xl"><img src={url} alt={`${isAr ? 'صورة' : 'Photo'} ${index + 1}`} className="h-32 w-full object-cover" /><button type="button" onClick={() => setPostImageUrls(current => current.filter((_, itemIndex) => itemIndex !== index))} className="absolute right-2 top-2 rounded-full bg-slate-950/75 p-2 text-white opacity-0 transition group-hover:opacity-100 focus:opacity-100" aria-label={isAr ? 'حذف الصورة' : 'Supprimer la photo'}><X className="h-4 w-4" /></button></div>)}</div>}
+          {postImageError && <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 md:col-span-2" role="alert">{postImageError}</p>}
+          <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-black text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 md:col-span-2"><ImageIcon className="h-4 w-4 text-emerald-500" />{composerMode === 'album' ? ui.album : (isAr ? 'إضافة صورة' : 'Ajouter une photo')}<input type="file" accept="image/png,image/jpeg,image/webp" multiple={composerMode === 'album'} className="sr-only" onChange={event => void handlePostImageUpload(event)} /></label>
+          <label className="text-xs font-black text-slate-600">{ui.city}<input value={form.ville} onChange={event => setForm(current => ({ ...current, ville: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="Alger" /></label>
+          <label className="text-xs font-black text-slate-600">{ui.contact}<input value={form.contact} onChange={event => setForm(current => ({ ...current, contact: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder={isAr ? 'هاتف أو رابط' : 'Téléphone ou lien'} /></label>
+        </div>
+        <div className="mt-4 flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
+          <button type="button" onClick={() => setShowComposer(false)} className="rounded-xl px-4 py-3 text-sm font-black text-slate-500 hover:bg-slate-100">{ui.cancel}</button>
+          <button type="submit" disabled={submitting || !form.contenu.trim()} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-50">{submitting ? (isAr ? 'جارٍ النشر...' : 'Publication...') : ui.publish}</button>
+        </div>
+      </form>
+    </motion.section>
+  );
+
   const renderProfileEditor = () => (
     <motion.section
       initial={{ opacity: 0, height: 0, y: -12 }}
@@ -763,6 +1018,10 @@ export default function Community() {
           <label className="text-xs font-black text-slate-600">{ui.city}<input value={profileForm.ville} onChange={event => setProfileForm(current => ({ ...current, ville: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" /></label>
           <label className="text-xs font-black text-slate-600">{ui.phone}<input value={profileForm.telephone} onChange={event => setProfileForm(current => ({ ...current, telephone: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" /></label>
           <label className="text-xs font-black text-slate-600 md:col-span-2">{ui.website}<input value={profileForm.siteWeb} onChange={event => setProfileForm(current => ({ ...current, siteWeb: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="https://..." /></label>
+          <label className="text-xs font-black text-slate-600">{ui.specialties}<input value={profileForm.specialites} onChange={event => setProfileForm(current => ({ ...current, specialites: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder={isAr ? 'مونتيسوري، لغة، فنون' : 'Montessori, langage, arts'} /></label>
+          <label className="text-xs font-black text-slate-600">{ui.hours}<input value={profileForm.horaires} onChange={event => setProfileForm(current => ({ ...current, horaires: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder={isAr ? 'الأحد - الخميس، 08:00 - 17:00' : 'Dimanche - jeudi, 08:00 - 17:00'} /></label>
+          <label className="text-xs font-black text-slate-600">{ui.services}<input value={profileForm.services} onChange={event => setProfileForm(current => ({ ...current, services: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder={isAr ? 'نقل، وجبات، أنشطة' : 'Transport, repas, activités'} /></label>
+          <label className="text-xs font-black text-slate-600">{isAr ? 'عدد الأقسام' : 'Nombre de classes'}<input type="number" min="0" max="99" value={profileForm.classesCount} onChange={event => setProfileForm(current => ({ ...current, classesCount: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="4" /></label>
           <label className="text-xs font-black text-slate-600 md:col-span-2">{ui.presentation}<textarea rows={4} maxLength={500} value={profileForm.bio} onChange={event => setProfileForm(current => ({ ...current, bio: event.target.value }))} className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none focus:border-indigo-500" placeholder="Présentez votre parcours et votre crèche..." /></label>
         </div>
 
@@ -788,15 +1047,35 @@ export default function Community() {
           <div className="px-4 pb-5 pt-6 sm:px-5 sm:pb-6 md:px-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-start sm:gap-4"><div className="shrink-0 rounded-full bg-white p-1 shadow-lg ring-2 ring-indigo-100"><Avatar profile={profile} size="lg" /></div><div className="min-w-0 flex-1 pt-1"><div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center"><h2 className="min-w-0 break-words text-lg leading-tight sm:text-xl font-black text-slate-900">{profile.name}</h2>{profile.estCertifie ? <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700"><Check className="h-3 w-3" />{profile.isPlatform ? ui.officialAccount : (isAr ? 'حضانة موثّقة' : 'Crèche certifiée')}</span> : <span className="inline-flex shrink-0 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-700">{isAr ? 'التحقق قيد التقدم' : 'Certification en cours'}</span>}</div><p className="mt-1 flex min-w-0 flex-wrap items-center gap-1 text-sm font-semibold text-slate-500"><Building2 className="h-4 w-4 shrink-0" /><span className="break-words">{profile.nomCreche || (isAr ? 'حضانة' : 'Crèche')}{profile.ville ? ` · ${profile.ville}` : ''}</span></p></div></div>
-              {isOwnProfile && !profile.isPlatform && <button type="button" onClick={() => setShowProfileEditor(true)} className="self-stretch rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-xs font-black text-indigo-700 hover:bg-indigo-50 sm:self-auto">{ui.myProfile}</button>}
+              <div className="flex flex-wrap gap-2">
+                {!isOwnProfile && !profile.isPlatform && <button type="button" onClick={() => void handleToggleFollow(profile)} className={`rounded-xl px-4 py-2.5 text-xs font-black ${followingIds.has(profile.id) ? 'bg-indigo-50 text-indigo-700' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>{followingIds.has(profile.id) ? <><UserCheck className="mr-1 inline h-3.5 w-3.5" />{ui.following}</> : <><UserPlus className="mr-1 inline h-3.5 w-3.5" />{ui.follow}</>}</button>}
+                {isOwnProfile && !profile.isPlatform && <button type="button" onClick={() => setShowProfileEditor(true)} className="self-stretch rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-xs font-black text-indigo-700 hover:bg-indigo-50 sm:self-auto">{ui.myProfile}</button>}
+              </div>
             </div>
-            <div className="mt-5 grid items-start gap-4 md:grid-cols-[minmax(0,1fr)_260px]"><div className="rounded-2xl border border-slate-200 bg-slate-50 p-5"><h3 className="text-sm font-black text-slate-900">{ui.about}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{profile.bio || ui.noProfilePresentation}</p><div className="mt-4 space-y-2 text-xs font-semibold text-slate-500">{profile.ville && <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-indigo-500" />{profile.ville}</p>}{profile.telephone && <p className="flex items-center gap-2"><BriefcaseBusiness className="h-4 w-4 text-indigo-500" />{profile.telephone}</p>}{profile.siteWeb && <a href={profile.siteWeb} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-indigo-600 hover:underline"><Globe2 className="h-4 w-4" />{profile.siteWeb}</a>}</div></div><div className="rounded-2xl border border-slate-200 bg-slate-50 p-5"><p className="text-xs font-black uppercase tracking-wider text-slate-400">{profile.isPlatform ? ui.platformIdentity : ui.certification}</p><p className="mt-3 text-2xl font-black text-slate-900">{childCount} / 30</p><p className="text-xs font-semibold text-slate-500">{ui.registeredChildren}</p><div className="mt-3 h-2 overflow-hidden rounded-full bg-white"><div className={`h-full rounded-full ${profile.estCertifie ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${Math.min(100, (childCount / 30) * 100)}%` }} /></div><p className="mt-4 text-xs font-semibold text-slate-500">{profile.isPlatform ? ui.officialVerified : profile.estCertifie ? ui.verifiedBadge : (isAr ? `أضف ${Math.max(0, 30 - childCount)} طفلاً للحصول على الشارة` : `Encore ${Math.max(0, 30 - childCount)} enfant${30 - childCount > 1 ? 's' : ''} pour obtenir le badge`)}</p><p className="mt-4 text-2xl font-black text-slate-900">{profilePosts.length}</p><p className="text-xs font-semibold text-slate-500">{profilePosts.length} {isAr ? 'منشور' : `publication${profilePosts.length > 1 ? 's' : ''}`}</p><p className="mt-4 text-2xl font-black text-slate-900">{repostCount}</p><p className="text-xs font-semibold text-slate-500">{repostCount} {repostCount > 1 ? ui.reposts : ui.repost}</p></div></div>
+            <div className="mt-5 grid items-start gap-4 md:grid-cols-[minmax(0,1fr)_260px]"><div className="rounded-2xl border border-slate-200 bg-slate-50 p-5"><h3 className="text-sm font-black text-slate-900">{ui.about}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{profile.bio || ui.noProfilePresentation}</p><div className="mt-4 space-y-2 text-xs font-semibold text-slate-500">{profile.ville && <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-indigo-500" />{profile.ville}</p>}{profile.telephone && <p className="flex items-center gap-2"><BriefcaseBusiness className="h-4 w-4 text-indigo-500" />{profile.telephone}</p>}{profile.siteWeb && <a href={profile.siteWeb} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-indigo-600 hover:underline"><Globe2 className="h-4 w-4" />{profile.siteWeb}</a>}{profile.horaires && <p className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-indigo-500" />{profile.horaires}</p>}{profile.classesCount !== undefined && <p className="flex items-center gap-2"><Building2 className="h-4 w-4 text-indigo-500" />{profile.classesCount} {ui.classes}</p>}{profile.specialites?.length ? <div><p className="mb-1 font-black text-slate-600">{ui.specialties}</p><div className="flex flex-wrap gap-1.5">{profile.specialites.map(item => <span key={item} className="rounded-full bg-indigo-50 px-2 py-1 text-[11px] font-black text-indigo-700">{item}</span>)}</div></div> : null}{profile.services?.length ? <div><p className="mb-1 font-black text-slate-600">{ui.services}</p><div className="flex flex-wrap gap-1.5">{profile.services.map(item => <span key={item} className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-black text-emerald-700">{item}</span>)}</div></div> : null}</div></div><div className="rounded-2xl border border-slate-200 bg-slate-50 p-5"><p className="text-xs font-black uppercase tracking-wider text-slate-400">{profile.isPlatform ? ui.platformIdentity : ui.certification}</p><p className="mt-3 text-2xl font-black text-slate-900">{childCount} / 30</p><p className="text-xs font-semibold text-slate-500">{ui.registeredChildren}</p><div className="mt-3 h-2 overflow-hidden rounded-full bg-white"><div className={`h-full rounded-full ${profile.estCertifie ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${Math.min(100, (childCount / 30) * 100)}%` }} /></div><p className="mt-4 text-xs font-semibold text-slate-500">{profile.isPlatform ? ui.officialVerified : profile.estCertifie ? ui.verifiedBadge : (isAr ? `أضف ${Math.max(0, 30 - childCount)} طفلاً للحصول على الشارة` : `Encore ${Math.max(0, 30 - childCount)} enfant${30 - childCount > 1 ? 's' : ''} pour obtenir le badge`)}</p><p className="mt-4 text-2xl font-black text-slate-900">{profilePosts.length}</p><p className="text-xs font-semibold text-slate-500">{profilePosts.length} {isAr ? 'منشور' : `publication${profilePosts.length > 1 ? 's' : ''}`}</p><p className="mt-4 text-2xl font-black text-slate-900">{repostCount}</p><p className="text-xs font-semibold text-slate-500">{repostCount} {repostCount > 1 ? ui.reposts : ui.repost}</p></div></div>
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-black text-slate-900">{isAr ? `منشورات ${profile.name}` : `Publications de ${profile.name}`}</h2><p className="text-xs text-slate-500">{profilePosts.length} {isAr ? 'منشور' : `publication${profilePosts.length > 1 ? 's' : ''}`}</p></div><button type="button" onClick={() => { setSelectedProfileId(null); setActiveView('feed'); }} className="text-xs font-black text-indigo-600 hover:underline">{ui.backToFeed}</button></div>
         <div className="space-y-4">{profilePosts.length ? profilePosts.map(renderPost) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">{ui.noProfilePosts}</div>}</div>
       </motion.section>
     );
+  };
+
+  const renderSocialUtilityView = () => {
+    if (activeView === 'saved') {
+      const savedPosts = communityPosts.filter(post => savedPostIds.has(post.id));
+      return <section className="min-w-0 space-y-4"><div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><Bookmark className="h-5 w-5 text-indigo-600" /><div><h2 className="text-lg font-black text-slate-900">{ui.saved}</h2><p className="text-xs font-semibold text-slate-500">{savedPosts.length} {isAr ? 'منشور محفوظ' : `publication${savedPosts.length > 1 ? 's' : ''} enregistrée${savedPosts.length > 1 ? 's' : ''}`}</p></div></div></div>{savedPosts.length ? savedPosts.map(renderPost) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">{ui.savedEmpty}</div>}</section>;
+    }
+    if (activeView === 'notifications') {
+      const notifications = communityFeatures.filter(feature => feature.kind === 'social_notification' && feature.recipientId === user.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      return <section className="min-w-0 space-y-4"><div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><BellRing className="h-5 w-5 text-indigo-600" /><div><h2 className="text-lg font-black text-slate-900">{ui.notifications}</h2><p className="text-xs font-semibold text-slate-500">{unreadSocialNotifications.length} {isAr ? 'غير مقروء' : 'non lue(s)'}</p></div></div></div>{notifications.length ? notifications.map(notification => <button type="button" key={notification.id} onClick={() => notification.payload?.read !== true && void updateCommunityFeature(notification.id, { payload: { ...notification.payload, read: true } })} className={`flex w-full items-start gap-3 rounded-2xl border p-4 text-left shadow-sm transition ${notification.payload?.read === true ? 'border-slate-200 bg-white' : 'border-indigo-100 bg-indigo-50/50'}`}><BellRing className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" /><span className="min-w-0 flex-1"><span className="block text-sm font-black text-slate-800">{String(notification.payload?.actorName || (isAr ? 'عضو في الشبكة' : 'Un membre du réseau'))} {String(notification.payload?.message || '')}</span><span className="mt-1 block text-[11px] font-semibold text-slate-500">{formatDate(notification.createdAt, language)}</span></span>{notification.payload?.read !== true && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-indigo-600" />}</button>) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">{ui.notificationsEmpty}</div>}</section>;
+    }
+    if (activeView === 'messages') {
+      const recipient = messageRecipientId ? profiles.find(profile => profile.id === messageRecipientId) : null;
+      const conversation = recipient ? communityFeatures.filter(feature => feature.kind === 'private_message' && ((feature.actorId === user.id && feature.recipientId === recipient.id) || (feature.actorId === recipient.id && feature.recipientId === user.id))).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) : [];
+      return <section className="min-w-0 space-y-4"><div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><MessageCircle className="h-5 w-5 text-indigo-600" /><div><h2 className="text-lg font-black text-slate-900">{ui.messages}</h2><p className="text-xs font-semibold text-slate-500">{isAr ? 'تواصل مهنياً مع مدراء الشبكة.' : 'Échangez professionnellement avec les Directeurs du réseau.'}</p></div></div><div className="mt-4 flex flex-wrap gap-2">{profiles.filter(profile => profile.id !== user.id).map(profile => <button type="button" key={profile.id} onClick={() => setMessageRecipientId(profile.id)} className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-black ${messageRecipientId === profile.id ? 'bg-indigo-600 text-white' : 'bg-slate-50 text-slate-600 hover:bg-indigo-50'}`}><Avatar profile={profile} size="sm" />{profile.name}</button>)}</div></div>{recipient ? <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center gap-3 border-b border-slate-100 pb-3"><Avatar profile={recipient} size="sm" /><div><p className="text-sm font-black text-slate-800">{recipient.name}</p><p className="text-xs font-semibold text-slate-500">{recipient.nomCreche || (isAr ? 'حضانة' : 'Crèche')}</p></div></div><div className="my-4 max-h-80 space-y-2 overflow-y-auto">{conversation.length ? conversation.map(message => <div key={message.id} className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs leading-5 ${message.actorId === user.id ? 'ml-auto bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700'}`}>{String(message.payload?.content || '')}<p className={`mt-1 text-[10px] ${message.actorId === user.id ? 'text-indigo-100' : 'text-slate-400'}`}>{formatDate(message.createdAt, language)}</p></div>) : <p className="py-8 text-center text-xs text-slate-400">{isAr ? 'ابدأ المحادثة المهنية.' : 'Commencez la conversation professionnelle.'}</p>}</div><form onSubmit={handleSendMessage} className="flex items-end gap-2"><textarea value={messageDraft} onChange={event => setMessageDraft(event.target.value)} rows={2} maxLength={1000} placeholder={ui.messagePlaceholder} className="min-h-[44px] flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs outline-none focus:border-indigo-500" /><button type="submit" disabled={!messageDraft.trim() || submitting} className="rounded-xl bg-indigo-600 p-3 text-white disabled:opacity-40" aria-label={ui.sendMessage}><Send className="h-4 w-4" /></button></form></div> : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">{isAr ? 'اختر مديراً لبدء محادثة.' : 'Choisissez un Directeur pour commencer.'}</div>}</section>;
+    }
+    return null;
   };
 
   return (
@@ -817,11 +1096,11 @@ export default function Community() {
         </section>
 
         <AnimatePresence initial={false}>{showProfileEditor && renderProfileEditor()}</AnimatePresence>
-        <div className="mobile-scroll-x sticky top-20 z-20 mb-5 flex gap-2 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-md shadow-slate-900/5 backdrop-blur-md"><button type="button" onClick={() => setActiveView('feed')} className={`rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'feed' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>{ui.home}</button><button type="button" onClick={() => { setActiveView('profile'); setSelectedProfileId(user.id); }} className={`rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'profile' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>{ui.myProfile}</button><button type="button" onClick={() => setActiveView('reposts')} className={`rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'reposts' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>{ui.myReposts}</button><div className="ml-auto hidden items-center gap-2 px-3 text-xs font-semibold text-slate-400 lg:flex"><Users className="h-4 w-4" />{profiles.length} {isAr ? 'ملف ظاهر' : `profil${profiles.length > 1 ? 's' : ''} visible${profiles.length > 1 ? 's' : ''}`}</div></div>
+        <div className="mobile-scroll-x sticky top-20 z-20 mb-5 flex gap-2 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-md shadow-slate-900/5 backdrop-blur-md"><button type="button" onClick={() => setActiveView('feed')} className={`rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'feed' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>{ui.home}</button><button type="button" onClick={() => { setActiveView('profile'); setSelectedProfileId(user.id); }} className={`rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'profile' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>{ui.myProfile}</button><button type="button" onClick={() => setActiveView('reposts')} className={`rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'reposts' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>{ui.myReposts}</button><button type="button" onClick={() => setActiveView('saved')} className={`inline-flex items-center gap-1 rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'saved' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}><Bookmark className="h-4 w-4" />{ui.saved}</button><button type="button" onClick={() => setActiveView('notifications')} className={`inline-flex items-center gap-1 rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'notifications' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}><BellRing className="h-4 w-4" />{ui.notifications}{unreadSocialNotifications.length > 0 && <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] text-white">{unreadSocialNotifications.length}</span>}</button><button type="button" onClick={() => setActiveView('messages')} className={`inline-flex items-center gap-1 rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'messages' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}><MessageCircle className="h-4 w-4" />{ui.messages}</button><div className="ml-auto hidden items-center gap-2 px-3 text-xs font-semibold text-slate-400 lg:flex"><Users className="h-4 w-4" />{profiles.length} {isAr ? 'ملف ظاهر' : `profil${profiles.length > 1 ? 's' : ''} visibles`}</div></div>
 
         <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between gap-3"><div><p className="text-[11px] font-black uppercase tracking-wider text-violet-600">{ui.moments}</p><p className="mt-1 text-xs font-semibold text-slate-500">{ui.momentsSubtitle}</p></div><Sparkles className="h-5 w-5 text-orange-400" /></div><div className="mobile-scroll-x mt-4 flex gap-3 pb-1"><button type="button" onClick={() => { setSelectedProfileId(user.id); setActiveView('profile'); }} className="flex w-20 shrink-0 flex-col items-center gap-1.5 text-center"><div className="rounded-full bg-gradient-to-br from-orange-400 via-violet-600 to-indigo-700 p-0.5"><Avatar profile={currentProfile} size="md" /></div><span className="w-full truncate text-[11px] font-black text-slate-700">{ui.you}</span></button>{profiles.filter(profile => profile.id !== user.id).slice(0, 8).map(profile => <button type="button" key={profile.id} onClick={() => { setSelectedProfileId(profile.id); setActiveView('profile'); }} className="flex w-20 shrink-0 flex-col items-center gap-1.5 text-center"><div className={`rounded-full p-0.5 ${profile.isPlatform ? 'bg-gradient-to-br from-orange-400 to-rose-500' : 'bg-gradient-to-br from-violet-500 to-indigo-600'}`}><Avatar profile={profile} size="md" /></div><span className="w-full truncate text-[11px] font-black text-slate-700">{profile.name}</span></button>)}</div></div>
 
-        {activeView === 'profile' && selectedProfile ? renderPublicProfile(selectedProfile) : (
+        {activeView === 'profile' && selectedProfile ? renderPublicProfile(selectedProfile) : activeView === 'saved' || activeView === 'notifications' || activeView === 'messages' ? renderSocialUtilityView() : (
         <div className="grid min-w-0 gap-5 lg:grid-cols-[240px_minmax(0,640px)_280px] lg:items-start">
           <aside className="space-y-4 lg:sticky lg:top-24">
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="h-20 bg-gradient-to-br from-slate-950 via-indigo-900 to-violet-700" /><div className="px-4 pb-4"><div className="-mt-8"><Avatar profile={currentProfile} size="lg" /></div><h2 className="mt-3 flex min-w-0 flex-wrap items-center gap-2 break-words text-base font-black text-slate-900">{currentProfile.name}{currentProfile.estCertifie && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700"><Check className="h-3 w-3" />{currentProfile.isPlatform ? (isAr ? 'رسمي' : 'Officiel') : (isAr ? 'موثّقة' : 'Certifiée')}</span>}</h2><p className="mt-0.5 break-words text-xs font-semibold text-slate-500">{currentProfile.nomCreche}</p><p className="mt-3 line-clamp-3 text-xs leading-5 text-slate-500">{currentProfile.bio || ui.addPresentation}</p>{!isAdmin && <button type="button" onClick={() => { setSelectedProfileId(user.id); setActiveView('profile'); setShowProfileEditor(true); }} className="mt-4 w-full rounded-xl border border-indigo-200 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-50">{ui.myProfile}</button>}</div></div>
@@ -830,23 +1109,18 @@ export default function Community() {
           </aside>
 
           <main className="min-w-0 space-y-5">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex min-w-0 items-center gap-3"><Avatar profile={currentProfile} size="md" /><button type="button" onClick={openComposer} className="flex-1 rounded-xl bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-400 hover:bg-indigo-50 hover:text-indigo-600">{isAdmin ? ui.whatAdmin : ui.whatDirector}</button></div><div className="mt-3 grid grid-cols-1 min-[420px]:grid-cols-3 gap-2 border-t border-slate-100 pt-3"><button type="button" onClick={openComposer} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-xs font-black text-slate-500 hover:bg-slate-50"><ImageIcon className="h-4 w-4 text-emerald-500" />{ui.photoActivity}</button><button type="button" onClick={openComposer} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-xs font-black text-slate-500 hover:bg-slate-50"><BriefcaseBusiness className="h-4 w-4 text-indigo-500" />{ui.opportunity}</button><button type="button" onClick={openComposer} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-xs font-black text-slate-500 hover:bg-slate-50"><Tag className="h-4 w-4 text-amber-500" />{ui.announcement}</button></div></div>
+            {showComposer ? renderComposer() : <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex min-w-0 items-center gap-3"><Avatar profile={currentProfile} size="md" /><button type="button" onClick={openComposer} className="flex-1 rounded-xl bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-400 hover:bg-indigo-50 hover:text-indigo-600">{isAdmin ? ui.whatAdmin : ui.whatDirector}</button></div><div className="mt-3 grid grid-cols-1 min-[420px]:grid-cols-3 gap-2 border-t border-slate-100 pt-3"><button type="button" onClick={openComposer} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-xs font-black text-slate-500 hover:bg-slate-50"><ImageIcon className="h-4 w-4 text-emerald-500" />{ui.photoActivity}</button><button type="button" onClick={openComposer} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-xs font-black text-slate-500 hover:bg-slate-50"><BriefcaseBusiness className="h-4 w-4 text-indigo-500" />{ui.opportunity}</button><button type="button" onClick={openComposer} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-xs font-black text-slate-500 hover:bg-slate-50"><Tag className="h-4 w-4 text-amber-500" />{ui.announcement}</button></div></div>}
             <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-black text-slate-900">{activeView === 'reposts' ? ui.myReposts : activeView === 'profile' ? ui.myProfile : ui.feed}</h2><p className="text-xs text-slate-500">{filteredPosts.length} {isAr ? 'منشور' : `publication${filteredPosts.length > 1 ? 's' : ''}`}</p></div><label className="inline-flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 focus-within:border-indigo-500"><Tag className="h-3.5 w-3.5 shrink-0 text-indigo-500" /><select value={activeCategory} onChange={event => setActiveCategory(event.target.value as CommunityPostCategory | 'tous')} aria-label={isAr ? 'تصفية حسب الفئة' : 'Filtrer par catégorie'} className="min-w-0 max-w-[190px] bg-transparent outline-none">{categories.map(category => <option key={category.value} value={category.value}>{isAr ? category.ar : category.fr}</option>)}</select></label></div>
             {filteredPosts.length ? filteredPosts.map(renderPost) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center"><Sparkles className="mx-auto h-8 w-8 text-indigo-400" /><h3 className="mt-3 text-base font-black text-slate-800">{ui.noPosts}</h3><p className="mt-1 text-sm text-slate-500">{ui.noPostsDesc}</p><button type="button" onClick={openComposer} className="mt-4 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-black text-white">{ui.createPost}</button></div>}
           </main>
 
           <aside className="space-y-4 lg:sticky lg:top-24">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between"><h3 className="text-sm font-black text-slate-900">{ui.profilesDiscover}</h3><Users className="h-4 w-4 text-indigo-500" /></div><div className="mt-3 space-y-3">{profiles.filter(profile => profile.id !== user.id).slice(0, 4).map(profile => <button type="button" key={profile.id} onClick={() => { setSelectedProfileId(profile.id); setActiveView('profile'); }} className="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-slate-50"><Avatar profile={profile} size="sm" /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-black text-slate-800">{profile.name}</span><span className="block truncate text-[11px] font-semibold text-slate-500">{profile.nomCreche || 'Crèche'}</span></span><ChevronRight className="h-4 w-4 text-slate-300" /></button>)}{profiles.length <= 1 && <p className="text-xs leading-5 text-slate-500">{ui.profilesEmpty}</p>}</div></div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between gap-2"><h3 className="text-sm font-black text-slate-900">{ui.discover}</h3><Users className="h-4 w-4 text-indigo-500" /></div><label className="mt-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><Search className="h-3.5 w-3.5 shrink-0 text-slate-400" /><input value={profileSearch} onChange={event => setProfileSearch(event.target.value)} placeholder={ui.searchProfiles} className="min-w-0 w-full bg-transparent text-xs outline-none placeholder:text-slate-400" /></label><div className="mt-3 space-y-3">{filteredProfiles.filter(profile => profile.id !== user.id).slice(0, 6).map(profile => <div key={profile.id} className="flex min-w-0 items-center gap-2 rounded-xl p-2 hover:bg-slate-50"><button type="button" onClick={() => { setSelectedProfileId(profile.id); setActiveView('profile'); }} className="flex min-w-0 flex-1 items-center gap-3 text-left"><Avatar profile={profile} size="sm" /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-black text-slate-800">{profile.name}</span><span className="block truncate text-[11px] font-semibold text-slate-500">{profile.nomCreche || (isAr ? 'حضانة' : 'Crèche')}</span></span></button><button type="button" onClick={() => void handleToggleFollow(profile)} className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] font-black ${followingIds.has(profile.id) ? 'bg-indigo-50 text-indigo-700' : 'border border-slate-200 text-slate-600 hover:bg-indigo-50'}`} aria-label={`${followingIds.has(profile.id) ? ui.following : ui.follow} ${profile.name}`}>{followingIds.has(profile.id) ? <UserCheck className="h-3 w-3" /> : <UserPlus className="h-3 w-3" />}{followingIds.has(profile.id) ? ui.following : ui.follow}</button></div>)}{filteredProfiles.filter(profile => profile.id !== user.id).length === 0 && <p className="text-xs leading-5 text-slate-500">{ui.profilesEmpty}</p>}</div></div>
             <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-700 p-5 text-white shadow-lg shadow-indigo-700/20"><ShieldCheck className="h-6 w-6" /><h3 className="mt-3 text-base font-black">{ui.verifiedNetwork}</h3><p className="mt-2 text-xs leading-5 text-indigo-100">{ui.verifiedNetworkDesc}</p></div>
           </aside>
         </div>)}
       </div>
 
-      <AnimatePresence>
-        {showComposer && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={event => { if (event.target === event.currentTarget) setShowComposer(false); }} role="dialog" aria-modal="true" aria-labelledby="community-composer-title" className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 p-4 pt-16 sm:pt-20"><motion.form initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} onSubmit={handleSubmitPost} className="max-h-[calc(100vh-5rem)] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-5 md:p-7"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-wider text-indigo-600">{ui.newPost}</p><h2 id="community-composer-title" className="mt-1 text-lg sm:text-xl font-black text-slate-900">{isAr ? 'شارك مع شبكتك' : 'Partager avec votre réseau'}</h2></div><button type="button" onClick={() => setShowComposer(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100"><X className="h-5 w-5" /></button></div><div className="mt-5 flex items-center gap-3 rounded-xl bg-slate-50 p-3"><Avatar profile={currentProfile} size="sm" /><div><p className="text-sm font-black text-slate-800">{authorName}</p><p className="text-xs font-semibold text-slate-500">{crecheName}</p></div></div><div className="mt-5 grid gap-4 md:grid-cols-2"><label className="text-xs font-black text-slate-600">{isAr ? 'الفئة' : 'Catégorie'}<select value={form.categorie} onChange={event => setForm(current => ({ ...current, categorie: event.target.value as CommunityPostCategory }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500">{categories.filter(item => item.value !== 'tous').map(item => <option key={item.value} value={item.value}>{isAr ? item.ar : item.fr}</option>)}</select></label><label className="text-xs font-black text-slate-600">{isAr ? 'العنوان' : 'Titre'}<input value={form.titre} onChange={event => setForm(current => ({ ...current, titre: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder={isAr ? 'عنوان المنشور' : 'Titre de votre publication'} /></label><label className="text-xs font-black text-slate-600 md:col-span-2">{isAr ? 'رسالتك' : 'Votre message'}<textarea required rows={5} maxLength={3000} value={form.contenu} onChange={event => setForm(current => ({ ...current, contenu: event.target.value }))} className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none focus:border-indigo-500" placeholder={isAr ? 'شارك فكرة أو نشاطاً أو فرصة...' : 'Partagez une idée, une activité, une opportunité...'} /></label>{postImageUrl && <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 md:col-span-2"><img src={postImageUrl} alt="Aperçu de la publication" className="max-h-64 w-full object-cover" /><button type="button" onClick={() => setPostImageUrl('')} className="absolute right-2 top-2 rounded-full bg-slate-950/75 p-2 text-white hover:bg-slate-950" aria-label="Supprimer l’image"><X className="h-4 w-4" /></button></div>}{postImageError && <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 md:col-span-2" role="alert">{postImageError}</p>}<label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-black text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 md:col-span-2"><ImageIcon className="h-4 w-4 text-emerald-500" />{isAr ? 'إضافة صورة' : 'Ajouter une photo'}<input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={event => void handlePostImageUpload(event)} /></label><label className="text-xs font-black text-slate-600">{ui.city}<input value={form.ville} onChange={event => setForm(current => ({ ...current, ville: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="Alger" /></label><label className="text-xs font-black text-slate-600">{ui.contact}<input value={form.contact} onChange={event => setForm(current => ({ ...current, contact: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder={isAr ? 'هاتف أو رابط' : 'Téléphone ou lien'} /></label></div><div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={() => setShowComposer(false)} className="rounded-xl px-4 py-3 text-sm font-black text-slate-500 hover:bg-slate-100">{ui.cancel}</button><button type="submit" disabled={submitting || !form.contenu.trim()} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-50">{submitting ? (isAr ? 'جارٍ النشر...' : 'Publication...') : ui.publish}</button></div></motion.form></motion.div>}
-
-
-      </AnimatePresence>
     </div>
   );
 }
