@@ -31,7 +31,8 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useDb } from '../contexts/DbContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { CommunityPost, CommunityPostCategory, UserAccount } from '../types';
+import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
+import { CommunityComment, CommunityPost, CommunityPostCategory, UserAccount } from '../types';
 
 const categories: Array<{ value: CommunityPostCategory | 'tous'; fr: string; ar: string; color: string }> = [
   { value: 'tous', fr: 'Tout le fil', ar: 'كل المنشورات', color: 'bg-slate-100 text-slate-700' },
@@ -42,6 +43,147 @@ const categories: Array<{ value: CommunityPostCategory | 'tous'; fr: string; ar:
   { value: 'formation', fr: 'Formations', ar: 'التكوين', color: 'bg-purple-50 text-purple-700' },
   { value: 'partenariat', fr: 'Partenariats', ar: 'الشراكات', color: 'bg-cyan-50 text-cyan-700' },
 ];
+
+const uiCopy = {
+  fr: {
+    home: 'Accueil',
+    myProfile: 'Mon profil',
+    myReposts: 'Mes republications',
+    moments: 'Moments du réseau',
+    momentsSubtitle: 'Découvrez les Directeurs et les crèches de votre réseau.',
+    you: 'Vous',
+    newPost: 'Nouvelle publication',
+    whatDirector: 'Quoi de neuf dans votre crèche ?',
+    whatAdmin: 'Quoi de neuf avec Rawdha+ ?',
+    photoActivity: 'Photo / activité',
+    opportunity: 'Opportunité',
+    announcement: 'Annonce',
+    feed: 'Fil d’actualité',
+    profilesDiscover: 'Profils à découvrir',
+    profilesEmpty: 'Les profils apparaîtront ici au fur et à mesure des publications de votre réseau.',
+    verifiedNetwork: 'Réseau vérifié',
+    verifiedNetworkDesc: 'Les Directeurs peuvent présenter leur crèche, partager leurs pratiques et retrouver facilement les publications d’un auteur.',
+    explore: 'Explorer',
+    allPosts: 'Tout le fil',
+    noPosts: 'Aucune publication ici',
+    noPostsDesc: 'Commencez une conversation avec votre réseau professionnel.',
+    createPost: 'Créer une publication',
+    backToFeed: 'Retour au fil',
+    about: 'À propos',
+    platformIdentity: 'Identité de la plateforme',
+    certification: 'Certification',
+    registeredChildren: 'enfants enregistrés',
+    officialAccount: 'Compte officiel Rawdha+',
+    officialVerified: 'Compte officiel vérifié de Rawdha+',
+    verifiedBadge: 'Badge vérifié actif',
+    publish: 'Publier',
+    cancel: 'Annuler',
+    comments: 'commentaires',
+    comment: 'commentaire',
+    reposts: 'republications',
+    repost: 'republication',
+    likes: 'J’aime',
+    commentAction: 'Commenter',
+    repostAction: 'Republier',
+    contact: 'Contact :',
+    masked: 'Masquée',
+    hide: 'Masquer',
+    restore: 'Réafficher',
+    writeComment: 'Écrire un commentaire...',
+    publicProfile: 'Profil public',
+    professionalIdentity: 'Construisez votre identité professionnelle',
+    profileHelp: 'Modifiez directement les informations visibles lorsque quelqu’un ouvre votre profil depuis une publication.',
+    collapseForm: 'Réduire le formulaire',
+    firstName: 'Prénom',
+    lastName: 'Nom',
+    daycareName: 'Nom de la crèche',
+    profilePhoto: 'Photo de profil',
+    daycareLogo: 'Logo de la crèche',
+    choosePhoto: 'Choisir une photo',
+    chooseLogo: 'Choisir un logo',
+    replace: 'Remplacer',
+    remove: 'Supprimer',
+    city: 'Ville',
+    phone: 'Téléphone',
+    website: 'Site web',
+    presentation: 'Présentation',
+    saveProfile: 'Enregistrer le profil',
+    saving: 'Enregistrement...',
+    loading: 'Chargement...',
+    noProfilePresentation: 'Ce Directeur n’a pas encore ajouté de présentation.',
+    addPresentation: 'Ajoutez une présentation professionnelle à votre profil.',
+    noProfilePosts: 'Aucune publication pour le moment.',
+  },
+  ar: {
+    home: 'الرئيسية',
+    myProfile: 'ملفي الشخصي',
+    myReposts: 'إعادة نشري',
+    moments: 'لحظات من الشبكة',
+    momentsSubtitle: 'اكتشف مدراء ودور الحضانة في شبكتك.',
+    you: 'أنت',
+    newPost: 'منشور جديد',
+    whatDirector: 'ما الجديد في حضانتك؟',
+    whatAdmin: 'ما الجديد مع Rawdha+؟',
+    photoActivity: 'صورة / نشاط',
+    opportunity: 'فرصة',
+    announcement: 'إعلان',
+    feed: 'آخر المنشورات',
+    profilesDiscover: 'ملفات مقترحة',
+    profilesEmpty: 'ستظهر الملفات هنا مع نشر المزيد من المنشورات في شبكتك.',
+    verifiedNetwork: 'شبكة موثوقة',
+    verifiedNetworkDesc: 'يمكن للمدراء تقديم حضاناتهم ومشاركة خبراتهم والعثور بسهولة على منشورات كل عضو.',
+    explore: 'استكشف',
+    allPosts: 'كل المنشورات',
+    noPosts: 'لا توجد منشورات هنا',
+    noPostsDesc: 'ابدأ محادثة مع شبكتك المهنية.',
+    createPost: 'إنشاء منشور',
+    backToFeed: 'العودة إلى المنشورات',
+    about: 'نبذة',
+    platformIdentity: 'هوية المنصة',
+    certification: 'الشهادة',
+    registeredChildren: 'أطفال مسجلون',
+    officialAccount: 'الحساب الرسمي لـ Rawdha+',
+    officialVerified: 'الحساب الرسمي الموثّق لـ Rawdha+',
+    verifiedBadge: 'شارة التوثيق مفعّلة',
+    publish: 'نشر',
+    cancel: 'إلغاء',
+    comments: 'تعليقات',
+    comment: 'تعليق',
+    reposts: 'إعادات نشر',
+    repost: 'إعادة نشر',
+    likes: 'إعجاب',
+    commentAction: 'تعليق',
+    repostAction: 'إعادة نشر',
+    contact: 'للتواصل:',
+    masked: 'مخفي',
+    hide: 'إخفاء',
+    restore: 'إظهار',
+    writeComment: 'اكتب تعليقاً...',
+    publicProfile: 'الملف العام',
+    professionalIdentity: 'أنشئ هويتك المهنية',
+    profileHelp: 'عدّل المعلومات التي تظهر عندما يفتح أحدهم ملفك من منشور.',
+    collapseForm: 'تصغير النموذج',
+    firstName: 'الاسم الأول',
+    lastName: 'اللقب',
+    daycareName: 'اسم الحضانة',
+    profilePhoto: 'الصورة الشخصية',
+    daycareLogo: 'شعار الحضانة',
+    choosePhoto: 'اختيار صورة',
+    chooseLogo: 'اختيار شعار',
+    replace: 'استبدال',
+    remove: 'حذف',
+    city: 'المدينة',
+    phone: 'الهاتف',
+    website: 'الموقع الإلكتروني',
+    presentation: 'نبذة تعريفية',
+    saveProfile: 'حفظ الملف',
+    saving: 'جارٍ الحفظ...',
+    loading: 'جارٍ التحميل...',
+    noProfilePresentation: 'لم يضف هذا المدير نبذة تعريفية بعد.',
+    addPresentation: 'أضف نبذة مهنية إلى ملفك.',
+    noProfilePosts: 'لا توجد منشورات حالياً.',
+  },
+} as const;
 
 const emptyForm = {
   categorie: 'activite' as CommunityPostCategory,
@@ -153,9 +295,9 @@ function Avatar({ profile, size = 'md' }: { profile: PublicProfile; size?: 'sm' 
   }, [profile.avatarUrl, profile.logoUrl]);
 
   return (
-    <div className={`${sizes[size]} relative flex shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-500 font-black text-white shadow-sm`}>
+    <div className={`${sizes[size]} relative flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-500 font-black text-white shadow-sm`}>
       {profile.avatarUrl && !avatarBroken ? <img src={profile.avatarUrl} alt={profile.name} onError={() => setAvatarBroken(true)} className="h-full w-full object-cover" /> : initials}
-      {profile.logoUrl && !logoBroken && <img src={profile.logoUrl} alt="Logo de la crèche" onError={() => setLogoBroken(true)} className="absolute bottom-0 right-0 h-5 w-5 rounded-md border-2 border-white bg-white object-contain" />}
+      {profile.logoUrl && profile.logoUrl !== profile.avatarUrl && !profile.isPlatform && !logoBroken && <img src={profile.logoUrl} alt="Logo de la crèche" onError={() => setLogoBroken(true)} className="absolute bottom-0 right-0 h-5 w-5 rounded-full border-2 border-white bg-white object-contain" />}
     </div>
   );
 }
@@ -163,6 +305,7 @@ function Avatar({ profile, size = 'md' }: { profile: PublicProfile; size?: 'sm' 
 export default function Community() {
   const { user, creche, updateProfile } = useAuth();
   const { language } = useLanguage();
+  const { confirm } = useConfirmDialog();
   const {
     communityPosts,
     communityComments,
@@ -179,6 +322,7 @@ export default function Community() {
   } = useDb();
 
   const isAr = language === 'ar';
+  const ui = isAr ? uiCopy.ar : uiCopy.fr;
   const isAdmin = user?.role === 'admin';
   const registeredChildrenCount = enfants.length;
   const certificationChildrenCount = isAdmin ? 30 : Math.max(registeredChildrenCount, user?.certificationEnfants || 0);
@@ -210,6 +354,30 @@ export default function Community() {
     logoUrl: user?.logoUrl || creche?.logoUrl || '',
     siteWeb: user?.siteWeb || '',
   });
+
+  useEffect(() => {
+    if (!showComposer) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowComposer(false);
+    };
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showComposer]);
+
+  useEffect(() => {
+    if (!openMenu) return undefined;
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest('[data-community-menu]')) setOpenMenu(null);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [openMenu]);
 
   useEffect(() => {
     setProfileForm({
@@ -299,9 +467,10 @@ export default function Community() {
   const filteredPosts = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return [...communityPosts]
+      .filter(post => isAdmin || post.statut !== 'masquee')
       .filter(post => activeCategory === 'tous' || post.categorie === activeCategory)
       .filter(post => activeView !== 'profile' || post.authorId === (selectedProfileId || user?.id))
-      .filter(post => activeView !== 'reposts' || Boolean(post.originalPostId))
+      .filter(post => activeView !== 'reposts' || (Boolean(post.originalPostId) && post.authorId === user?.id))
       .filter(post => {
         if (!normalizedSearch) return true;
         return [post.authorName, post.nomCreche, post.titre, post.contenu, post.ville]
@@ -309,13 +478,18 @@ export default function Community() {
           .some(value => String(value).toLowerCase().includes(normalizedSearch));
       })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [communityPosts, activeCategory, activeView, search, selectedProfileId, user?.id]);
+  }, [communityPosts, activeCategory, activeView, search, selectedProfileId, user?.id, isAdmin]);
 
   if (!user || (!isAdmin && user.role !== 'directeur')) return null;
 
   const canManagePost = (post: CommunityPost) => isAdmin || post.authorId === user.id;
   const authorName = currentProfile.name;
   const crecheName = currentProfile.nomCreche || user.nomCreche || creche?.nom || (isAr ? 'روضة' : 'Crèche');
+
+  const openComposer = () => {
+    setOpenMenu(null);
+    setShowComposer(true);
+  };
 
   const handlePostImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -405,6 +579,41 @@ export default function Community() {
     }
   };
 
+  const handleDeletePost = async (post: CommunityPost) => {
+    const accepted = await confirm({
+      title: isAr ? 'حذف المنشور' : 'Supprimer la publication',
+      message: isAr ? 'هل تريد حذف هذا المنشور نهائياً؟' : 'Voulez-vous supprimer définitivement cette publication ?',
+      confirmLabel: isAr ? 'حذف' : 'Supprimer',
+      cancelLabel: ui.cancel,
+      variant: 'danger',
+    });
+    if (!accepted || submitting) return;
+    setSubmitting(true);
+    try {
+      await deleteCommunityPost(post.id);
+      setOpenMenu(null);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteComment = async (comment: CommunityComment) => {
+    const accepted = await confirm({
+      title: isAr ? 'حذف التعليق' : 'Supprimer le commentaire',
+      message: isAr ? 'هل تريد حذف هذا التعليق نهائياً؟' : 'Voulez-vous supprimer définitivement ce commentaire ?',
+      confirmLabel: isAr ? 'حذف' : 'Supprimer',
+      cancelLabel: ui.cancel,
+      variant: 'danger',
+    });
+    if (!accepted || submitting) return;
+    setSubmitting(true);
+    try {
+      await deleteCommunityComment(comment.id);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleComment = async (post: CommunityPost) => {
     const content = (commentDrafts[post.id] || '').trim();
     if (!content || submitting) return;
@@ -470,41 +679,41 @@ export default function Community() {
             <button type="button" onClick={() => { setSelectedProfileId(profile.id); setActiveView('profile'); }} className="flex min-w-0 items-center gap-3 text-left">
               <Avatar profile={profile} size="md" />
               <span className="min-w-0">
-                <span className="flex items-center gap-1.5 truncate text-sm font-black text-slate-900 hover:text-indigo-700">{profile.name}{profile.estCertifie ? <Check className="h-4 w-4 shrink-0 rounded-full bg-emerald-600 p-0.5 text-white" /> : <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-black text-slate-500">En cours</span>}</span>
-                <span className="mt-0.5 flex items-center gap-1 truncate text-xs font-semibold text-slate-500"><Building2 className="h-3.5 w-3.5" />{profile.nomCreche || 'Crèche'}{profile.ville ? ` · ${profile.ville}` : ''}</span>
-                <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Clock3 className="h-3 w-3" />{formatDate(post.createdAt, language)}</span>
+                <span className="flex min-w-0 flex-wrap items-center gap-1.5 break-words text-sm font-black text-slate-900 hover:text-indigo-700">{profile.name}{profile.estCertifie ? <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black text-emerald-700"><Check className="h-3 w-3" />{profile.isPlatform ? ui.officialAccount : ui.verifiedBadge}</span> : <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-black text-slate-500">{isAr ? 'قيد التحقق' : 'En cours'}</span>}</span>
+                <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1 text-xs font-semibold text-slate-500"><Building2 className="h-3.5 w-3.5 shrink-0" /><span className="break-words">{profile.nomCreche || (isAr ? 'حضانة' : 'Crèche')}{profile.ville ? ` · ${profile.ville}` : ''}</span></span>
+                <span className="mt-1 flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-slate-400"><Clock3 className="h-3 w-3 shrink-0" />{formatDate(post.createdAt, language)}</span>
               </span>
             </button>
-            <div className="relative">
-              <button type="button" onClick={() => setOpenMenu(openMenu === post.id ? null : post.id)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><MoreHorizontal className="h-5 w-5" /></button>
-              {openMenu === post.id && <div className="absolute right-0 top-10 z-20 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
-                {canManagePost(post) && <button type="button" onClick={() => { setOpenMenu(null); void deleteCommunityPost(post.id); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" />{isAr ? 'حذف' : 'Supprimer'}</button>}
-                {isAdmin && <button type="button" onClick={() => { setOpenMenu(null); void updateCommunityPost(post.id, { statut: post.statut === 'masquee' ? 'publie' : 'masquee' }); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-600 hover:bg-slate-50"><ShieldCheck className="h-4 w-4" />{post.statut === 'masquee' ? 'Réafficher' : 'Masquer'}</button>}
+            <div className="relative" data-community-menu>
+              <button type="button" onClick={() => setOpenMenu(openMenu === post.id ? null : post.id)} aria-haspopup="menu" aria-expanded={openMenu === post.id} aria-label={isAr ? 'خيارات المنشور' : 'Options de la publication'} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><MoreHorizontal className="h-5 w-5" /></button>
+              {openMenu === post.id && <div role="menu" aria-label={isAr ? 'خيارات المنشور' : 'Options de la publication'} className="absolute right-0 top-10 z-20 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+                {canManagePost(post) && <button type="button" onClick={() => { void handleDeletePost(post); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" />{isAr ? 'حذف' : 'Supprimer'}</button>}
+                {isAdmin && <button type="button" onClick={() => { setOpenMenu(null); void updateCommunityPost(post.id, { statut: post.statut === 'masquee' ? 'publie' : 'masquee' }); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-600 hover:bg-slate-50"><ShieldCheck className="h-4 w-4" />{post.statut === 'masquee' ? ui.restore : ui.hide}</button>}
               </div>}
             </div>
           </div>
 
-          <div className="mt-4 flex items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${category?.color || 'bg-slate-100 text-slate-700'}`}><Tag className="mr-1 inline h-3 w-3" />{categoryLabel(post.categorie, language)}</span>{post.statut === 'masquee' && <span className="rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-black text-rose-700">Masquée</span>}</div>
+          <div className="mt-4 flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${category?.color || 'bg-slate-100 text-slate-700'}`}><Tag className="mr-1 inline h-3 w-3" />{categoryLabel(post.categorie, language)}</span>{post.statut === 'masquee' && <span className="rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-black text-rose-700">{ui.masked}</span>}</div>
           {post.titre && <h3 className="mt-3 text-lg font-black text-slate-900">{post.titre}</h3>}
           {post.contenu && <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">{post.contenu}</p>}
           {post.imageUrls?.[0] && <div className="mt-4 overflow-hidden rounded-2xl border border-slate-100 bg-slate-50"><img src={post.imageUrls[0]} alt={post.titre || (isAr ? 'صورة المنشور' : 'Image de la publication')} className="max-h-[520px] w-full object-cover" loading="lazy" /></div>}
-          {post.contact && <div className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-600"><span className="font-black text-slate-800">Contact : </span>{post.contact}</div>}
+          {post.contact && <div className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-600"><span className="font-black text-slate-800">{ui.contact} </span>{post.contact}</div>}
 
           {original && <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex min-w-0 items-center gap-3"><Avatar profile={originalProfile!} size="sm" /><div><p className="text-xs font-black text-slate-800">{original.authorName || 'Directeur'}</p><p className="text-[11px] font-semibold text-slate-500">{original.nomCreche || 'Crèche'}</p></div></div>
+            <div className="flex min-w-0 items-center gap-3"><Avatar profile={originalProfile!} size="sm" /><div><p className="text-xs font-black text-slate-800">{original.authorName || (isAr ? 'مدير' : 'Directeur')}</p><p className="text-[11px] font-semibold text-slate-500">{original.nomCreche || (isAr ? 'حضانة' : 'Crèche')}</p></div></div>
             {original.titre && <p className="mt-3 text-sm font-black text-slate-800">{original.titre}</p>}
             <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">{original.contenu || ''}</p>
           </div>}
 
-          <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-3 text-xs font-bold text-slate-400"><span>{reactionCount(post.id)} J’aime</span><span>{comments.length} commentaire{comments.length > 1 ? 's' : ''} · {communityPosts.filter(item => item.originalPostId === post.id).length} republication{communityPosts.filter(item => item.originalPostId === post.id).length > 1 ? 's' : ''}</span></div>
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs font-bold text-slate-400"><span aria-live="polite">{reactionCount(post.id)} {ui.likes}</span><span>{comments.length} {comments.length > 1 ? ui.comments : ui.comment} · {communityPosts.filter(item => item.originalPostId === post.id).length} {communityPosts.filter(item => item.originalPostId === post.id).length > 1 ? ui.reposts : ui.repost}</span></div>
           <div className="mt-2 grid grid-cols-1 min-[420px]:grid-cols-3 gap-1 border-t border-slate-100 pt-2">
-            <button type="button" onClick={() => void toggleCommunityReaction(post.id)} className={`inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-xs font-black transition ${isLiked(post.id) ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50 hover:text-indigo-700'}`}><ThumbsUp className={`h-4 w-4 ${isLiked(post.id) ? 'fill-current' : ''}`} />J’aime</button>
-            <button type="button" onClick={() => setExpandedComments(current => ({ ...current, [post.id]: !current[post.id] }))} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-xs font-black text-slate-500 hover:bg-slate-50 hover:text-indigo-700"><MessageCircle className="h-4 w-4" />Commenter</button>
-            <button type="button" onClick={() => void handleRepost(post)} disabled={submitting} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-xs font-black text-slate-500 hover:bg-slate-50 hover:text-indigo-700 disabled:opacity-50"><Repeat2 className="h-4 w-4" />Republier</button>
+            <button type="button" aria-pressed={isLiked(post.id)} onClick={() => void toggleCommunityReaction(post.id)} className={`inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-xs font-black transition ${isLiked(post.id) ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50 hover:text-indigo-700'}`}><ThumbsUp className={`h-4 w-4 ${isLiked(post.id) ? 'fill-current' : ''}`} />{ui.likes}</button>
+            <button type="button" onClick={() => setExpandedComments(current => ({ ...current, [post.id]: !current[post.id] }))} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-xs font-black text-slate-500 hover:bg-slate-50 hover:text-indigo-700"><MessageCircle className="h-4 w-4" />{ui.commentAction}</button>
+            <button type="button" onClick={() => void handleRepost(post)} disabled={submitting} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-xs font-black text-slate-500 hover:bg-slate-50 hover:text-indigo-700 disabled:opacity-50"><Repeat2 className="h-4 w-4" />{ui.repostAction}</button>
           </div>
           <AnimatePresence initial={false}>{expandedComments[post.id] && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden"><div className="mt-3 space-y-2 rounded-2xl bg-slate-50 p-3">
-            {comments.map(comment => <div key={comment.id} className="flex items-start gap-2 rounded-xl bg-white p-3"><Avatar profile={{ id: comment.authorId, name: comment.authorName, avatarUrl: comment.authorAvatarUrl, logoUrl: comment.authorLogoUrl, nomCreche: comment.nomCreche }} size="sm" /><div className="min-w-0 flex-1"><p className="text-xs font-black text-slate-800">{comment.authorName}<span className="ml-1 font-medium text-slate-400">· {comment.nomCreche}</span></p><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-600">{comment.contenu}</p><p className="mt-1 text-[10px] text-slate-400">{formatDate(comment.createdAt, language)}</p></div>{(isAdmin || comment.authorId === user.id) && <button type="button" onClick={() => void deleteCommunityComment(comment.id)} className="rounded-lg p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500"><Trash2 className="h-3.5 w-3.5" /></button>}</div>)}
-            <div className="flex items-end gap-2"><Avatar profile={currentProfile} size="sm" /><textarea value={commentDrafts[post.id] || ''} onChange={event => setCommentDrafts(current => ({ ...current, [post.id]: event.target.value }))} rows={1} maxLength={1000} className="min-h-[42px] flex-1 resize-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-indigo-500" placeholder="Écrire un commentaire..." /><button type="button" onClick={() => void handleComment(post)} disabled={!commentDrafts[post.id]?.trim() || submitting} className="rounded-xl bg-indigo-600 p-3 text-white hover:bg-indigo-700 disabled:opacity-40"><Send className="h-4 w-4" /></button></div>
+            {comments.map(comment => <div key={comment.id} className="flex items-start gap-2 rounded-xl bg-white p-3"><Avatar profile={{ id: comment.authorId, name: comment.authorName, avatarUrl: comment.authorAvatarUrl, logoUrl: comment.authorLogoUrl, nomCreche: comment.nomCreche }} size="sm" /><div className="min-w-0 flex-1"><p className="text-xs font-black text-slate-800">{comment.authorName}<span className="ml-1 font-medium text-slate-400">· {comment.nomCreche}</span></p><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-600">{comment.contenu}</p><p className="mt-1 text-[10px] text-slate-400">{formatDate(comment.createdAt, language)}</p></div>{(isAdmin || comment.authorId === user.id) && <button type="button" onClick={() => void handleDeleteComment(comment)} className="rounded-lg p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500"><Trash2 className="h-3.5 w-3.5" /></button>}</div>)}
+            <div className="flex items-end gap-2"><Avatar profile={currentProfile} size="sm" /><textarea value={commentDrafts[post.id] || ''} onChange={event => setCommentDrafts(current => ({ ...current, [post.id]: event.target.value }))} rows={1} maxLength={1000} className="min-h-[42px] flex-1 resize-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-indigo-500" placeholder={ui.writeComment} /><button type="button" onClick={() => void handleComment(post)} disabled={!commentDrafts[post.id]?.trim() || submitting} className="rounded-xl bg-indigo-600 p-3 text-white hover:bg-indigo-700 disabled:opacity-40"><Send className="h-4 w-4" /></button></div>
           </div></motion.div>}</AnimatePresence>
         </div>
       </article>
@@ -521,45 +730,45 @@ export default function Community() {
       <form onSubmit={handleSaveProfile} className="p-4 sm:p-5 md:p-7">
         <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 md:flex-row md:items-start md:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-wider text-indigo-600">Profil public</p>
-            <h2 className="mt-1 text-xl sm:text-2xl font-black text-slate-900">Construisez votre identité professionnelle</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Modifiez directement les informations visibles lorsque quelqu’un ouvre votre profil depuis une publication.</p>
+            <p className="text-xs font-black uppercase tracking-wider text-indigo-600">{ui.publicProfile}</p>
+            <h2 className="mt-1 text-xl sm:text-2xl font-black text-slate-900">{ui.professionalIdentity}</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">{ui.profileHelp}</p>
           </div>
           <button type="button" onClick={() => setShowProfileEditor(false)} className="inline-flex items-center justify-center gap-2 self-start rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50">
             <ChevronDown className="h-4 w-4 rotate-180" />
-            Réduire le formulaire
+            {ui.collapseForm}
           </button>
         </div>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <label className="text-xs font-black text-slate-600">Prénom<input required value={profileForm.prenom} onChange={event => setProfileForm(current => ({ ...current, prenom: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" /></label>
-          <label className="text-xs font-black text-slate-600">Nom<input required value={profileForm.nom} onChange={event => setProfileForm(current => ({ ...current, nom: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" /></label>
-          <label className="text-xs font-black text-slate-600 md:col-span-2">Nom de la crèche<input value={profileForm.nomCreche} onChange={event => setProfileForm(current => ({ ...current, nomCreche: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" /></label>
+          <label className="text-xs font-black text-slate-600">{ui.firstName}<input required value={profileForm.prenom} onChange={event => setProfileForm(current => ({ ...current, prenom: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" /></label>
+          <label className="text-xs font-black text-slate-600">{ui.lastName}<input required value={profileForm.nom} onChange={event => setProfileForm(current => ({ ...current, nom: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" /></label>
+          <label className="text-xs font-black text-slate-600 md:col-span-2">{ui.daycareName}<input value={profileForm.nomCreche} onChange={event => setProfileForm(current => ({ ...current, nomCreche: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" /></label>
 
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="flex min-w-0 items-center gap-3">
               <div className="h-16 w-16 overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-500 text-center text-xl font-black leading-[4rem] text-white">{profileForm.avatarUrl ? <img src={profileForm.avatarUrl} alt="Aperçu de la photo de profil" className="h-full w-full object-cover" /> : `${profileForm.prenom?.[0] || ''}${profileForm.nom?.[0] || ''}`.toUpperCase() || 'R+'}</div>
-              <div className="min-w-0 flex-1"><p className="text-xs font-black text-slate-700">Photo de profil</p><p className="mt-1 text-[11px] leading-4 text-slate-500">JPG, PNG ou WEBP. L’image est optimisée automatiquement.</p><div className="mt-2 flex flex-wrap gap-2"><label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-[11px] font-black text-white hover:bg-indigo-700"><ImageIcon className="h-3.5 w-3.5" />{profileImageUploading === 'avatar' ? 'Chargement...' : profileForm.avatarUrl ? 'Remplacer' : 'Choisir une photo'}<input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={event => void handleProfileImageUpload(event, 'avatarUrl')} disabled={profileImageUploading !== null} /></label>{profileForm.avatarUrl && <button type="button" onClick={() => setProfileForm(current => ({ ...current, avatarUrl: '' }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-600 hover:bg-slate-100">Supprimer</button>}</div></div>
+              <div className="min-w-0 flex-1"><p className="text-xs font-black text-slate-700">{ui.profilePhoto}</p><p className="mt-1 text-[11px] leading-4 text-slate-500">JPG, PNG ou WEBP. L’image est optimisée automatiquement.</p><div className="mt-2 flex flex-wrap gap-2"><label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-[11px] font-black text-white hover:bg-indigo-700"><ImageIcon className="h-3.5 w-3.5" />{profileImageUploading === 'avatar' ? ui.loading : profileForm.avatarUrl ? ui.replace : ui.choosePhoto}<input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={event => void handleProfileImageUpload(event, 'avatarUrl')} disabled={profileImageUploading !== null} /></label>{profileForm.avatarUrl && <button type="button" onClick={() => setProfileForm(current => ({ ...current, avatarUrl: '' }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-600 hover:bg-slate-100">{ui.remove}</button>}</div></div>
             </div>
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border-2 border-white bg-white shadow-sm">{profileForm.logoUrl ? <img src={profileForm.logoUrl} alt="Aperçu du logo de la crèche" className="h-full w-full object-contain" /> : <Building2 className="h-7 w-7 text-slate-300" />}</div>
-              <div className="min-w-0 flex-1"><p className="text-xs font-black text-slate-700">Logo de la crèche</p><p className="mt-1 text-[11px] leading-4 text-slate-500">Ajoutez le logo visible sur votre profil et vos publications.</p><div className="mt-2 flex flex-wrap gap-2"><label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[11px] font-black text-white hover:bg-violet-700"><Building2 className="h-3.5 w-3.5" />{profileImageUploading === 'logo' ? 'Chargement...' : profileForm.logoUrl ? 'Remplacer' : 'Choisir un logo'}<input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={event => void handleProfileImageUpload(event, 'logoUrl')} disabled={profileImageUploading !== null} /></label>{profileForm.logoUrl && <button type="button" onClick={() => setProfileForm(current => ({ ...current, logoUrl: '' }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-600 hover:bg-slate-100">Supprimer</button>}</div></div>
+              <div className="min-w-0 flex-1"><p className="text-xs font-black text-slate-700">{ui.daycareLogo}</p><p className="mt-1 text-[11px] leading-4 text-slate-500">Ajoutez le logo visible sur votre profil et vos publications.</p><div className="mt-2 flex flex-wrap gap-2"><label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[11px] font-black text-white hover:bg-violet-700"><Building2 className="h-3.5 w-3.5" />{profileImageUploading === 'logo' ? ui.loading : profileForm.logoUrl ? ui.replace : ui.chooseLogo}<input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={event => void handleProfileImageUpload(event, 'logoUrl')} disabled={profileImageUploading !== null} /></label>{profileForm.logoUrl && <button type="button" onClick={() => setProfileForm(current => ({ ...current, logoUrl: '' }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-600 hover:bg-slate-100">{ui.remove}</button>}</div></div>
             </div>
           </div>
 
           {profileImageError && <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 md:col-span-2" role="alert">{profileImageError}</p>}
-          <label className="text-xs font-black text-slate-600">Ville<input value={profileForm.ville} onChange={event => setProfileForm(current => ({ ...current, ville: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" /></label>
-          <label className="text-xs font-black text-slate-600">Téléphone<input value={profileForm.telephone} onChange={event => setProfileForm(current => ({ ...current, telephone: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" /></label>
-          <label className="text-xs font-black text-slate-600 md:col-span-2">Site web<input value={profileForm.siteWeb} onChange={event => setProfileForm(current => ({ ...current, siteWeb: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="https://..." /></label>
-          <label className="text-xs font-black text-slate-600 md:col-span-2">Présentation<textarea rows={4} maxLength={500} value={profileForm.bio} onChange={event => setProfileForm(current => ({ ...current, bio: event.target.value }))} className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none focus:border-indigo-500" placeholder="Présentez votre parcours et votre crèche..." /></label>
+          <label className="text-xs font-black text-slate-600">{ui.city}<input value={profileForm.ville} onChange={event => setProfileForm(current => ({ ...current, ville: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" /></label>
+          <label className="text-xs font-black text-slate-600">{ui.phone}<input value={profileForm.telephone} onChange={event => setProfileForm(current => ({ ...current, telephone: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" /></label>
+          <label className="text-xs font-black text-slate-600 md:col-span-2">{ui.website}<input value={profileForm.siteWeb} onChange={event => setProfileForm(current => ({ ...current, siteWeb: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="https://..." /></label>
+          <label className="text-xs font-black text-slate-600 md:col-span-2">{ui.presentation}<textarea rows={4} maxLength={500} value={profileForm.bio} onChange={event => setProfileForm(current => ({ ...current, bio: event.target.value }))} className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none focus:border-indigo-500" placeholder="Présentez votre parcours et votre crèche..." /></label>
         </div>
 
         <div className="mt-6 flex flex-col-reverse gap-2 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
-          <button type="button" onClick={() => setShowProfileEditor(false)} className="rounded-xl px-4 py-3 text-sm font-black text-slate-500 hover:bg-slate-100">Annuler</button>
-          <button type="submit" disabled={profileSaving} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-50">{profileSaving ? 'Enregistrement...' : 'Enregistrer le profil'}</button>
+          <button type="button" onClick={() => setShowProfileEditor(false)} className="rounded-xl px-4 py-3 text-sm font-black text-slate-500 hover:bg-slate-100">{ui.cancel}</button>
+          <button type="submit" disabled={profileSaving} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-50">{profileSaving ? ui.saving : ui.saveProfile}</button>
         </div>
       </form>
     </motion.section>
@@ -579,14 +788,14 @@ export default function Community() {
           <div className="h-32 bg-gradient-to-br from-slate-950 via-indigo-900 to-violet-700 md:h-44" />
           <div className="px-4 pb-5 sm:px-5 sm:pb-6 md:px-8">
             <div className="-mt-12 flex flex-col gap-4 md:-mt-14 md:flex-row md:items-end md:justify-between">
-              <div className="flex items-end gap-4"><Avatar profile={profile} size="lg" /><div className="pb-1"><div className="flex flex-wrap items-center gap-2"><h2 className="text-lg sm:text-xl font-black text-slate-900">{profile.name}</h2>{profile.estCertifie ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700"><Check className="h-3 w-3" />{profile.isPlatform ? (isAr ? 'الحساب الرسمي لـ Rawdha+' : 'Compte officiel Rawdha+') : (isAr ? 'حضانة موثّقة' : 'Crèche certifiée')}</span> : <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-700">Certification en cours</span>}</div><p className="mt-1 flex items-center gap-1 text-sm font-semibold text-slate-500"><Building2 className="h-4 w-4" />{profile.nomCreche || 'Crèche'}{profile.ville ? ` · ${profile.ville}` : ''}</p></div></div>
-              {isOwnProfile && !profile.isPlatform && <button type="button" onClick={() => setShowProfileEditor(true)} className="rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-xs font-black text-indigo-700 hover:bg-indigo-50">Modifier mon profil</button>}
+              <div className="flex items-end gap-4"><Avatar profile={profile} size="lg" /><div className="pb-1"><div className="flex flex-wrap items-center gap-2"><h2 className="text-lg sm:text-xl font-black text-slate-900">{profile.name}</h2>{profile.estCertifie ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700"><Check className="h-3 w-3" />{profile.isPlatform ? ui.officialAccount : (isAr ? 'حضانة موثّقة' : 'Crèche certifiée')}</span> : <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-700">{isAr ? 'التحقق قيد التقدم' : 'Certification en cours'}</span>}</div><p className="mt-1 flex min-w-0 flex-wrap items-center gap-1 text-sm font-semibold text-slate-500"><Building2 className="h-4 w-4 shrink-0" /><span className="break-words">{profile.nomCreche || (isAr ? 'حضانة' : 'Crèche')}{profile.ville ? ` · ${profile.ville}` : ''}</span></p></div></div>
+              {isOwnProfile && !profile.isPlatform && <button type="button" onClick={() => setShowProfileEditor(true)} className="rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-xs font-black text-indigo-700 hover:bg-indigo-50">{ui.myProfile}</button>}
             </div>
-            <div className="mt-5 grid gap-4 md:grid-cols-[1fr_220px]"><div className="rounded-2xl border border-slate-200 bg-slate-50 p-5"><h3 className="text-sm font-black text-slate-900">À propos</h3><p className="mt-2 text-sm leading-6 text-slate-600">{profile.bio || 'Ce directeur n’a pas encore ajouté de présentation.'}</p><div className="mt-4 space-y-2 text-xs font-semibold text-slate-500">{profile.ville && <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-indigo-500" />{profile.ville}</p>}{profile.telephone && <p className="flex items-center gap-2"><BriefcaseBusiness className="h-4 w-4 text-indigo-500" />{profile.telephone}</p>}{profile.siteWeb && <a href={profile.siteWeb} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-indigo-600 hover:underline"><Globe2 className="h-4 w-4" />{profile.siteWeb}</a>}</div></div><div className="rounded-2xl border border-slate-200 bg-slate-50 p-5"><p className="text-xs font-black uppercase tracking-wider text-slate-400">{profile.isPlatform ? (isAr ? 'هوية المنصة' : 'Identité de la plateforme') : (isAr ? 'الشهادة' : 'Certification')}</p><p className="mt-3 text-2xl font-black text-slate-900">{childCount} / 30</p><p className="text-xs font-semibold text-slate-500">enfants enregistrés</p><div className="mt-3 h-2 overflow-hidden rounded-full bg-white"><div className={`h-full rounded-full ${profile.estCertifie ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${Math.min(100, (childCount / 30) * 100)}%` }} /></div><p className="mt-4 text-xs font-semibold text-slate-500">{profile.isPlatform ? (isAr ? 'الحساب الرسمي الموثّق لـ Rawdha+' : 'Compte officiel vérifié de Rawdha+') : profile.estCertifie ? 'Badge vérifié actif' : `Encore ${Math.max(0, 30 - childCount)} enfant${30 - childCount > 1 ? 's' : ''} pour obtenir le badge`}</p><p className="mt-4 text-2xl font-black text-slate-900">{profilePosts.length}</p><p className="text-xs font-semibold text-slate-500">publication{profilePosts.length > 1 ? 's' : ''}</p><p className="mt-4 text-2xl font-black text-slate-900">{repostCount}</p><p className="text-xs font-semibold text-slate-500">republication{repostCount > 1 ? 's' : ''}</p></div></div>
+            <div className="mt-5 grid gap-4 md:grid-cols-[1fr_220px]"><div className="rounded-2xl border border-slate-200 bg-slate-50 p-5"><h3 className="text-sm font-black text-slate-900">{ui.about}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{profile.bio || ui.noProfilePresentation}</p><div className="mt-4 space-y-2 text-xs font-semibold text-slate-500">{profile.ville && <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-indigo-500" />{profile.ville}</p>}{profile.telephone && <p className="flex items-center gap-2"><BriefcaseBusiness className="h-4 w-4 text-indigo-500" />{profile.telephone}</p>}{profile.siteWeb && <a href={profile.siteWeb} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-indigo-600 hover:underline"><Globe2 className="h-4 w-4" />{profile.siteWeb}</a>}</div></div><div className="rounded-2xl border border-slate-200 bg-slate-50 p-5"><p className="text-xs font-black uppercase tracking-wider text-slate-400">{profile.isPlatform ? ui.platformIdentity : ui.certification}</p><p className="mt-3 text-2xl font-black text-slate-900">{childCount} / 30</p><p className="text-xs font-semibold text-slate-500">{ui.registeredChildren}</p><div className="mt-3 h-2 overflow-hidden rounded-full bg-white"><div className={`h-full rounded-full ${profile.estCertifie ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${Math.min(100, (childCount / 30) * 100)}%` }} /></div><p className="mt-4 text-xs font-semibold text-slate-500">{profile.isPlatform ? ui.officialVerified : profile.estCertifie ? ui.verifiedBadge : (isAr ? `أضف ${Math.max(0, 30 - childCount)} طفلاً للحصول على الشارة` : `Encore ${Math.max(0, 30 - childCount)} enfant${30 - childCount > 1 ? 's' : ''} pour obtenir le badge`)}</p><p className="mt-4 text-2xl font-black text-slate-900">{profilePosts.length}</p><p className="text-xs font-semibold text-slate-500">{profilePosts.length} {isAr ? 'منشور' : `publication${profilePosts.length > 1 ? 's' : ''}`}</p><p className="mt-4 text-2xl font-black text-slate-900">{repostCount}</p><p className="text-xs font-semibold text-slate-500">{repostCount} {repostCount > 1 ? ui.reposts : ui.repost}</p></div></div>
           </div>
         </div>
-        <div className="flex items-center justify-between"><div><h2 className="text-lg font-black text-slate-900">Publications de {profile.name}</h2><p className="text-xs text-slate-500">{profilePosts.length} publication{profilePosts.length > 1 ? 's' : ''}</p></div><button type="button" onClick={() => { setSelectedProfileId(null); setActiveView('feed'); }} className="text-xs font-black text-indigo-600 hover:underline">Retour au fil</button></div>
-        <div className="space-y-4">{profilePosts.length ? profilePosts.map(renderPost) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">Aucune publication pour le moment.</div>}</div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-black text-slate-900">{isAr ? `منشورات ${profile.name}` : `Publications de ${profile.name}`}</h2><p className="text-xs text-slate-500">{profilePosts.length} {isAr ? 'منشور' : `publication${profilePosts.length > 1 ? 's' : ''}`}</p></div><button type="button" onClick={() => { setSelectedProfileId(null); setActiveView('feed'); }} className="text-xs font-black text-indigo-600 hover:underline">{ui.backToFeed}</button></div>
+        <div className="space-y-4">{profilePosts.length ? profilePosts.map(renderPost) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">{ui.noProfilePosts}</div>}</div>
       </motion.section>
     );
   };
@@ -604,38 +813,38 @@ export default function Community() {
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{isAr ? 'شارك أفكارك، اكتشف الأنشطة وتواصل مع مدراء دور الحضانة الموثوقة.' : 'Partagez vos idées, découvrez des activités et échangez avec les Directeurs de crèches vérifiées.'}</p>
               <div className="mt-4 flex flex-wrap gap-2 text-[11px] font-bold text-slate-200"><span className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5">{communityPosts.length} {isAr ? 'منشور' : 'publications'}</span><span className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5">{profiles.length} {isAr ? 'ملف' : 'profils'}</span><span className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5">{categories.length - 1} {isAr ? 'مواضيع' : 'thèmes'}</span></div>
             </div>
-            <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-col"><label className="flex min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2.5 text-slate-200 backdrop-blur-sm"><Search className="h-4 w-4 shrink-0 text-slate-300" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder={isAr ? 'ابحث في الشبكة' : 'Rechercher dans le réseau'} className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400 sm:w-56" /></label><button type="button" onClick={() => setShowComposer(true)} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-black text-indigo-700 shadow-lg shadow-black/10 transition hover:bg-violet-50 active:scale-[0.98] sm:w-auto"><Plus className="h-4 w-4" />{isAr ? 'منشور جديد' : 'Nouvelle publication'}</button></div>
+            <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-col"><label className="flex min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2.5 text-slate-200 backdrop-blur-sm"><Search className="h-4 w-4 shrink-0 text-slate-300" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder={isAr ? 'ابحث في الشبكة' : 'Rechercher dans le réseau'} className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400 sm:w-56" /></label><button type="button" onClick={openComposer} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-black text-indigo-700 shadow-lg shadow-black/10 transition hover:bg-violet-50 active:scale-[0.98] sm:w-auto"><Plus className="h-4 w-4" />{isAr ? 'منشور جديد' : 'Nouvelle publication'}</button></div>
           </div>
         </section>
 
         <AnimatePresence initial={false}>{showProfileEditor && renderProfileEditor()}</AnimatePresence>
-        <div className="mobile-scroll-x sticky top-20 z-20 mb-5 flex gap-2 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-md shadow-slate-900/5 backdrop-blur-md"><button type="button" onClick={() => setActiveView('feed')} className={`rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'feed' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>Accueil</button><button type="button" onClick={() => { setActiveView('profile'); setSelectedProfileId(user.id); }} className={`rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'profile' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>Mon profil</button><button type="button" onClick={() => setActiveView('reposts')} className={`rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'reposts' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>Mes republications</button><div className="ml-auto hidden items-center gap-2 px-3 text-xs font-semibold text-slate-400 lg:flex"><Users className="h-4 w-4" />{profiles.length} profil{profiles.length > 1 ? 's' : ''} visible{profiles.length > 1 ? 's' : ''}</div></div>
+        <div className="mobile-scroll-x sticky top-20 z-20 mb-5 flex gap-2 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-md shadow-slate-900/5 backdrop-blur-md"><button type="button" onClick={() => setActiveView('feed')} className={`rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'feed' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>{ui.home}</button><button type="button" onClick={() => { setActiveView('profile'); setSelectedProfileId(user.id); }} className={`rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'profile' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>{ui.myProfile}</button><button type="button" onClick={() => setActiveView('reposts')} className={`rounded-xl px-4 py-2.5 text-sm font-black whitespace-nowrap ${activeView === 'reposts' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>{ui.myReposts}</button><div className="ml-auto hidden items-center gap-2 px-3 text-xs font-semibold text-slate-400 lg:flex"><Users className="h-4 w-4" />{profiles.length} {isAr ? 'ملف ظاهر' : `profil${profiles.length > 1 ? 's' : ''} visible${profiles.length > 1 ? 's' : ''}`}</div></div>
 
-        <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between gap-3"><div><p className="text-[11px] font-black uppercase tracking-wider text-violet-600">{isAr ? 'لحظات من الشبكة' : 'Moments du réseau'}</p><p className="mt-1 text-xs font-semibold text-slate-500">{isAr ? 'اكتشف مدراء ودور الحضانة من حولك.' : 'Découvrez les Directeurs et les crèches de votre réseau.'}</p></div><Sparkles className="h-5 w-5 text-orange-400" /></div><div className="mobile-scroll-x mt-4 flex gap-3 pb-1"><button type="button" onClick={() => { setSelectedProfileId(user.id); setActiveView('profile'); }} className="flex w-20 shrink-0 flex-col items-center gap-1.5 text-center"><div className="rounded-full bg-gradient-to-br from-orange-400 via-violet-600 to-indigo-700 p-0.5"><Avatar profile={currentProfile} size="md" /></div><span className="w-full truncate text-[11px] font-black text-slate-700">{isAr ? 'أنت' : 'Vous'}</span></button>{profiles.filter(profile => profile.id !== user.id).slice(0, 8).map(profile => <button type="button" key={profile.id} onClick={() => { setSelectedProfileId(profile.id); setActiveView('profile'); }} className="flex w-20 shrink-0 flex-col items-center gap-1.5 text-center"><div className={`rounded-full p-0.5 ${profile.isPlatform ? 'bg-gradient-to-br from-orange-400 to-rose-500' : 'bg-gradient-to-br from-violet-500 to-indigo-600'}`}><Avatar profile={profile} size="md" /></div><span className="w-full truncate text-[11px] font-black text-slate-700">{profile.name}</span></button>)}</div></div>
+        <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between gap-3"><div><p className="text-[11px] font-black uppercase tracking-wider text-violet-600">{ui.moments}</p><p className="mt-1 text-xs font-semibold text-slate-500">{ui.momentsSubtitle}</p></div><Sparkles className="h-5 w-5 text-orange-400" /></div><div className="mobile-scroll-x mt-4 flex gap-3 pb-1"><button type="button" onClick={() => { setSelectedProfileId(user.id); setActiveView('profile'); }} className="flex w-20 shrink-0 flex-col items-center gap-1.5 text-center"><div className="rounded-full bg-gradient-to-br from-orange-400 via-violet-600 to-indigo-700 p-0.5"><Avatar profile={currentProfile} size="md" /></div><span className="w-full truncate text-[11px] font-black text-slate-700">{ui.you}</span></button>{profiles.filter(profile => profile.id !== user.id).slice(0, 8).map(profile => <button type="button" key={profile.id} onClick={() => { setSelectedProfileId(profile.id); setActiveView('profile'); }} className="flex w-20 shrink-0 flex-col items-center gap-1.5 text-center"><div className={`rounded-full p-0.5 ${profile.isPlatform ? 'bg-gradient-to-br from-orange-400 to-rose-500' : 'bg-gradient-to-br from-violet-500 to-indigo-600'}`}><Avatar profile={profile} size="md" /></div><span className="w-full truncate text-[11px] font-black text-slate-700">{profile.name}</span></button>)}</div></div>
 
         {activeView === 'profile' && selectedProfile ? renderPublicProfile(selectedProfile) : (
         <div className="grid min-w-0 gap-5 lg:grid-cols-[240px_minmax(0,640px)_280px] lg:items-start">
           <aside className="space-y-4 lg:sticky lg:top-24">
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="h-20 bg-gradient-to-br from-slate-950 via-indigo-900 to-violet-700" /><div className="px-4 pb-4"><div className="-mt-8"><Avatar profile={currentProfile} size="lg" /></div><h2 className="mt-3 flex items-center gap-2 text-base font-black text-slate-900">{currentProfile.name}{currentProfile.estCertifie && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700"><Check className="h-3 w-3" />{currentProfile.isPlatform ? (isAr ? 'رسمي' : 'Officiel') : (isAr ? 'موثّقة' : 'Certifiée')}</span>}</h2><p className="mt-0.5 text-xs font-semibold text-slate-500">{currentProfile.nomCreche}</p><p className="mt-3 line-clamp-3 text-xs leading-5 text-slate-500">{currentProfile.bio || 'Ajoutez une présentation professionnelle à votre profil.'}</p>{!isAdmin && <button type="button" onClick={() => { setSelectedProfileId(user.id); setActiveView('profile'); setShowProfileEditor(true); }} className="mt-4 w-full rounded-xl border border-indigo-200 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-50">Modifier mon profil</button>}</div></div>
-            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-black uppercase tracking-wider text-emerald-700">{isAdmin ? (isAr ? 'حساب المنصة الرسمي' : 'Compte officiel de la plateforme') : 'Certification Rawdha+'}</p><p className="mt-1 text-sm font-black text-slate-900">{isAdmin ? (isAr ? 'Rawdha+ موثّق' : 'Rawdha+ certifié') : isCurrentUserCertified ? 'Compte certifié' : `${Math.min(certificationChildrenCount, 30)} / 30 enfants`}</p></div><ShieldCheck className={`h-5 w-5 ${isCurrentUserCertified ? 'text-emerald-600' : 'text-slate-400'}`} /></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.min(100, (certificationChildrenCount / 30) * 100)}%` }} /></div><p className="mt-2 text-[11px] font-semibold leading-4 text-emerald-800">{isAdmin ? (isAr ? 'شعار Rawdha+ الرسمي وصورة المنصة يظهران على منشوراتك.' : 'Le logo officiel et l’identité de la plateforme apparaissent sur vos publications.') : isCurrentUserCertified ? 'Votre badge vérifié est visible sur vos publications.' : `Ajoutez encore ${Math.max(0, 30 - certificationChildrenCount)} enfant${30 - certificationChildrenCount > 1 ? 's' : ''} enregistré${30 - certificationChildrenCount > 1 ? 's' : ''} pour débloquer le badge.`}</p></div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"><p className="px-2 pb-2 text-[11px] font-black uppercase tracking-wider text-slate-400">Explorer</p>{categories.map(category => <button type="button" key={category.value} onClick={() => { setActiveCategory(category.value); setActiveView('feed'); }} className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-black transition ${activeCategory === category.value && activeView === 'feed' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}><span className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${category.value === 'tous' ? 'bg-slate-400' : category.color.split(' ')[0].replace('bg-', 'bg-')}`} />{isAr ? category.ar : category.fr}</span><ChevronRight className="h-3.5 w-3.5 text-slate-300" /></button>)}</div>
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="h-20 bg-gradient-to-br from-slate-950 via-indigo-900 to-violet-700" /><div className="px-4 pb-4"><div className="-mt-8"><Avatar profile={currentProfile} size="lg" /></div><h2 className="mt-3 flex min-w-0 flex-wrap items-center gap-2 break-words text-base font-black text-slate-900">{currentProfile.name}{currentProfile.estCertifie && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700"><Check className="h-3 w-3" />{currentProfile.isPlatform ? (isAr ? 'رسمي' : 'Officiel') : (isAr ? 'موثّقة' : 'Certifiée')}</span>}</h2><p className="mt-0.5 break-words text-xs font-semibold text-slate-500">{currentProfile.nomCreche}</p><p className="mt-3 line-clamp-3 text-xs leading-5 text-slate-500">{currentProfile.bio || ui.addPresentation}</p>{!isAdmin && <button type="button" onClick={() => { setSelectedProfileId(user.id); setActiveView('profile'); setShowProfileEditor(true); }} className="mt-4 w-full rounded-xl border border-indigo-200 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-50">{ui.myProfile}</button>}</div></div>
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-black uppercase tracking-wider text-emerald-700">{isAdmin ? (isAr ? 'حساب المنصة الرسمي' : 'Compte officiel de la plateforme') : (isAr ? 'شهادة Rawdha+' : 'Certification Rawdha+')}</p><p className="mt-1 text-sm font-black text-slate-900">{isAdmin ? (isAr ? 'Rawdha+ موثّق' : 'Rawdha+ certifié') : isCurrentUserCertified ? (isAr ? 'حساب موثّق' : 'Compte certifié') : `${Math.min(certificationChildrenCount, 30)} / 30 ${isAr ? 'طفلاً' : 'enfants'}`}</p></div><ShieldCheck className={`h-5 w-5 ${isCurrentUserCertified ? 'text-emerald-600' : 'text-slate-400'}`} /></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.min(100, (certificationChildrenCount / 30) * 100)}%` }} /></div><p className="mt-2 text-[11px] font-semibold leading-4 text-emerald-800">{isAdmin ? (isAr ? 'يظهر شعار Rawdha+ وصورة المنصة الرسميان على منشوراتك.' : 'Le logo officiel et l’identité de la plateforme apparaissent sur vos publications.') : isCurrentUserCertified ? (isAr ? 'شارة التوثيق ظاهرة على منشوراتك.' : 'Votre badge vérifié est visible sur vos publications.') : (isAr ? `أضف ${Math.max(0, 30 - certificationChildrenCount)} طفلاً مسجلاً للحصول على الشارة.` : `Ajoutez encore ${Math.max(0, 30 - certificationChildrenCount)} enfant${30 - certificationChildrenCount > 1 ? 's' : ''} enregistré${30 - certificationChildrenCount > 1 ? 's' : ''} pour débloquer le badge.`)}</p></div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"><p className="px-2 pb-2 text-[11px] font-black uppercase tracking-wider text-slate-400">{ui.explore}</p>{categories.map(category => <button type="button" key={category.value} onClick={() => { setActiveCategory(category.value); setActiveView('feed'); }} className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-black transition ${activeCategory === category.value && activeView === 'feed' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}><span className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${category.value === 'tous' ? 'bg-slate-400' : category.color.split(' ')[0].replace('bg-', 'bg-')}`} />{isAr ? category.ar : category.fr}</span><ChevronRight className="h-3.5 w-3.5 text-slate-300" /></button>)}</div>
           </aside>
 
           <main className="min-w-0 space-y-5">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex min-w-0 items-center gap-3"><Avatar profile={currentProfile} size="md" /><button type="button" onClick={() => setShowComposer(true)} className="flex-1 rounded-xl bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-400 hover:bg-indigo-50 hover:text-indigo-600">{isAdmin ? (isAr ? 'ما الجديد مع Rawdha+؟' : 'Quoi de neuf avec Rawdha+ ?') : (isAr ? 'ما الجديد في حضانتك؟' : 'Quoi de neuf dans votre crèche ?')}</button></div><div className="mt-3 grid grid-cols-1 min-[420px]:grid-cols-3 gap-2 border-t border-slate-100 pt-3"><button type="button" onClick={() => setShowComposer(true)} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-xs font-black text-slate-500 hover:bg-slate-50"><ImageIcon className="h-4 w-4 text-emerald-500" />Photo / activité</button><button type="button" onClick={() => setShowComposer(true)} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-xs font-black text-slate-500 hover:bg-slate-50"><BriefcaseBusiness className="h-4 w-4 text-indigo-500" />Opportunité</button><button type="button" onClick={() => setShowComposer(true)} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-xs font-black text-slate-500 hover:bg-slate-50"><Tag className="h-4 w-4 text-amber-500" />Annonce</button></div></div>
-            <div className="flex items-center justify-between"><div><h2 className="text-lg font-black text-slate-900">{activeView === 'reposts' ? 'Mes republications' : activeView === 'profile' ? 'Mes publications' : 'Fil d’actualité'}</h2><p className="text-xs text-slate-500">{filteredPosts.length} publication{filteredPosts.length > 1 ? 's' : ''}</p></div><button type="button" onClick={() => setActiveCategory(activeCategory === 'tous' ? 'activite' : 'tous')} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50"><Tag className="h-3.5 w-3.5" />{categoryLabel(activeCategory === 'tous' ? 'activite' : activeCategory, language)}<ChevronDown className="h-3.5 w-3.5" /></button></div>
-            {filteredPosts.length ? filteredPosts.map(renderPost) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center"><Sparkles className="mx-auto h-8 w-8 text-indigo-400" /><h3 className="mt-3 text-base font-black text-slate-800">Aucune publication ici</h3><p className="mt-1 text-sm text-slate-500">Commencez une conversation avec votre réseau professionnel.</p><button type="button" onClick={() => setShowComposer(true)} className="mt-4 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-black text-white">Créer une publication</button></div>}
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex min-w-0 items-center gap-3"><Avatar profile={currentProfile} size="md" /><button type="button" onClick={openComposer} className="flex-1 rounded-xl bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-400 hover:bg-indigo-50 hover:text-indigo-600">{isAdmin ? ui.whatAdmin : ui.whatDirector}</button></div><div className="mt-3 grid grid-cols-1 min-[420px]:grid-cols-3 gap-2 border-t border-slate-100 pt-3"><button type="button" onClick={openComposer} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-xs font-black text-slate-500 hover:bg-slate-50"><ImageIcon className="h-4 w-4 text-emerald-500" />{ui.photoActivity}</button><button type="button" onClick={openComposer} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-xs font-black text-slate-500 hover:bg-slate-50"><BriefcaseBusiness className="h-4 w-4 text-indigo-500" />{ui.opportunity}</button><button type="button" onClick={openComposer} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-xs font-black text-slate-500 hover:bg-slate-50"><Tag className="h-4 w-4 text-amber-500" />{ui.announcement}</button></div></div>
+            <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-black text-slate-900">{activeView === 'reposts' ? ui.myReposts : activeView === 'profile' ? ui.myProfile : ui.feed}</h2><p className="text-xs text-slate-500">{filteredPosts.length} {isAr ? 'منشور' : `publication${filteredPosts.length > 1 ? 's' : ''}`}</p></div><label className="inline-flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 focus-within:border-indigo-500"><Tag className="h-3.5 w-3.5 shrink-0 text-indigo-500" /><select value={activeCategory} onChange={event => setActiveCategory(event.target.value as CommunityPostCategory | 'tous')} aria-label={isAr ? 'تصفية حسب الفئة' : 'Filtrer par catégorie'} className="min-w-0 max-w-[190px] bg-transparent outline-none">{categories.map(category => <option key={category.value} value={category.value}>{isAr ? category.ar : category.fr}</option>)}</select></label></div>
+            {filteredPosts.length ? filteredPosts.map(renderPost) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center"><Sparkles className="mx-auto h-8 w-8 text-indigo-400" /><h3 className="mt-3 text-base font-black text-slate-800">{ui.noPosts}</h3><p className="mt-1 text-sm text-slate-500">{ui.noPostsDesc}</p><button type="button" onClick={openComposer} className="mt-4 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-black text-white">{ui.createPost}</button></div>}
           </main>
 
           <aside className="space-y-4 lg:sticky lg:top-24">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between"><h3 className="text-sm font-black text-slate-900">Profils à découvrir</h3><Users className="h-4 w-4 text-indigo-500" /></div><div className="mt-3 space-y-3">{profiles.filter(profile => profile.id !== user.id).slice(0, 4).map(profile => <button type="button" key={profile.id} onClick={() => { setSelectedProfileId(profile.id); setActiveView('profile'); }} className="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-slate-50"><Avatar profile={profile} size="sm" /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-black text-slate-800">{profile.name}</span><span className="block truncate text-[11px] font-semibold text-slate-500">{profile.nomCreche || 'Crèche'}</span></span><ChevronRight className="h-4 w-4 text-slate-300" /></button>)}{profiles.length <= 1 && <p className="text-xs leading-5 text-slate-500">Les profils apparaîtront ici au fur et à mesure des publications de votre réseau.</p>}</div></div>
-            <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-700 p-5 text-white shadow-lg shadow-indigo-700/20"><ShieldCheck className="h-6 w-6" /><h3 className="mt-3 text-base font-black">Réseau vérifié</h3><p className="mt-2 text-xs leading-5 text-indigo-100">Les directeurs peuvent présenter leur crèche, partager leurs pratiques et retrouver facilement les publications d’un auteur.</p></div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between"><h3 className="text-sm font-black text-slate-900">{ui.profilesDiscover}</h3><Users className="h-4 w-4 text-indigo-500" /></div><div className="mt-3 space-y-3">{profiles.filter(profile => profile.id !== user.id).slice(0, 4).map(profile => <button type="button" key={profile.id} onClick={() => { setSelectedProfileId(profile.id); setActiveView('profile'); }} className="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-slate-50"><Avatar profile={profile} size="sm" /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-black text-slate-800">{profile.name}</span><span className="block truncate text-[11px] font-semibold text-slate-500">{profile.nomCreche || 'Crèche'}</span></span><ChevronRight className="h-4 w-4 text-slate-300" /></button>)}{profiles.length <= 1 && <p className="text-xs leading-5 text-slate-500">{ui.profilesEmpty}</p>}</div></div>
+            <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-700 p-5 text-white shadow-lg shadow-indigo-700/20"><ShieldCheck className="h-6 w-6" /><h3 className="mt-3 text-base font-black">{ui.verifiedNetwork}</h3><p className="mt-2 text-xs leading-5 text-indigo-100">{ui.verifiedNetworkDesc}</p></div>
           </aside>
         </div>)}
       </div>
 
       <AnimatePresence>
-        {showComposer && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 p-4 pt-16 sm:pt-20"><motion.form initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} onSubmit={handleSubmitPost} className="max-h-[calc(100vh-5rem)] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-5 md:p-7"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-wider text-indigo-600">Nouvelle publication</p><h2 className="mt-1 text-lg sm:text-xl font-black text-slate-900">Partager avec votre réseau</h2></div><button type="button" onClick={() => setShowComposer(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100"><X className="h-5 w-5" /></button></div><div className="mt-5 flex items-center gap-3 rounded-xl bg-slate-50 p-3"><Avatar profile={currentProfile} size="sm" /><div><p className="text-sm font-black text-slate-800">{authorName}</p><p className="text-xs font-semibold text-slate-500">{crecheName}</p></div></div><div className="mt-5 grid gap-4 md:grid-cols-2"><label className="text-xs font-black text-slate-600">Catégorie<select value={form.categorie} onChange={event => setForm(current => ({ ...current, categorie: event.target.value as CommunityPostCategory }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500">{categories.filter(item => item.value !== 'tous').map(item => <option key={item.value} value={item.value}>{item.fr}</option>)}</select></label><label className="text-xs font-black text-slate-600">Titre<input value={form.titre} onChange={event => setForm(current => ({ ...current, titre: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="Titre de votre publication" /></label><label className="text-xs font-black text-slate-600 md:col-span-2">Votre message<textarea required rows={5} maxLength={3000} value={form.contenu} onChange={event => setForm(current => ({ ...current, contenu: event.target.value }))} className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none focus:border-indigo-500" placeholder="Partagez une idée, une activité, une opportunité..." /></label>{postImageUrl && <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 md:col-span-2"><img src={postImageUrl} alt="Aperçu de la publication" className="max-h-64 w-full object-cover" /><button type="button" onClick={() => setPostImageUrl('')} className="absolute right-2 top-2 rounded-full bg-slate-950/75 p-2 text-white hover:bg-slate-950" aria-label="Supprimer l’image"><X className="h-4 w-4" /></button></div>}{postImageError && <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 md:col-span-2" role="alert">{postImageError}</p>}<label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-black text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 md:col-span-2"><ImageIcon className="h-4 w-4 text-emerald-500" />Ajouter une photo<input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={event => void handlePostImageUpload(event)} /></label><label className="text-xs font-black text-slate-600">Ville<input value={form.ville} onChange={event => setForm(current => ({ ...current, ville: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="Alger" /></label><label className="text-xs font-black text-slate-600">Contact<input value={form.contact} onChange={event => setForm(current => ({ ...current, contact: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="Téléphone ou lien" /></label></div><div className="mt-6 flex justify-end gap-2"><button type="button" onClick={() => setShowComposer(false)} className="rounded-xl px-4 py-3 text-sm font-black text-slate-500 hover:bg-slate-100">Annuler</button><button type="submit" disabled={submitting || !form.contenu.trim()} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-50">{submitting ? 'Publication...' : 'Publier'}</button></div></motion.form></motion.div>}
+        {showComposer && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={event => { if (event.target === event.currentTarget) setShowComposer(false); }} role="dialog" aria-modal="true" aria-labelledby="community-composer-title" className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 p-4 pt-16 sm:pt-20"><motion.form initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} onSubmit={handleSubmitPost} className="max-h-[calc(100vh-5rem)] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-5 md:p-7"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-wider text-indigo-600">{ui.newPost}</p><h2 id="community-composer-title" className="mt-1 text-lg sm:text-xl font-black text-slate-900">{isAr ? 'شارك مع شبكتك' : 'Partager avec votre réseau'}</h2></div><button type="button" onClick={() => setShowComposer(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100"><X className="h-5 w-5" /></button></div><div className="mt-5 flex items-center gap-3 rounded-xl bg-slate-50 p-3"><Avatar profile={currentProfile} size="sm" /><div><p className="text-sm font-black text-slate-800">{authorName}</p><p className="text-xs font-semibold text-slate-500">{crecheName}</p></div></div><div className="mt-5 grid gap-4 md:grid-cols-2"><label className="text-xs font-black text-slate-600">{isAr ? 'الفئة' : 'Catégorie'}<select value={form.categorie} onChange={event => setForm(current => ({ ...current, categorie: event.target.value as CommunityPostCategory }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500">{categories.filter(item => item.value !== 'tous').map(item => <option key={item.value} value={item.value}>{isAr ? item.ar : item.fr}</option>)}</select></label><label className="text-xs font-black text-slate-600">{isAr ? 'العنوان' : 'Titre'}<input value={form.titre} onChange={event => setForm(current => ({ ...current, titre: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder={isAr ? 'عنوان المنشور' : 'Titre de votre publication'} /></label><label className="text-xs font-black text-slate-600 md:col-span-2">{isAr ? 'رسالتك' : 'Votre message'}<textarea required rows={5} maxLength={3000} value={form.contenu} onChange={event => setForm(current => ({ ...current, contenu: event.target.value }))} className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none focus:border-indigo-500" placeholder={isAr ? 'شارك فكرة أو نشاطاً أو فرصة...' : 'Partagez une idée, une activité, une opportunité...'} /></label>{postImageUrl && <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 md:col-span-2"><img src={postImageUrl} alt="Aperçu de la publication" className="max-h-64 w-full object-cover" /><button type="button" onClick={() => setPostImageUrl('')} className="absolute right-2 top-2 rounded-full bg-slate-950/75 p-2 text-white hover:bg-slate-950" aria-label="Supprimer l’image"><X className="h-4 w-4" /></button></div>}{postImageError && <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 md:col-span-2" role="alert">{postImageError}</p>}<label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-black text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 md:col-span-2"><ImageIcon className="h-4 w-4 text-emerald-500" />{isAr ? 'إضافة صورة' : 'Ajouter une photo'}<input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={event => void handlePostImageUpload(event)} /></label><label className="text-xs font-black text-slate-600">{ui.city}<input value={form.ville} onChange={event => setForm(current => ({ ...current, ville: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="Alger" /></label><label className="text-xs font-black text-slate-600">{ui.contact}<input value={form.contact} onChange={event => setForm(current => ({ ...current, contact: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder={isAr ? 'هاتف أو رابط' : 'Téléphone ou lien'} /></label></div><div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={() => setShowComposer(false)} className="rounded-xl px-4 py-3 text-sm font-black text-slate-500 hover:bg-slate-100">{ui.cancel}</button><button type="submit" disabled={submitting || !form.contenu.trim()} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-50">{submitting ? (isAr ? 'جارٍ النشر...' : 'Publication...') : ui.publish}</button></div></motion.form></motion.div>}
 
 
       </AnimatePresence>
