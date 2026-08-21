@@ -35,6 +35,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
   if (user?.role === 'admin') {
     items = [
       { key: 'comptes', label: 'comptes', icon: User, color: 'text-violet-500' },
+      { key: 'community', label: 'community', icon: Network, color: 'text-violet-400' },
       { key: 'notifications', label: 'notifications', icon: Bell, color: 'text-pink-500' },
       { key: 'communication', label: 'communication', icon: MessageSquareQuote, color: 'text-amber-500' },
       { key: 'parametres', label: 'settings', icon: Settings, color: 'text-slate-500' },

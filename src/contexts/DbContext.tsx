@@ -1037,18 +1037,21 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   const repostCommunityPost = async (sourcePost: CommunityPost, comment?: string) => {
     if (!user) throw new Error('Session requise');
+    const isPlatformAdmin = user.role === 'admin';
     const repostData: Omit<CommunityPost, 'id'> = {
       authorId: user.id,
-      authorName: `${user.prenom || ''} ${user.nom || ''}`.trim() || user.email,
-      authorAvatarUrl: user.avatarUrl || undefined,
-      authorLogoUrl: user.logoUrl || undefined,
-      authorBio: user.bio || undefined,
-      authorVille: user.ville || undefined,
+      authorName: isPlatformAdmin ? 'Rawdha+' : `${user.prenom || ''} ${user.nom || ''}`.trim() || user.email,
+      authorAvatarUrl: isPlatformAdmin ? '/rawdah-logo.png' : user.avatarUrl || undefined,
+      authorLogoUrl: isPlatformAdmin ? '/rawdah-logo.png' : user.logoUrl || undefined,
+      authorBio: isPlatformAdmin
+        ? 'Le compte officiel de Rawdha+ pour accompagner les crèches et partager les meilleures pratiques.'
+        : user.bio || undefined,
+      authorVille: isPlatformAdmin ? 'Algérie' : user.ville || undefined,
       authorSiteWeb: user.siteWeb || undefined,
-      authorEstCertifie: user.estCertifie === true,
-      authorCertificationEnfants: user.certificationEnfants || 0,
+      authorEstCertifie: isPlatformAdmin || user.estCertifie === true,
+      authorCertificationEnfants: isPlatformAdmin ? 30 : user.certificationEnfants || 0,
       crecheId: user.id,
-      nomCreche: user.nomCreche || 'Crèche',
+      nomCreche: isPlatformAdmin ? 'Rawdha+ · Plateforme des crèches' : user.nomCreche || 'Crèche',
       categorie: sourcePost.categorie,
       contenu: comment?.trim() || `Je republie la publication de ${sourcePost.authorName}.`,
       statut: 'publie',
