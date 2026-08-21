@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useDb } from '../contexts/DbContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
+import { useToast } from '../contexts/ToastContext';
 import { setCollectionDocument } from '../supabase';
 import type { DemandeDirecteur } from '../types';
 import { 
@@ -64,6 +66,8 @@ export default function Comptes() {
   const { comptes, enfants, demandesDirecteur, addCompte, updateCompte, deleteCompte, approveDemandeDirecteur, deleteDemandeDirecteur, refreshAll, loading } = useDb();
   const { language, isFrench } = useLanguage();
   const { user: currentUser } = useAuth();
+  const { confirm } = useConfirmDialog();
+  const { showToast } = useToast();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
@@ -158,9 +162,13 @@ export default function Comptes() {
       return;
     }
 
-    const creationConfirmed = window.confirm(isFrench
-      ? `Créer le compte de ${prenom} ${nom}${nomCreche ? ` pour la crèche « ${nomCreche} »` : ''} ? Le compte pourra être activé immédiatement.`
-      : `هل تريد إنشاء حساب ${prenom} ${nom}${nomCreche ? ` للروضة « ${nomCreche} »` : ''}؟ يمكن تفعيل الحساب مباشرة.`);
+    const creationConfirmed = await confirm({
+      title: isFrench ? 'Confirmer la création du compte' : 'تأكيد إنشاء الحساب',
+      message: isFrench
+        ? `Créer le compte de ${prenom} ${nom}${nomCreche ? ` pour la crèche « ${nomCreche} »` : ''} ? Le compte pourra être activé immédiatement.`
+        : `هل تريد إنشاء حساب ${prenom} ${nom}${nomCreche ? ` للروضة « ${nomCreche} »` : ''}؟ يمكن تفعيل الحساب مباشرة.`,
+      confirmLabel: isFrench ? 'Créer le compte' : 'إنشاء الحساب',
+    });
     if (!creationConfirmed) return;
 
     try {
@@ -245,7 +253,13 @@ export default function Comptes() {
     const confirmationText = isFrench
       ? `Refuser la demande de ${demande.prenom} ${demande.nom} et la supprimer définitivement de Rawdha+ et de la base de données ?`
       : `هل تريد رفض طلب ${demande.prenom} ${demande.nom} وحذفه نهائياً من Rawdha+ وقاعدة البيانات؟`;
-    if (!window.confirm(confirmationText)) return;
+    const confirmed = await confirm({
+      title: isFrench ? 'Confirmer le refus' : 'تأكيد الرفض',
+      message: confirmationText,
+      confirmLabel: isFrench ? 'Refuser et supprimer' : 'رفض وحذف',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
 
     try {
       setDecisionLoading(true);
@@ -263,7 +277,10 @@ export default function Comptes() {
   const openWhatsApp = (compte: typeof comptes[number]) => {
     const phone = normalizeWhatsAppNumber(compte.telephone);
     if (!phone) {
-      alert(isFrench ? 'Aucun numéro de téléphone valide n’est enregistré pour ce compte.' : 'لا يوجد رقم هاتف صالح لهذا الحساب.');
+      showToast(
+        isFrench ? 'Aucun numéro de téléphone valide n’est enregistré pour ce compte.' : 'لا يوجد رقم هاتف صالح لهذا الحساب.',
+        'error',
+      );
       return;
     }
 
@@ -276,16 +293,23 @@ export default function Comptes() {
   const handleToggleSubscription = async (id: string, currentStatus: boolean) => {
     const compte = comptes.find(c => c.id === id);
     const name = compte ? `${compte.prenom} ${compte.nom}` : (isFrench ? 'ce directeur' : 'هذا المدير');
-    const confirmed = window.confirm(isFrench
-      ? `${currentStatus ? 'Suspendre' : 'Activer'} l’abonnement de ${name} ?`
-      : `${currentStatus ? 'هل تريد تعليق' : 'هل تريد تفعيل'} اشتراك ${name}؟`);
+    const confirmed = await confirm({
+      title: isFrench ? 'Confirmer la modification de l’abonnement' : 'تأكيد تعديل الاشتراك',
+      message: isFrench
+        ? `${currentStatus ? 'Suspendre' : 'Activer'} l’abonnement de ${name} ?`
+        : `${currentStatus ? 'هل تريد تعليق' : 'هل تريد تفعيل'} اشتراك ${name}؟`,
+      confirmLabel: isFrench ? 'Confirmer' : 'تأكيد',
+    });
     if (!confirmed) return;
 
     try {
       await updateCompte(id, { abonnementActif: !currentStatus });
     } catch (err) {
       console.error('Error updating subscription status:', err);
-      alert((isFrench ? 'Échec de la mise à jour : ' : 'فشل التحديث: ') + (err instanceof Error ? err.message : String(err)));
+      showToast(
+        (isFrench ? 'Échec de la mise à jour : ' : 'فشل التحديث: ') + (err instanceof Error ? err.message : String(err)),
+        'error',
+      );
       await refreshAll(); // ré-affiche l'état réel de la base (annule la mise à jour optimiste ratée)
     }
   };
@@ -293,16 +317,23 @@ export default function Comptes() {
   const handleUpdateEndDate = async (id: string, dateValue: string) => {
     const compte = comptes.find(c => c.id === id);
     const name = compte ? `${compte.prenom} ${compte.nom}` : (isFrench ? 'ce directeur' : 'هذا المدير');
-    const confirmed = window.confirm(isFrench
-      ? `Modifier la date d’expiration de ${name} au ${dateValue} ?`
-      : `هل تريد تغيير تاريخ انتهاء اشتراك ${name} إلى ${dateValue}؟`);
+    const confirmed = await confirm({
+      title: isFrench ? 'Confirmer la date d’expiration' : 'تأكيد تاريخ الانتهاء',
+      message: isFrench
+        ? `Modifier la date d’expiration de ${name} au ${dateValue} ?`
+        : `هل تريد تغيير تاريخ انتهاء اشتراك ${name} إلى ${dateValue}؟`,
+      confirmLabel: isFrench ? 'Enregistrer' : 'حفظ',
+    });
     if (!confirmed) return;
 
     try {
       await updateCompte(id, { dateFinAbonnement: dateValue });
     } catch (err) {
       console.error('Error updating subscription end date:', err);
-      alert((isFrench ? 'Échec de la mise à jour : ' : 'فشل التحديث: ') + (err instanceof Error ? err.message : String(err)));
+      showToast(
+        (isFrench ? 'Échec de la mise à jour : ' : 'فشل التحديث: ') + (err instanceof Error ? err.message : String(err)),
+        'error',
+      );
       await refreshAll();
     }
   };
@@ -312,18 +343,23 @@ export default function Comptes() {
       ? `Êtes-vous sûr de vouloir supprimer le compte de ${name} ?`
       : `هل أنت متأكد من حذف حساب ${name}؟`;
       
-    if (window.confirm(confirmationText)) {
-      try {
-        await deleteCompte(id);
-      } catch (err) {
-        console.error('Error deleting account:', err);
-        // ✅ FIX: on affiche l'erreur au lieu de l'avaler en silence — sinon l'admin
-        // croit que la suppression a marché alors qu'elle a échoué côté serveur.
-        alert(
-          (isFrench ? 'Échec de la suppression : ' : 'فشل الحذف: ') +
-          (err instanceof Error ? err.message : String(err))
-        );
-      }
+    const confirmed = await confirm({
+      title: isFrench ? 'Confirmer la suppression du compte' : 'تأكيد حذف الحساب',
+      message: confirmationText,
+      confirmLabel: isFrench ? 'Supprimer le compte' : 'حذف الحساب',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    try {
+      await deleteCompte(id);
+    } catch (err) {
+      console.error('Error deleting account:', err);
+      showToast(
+        (isFrench ? 'Échec de la suppression : ' : 'فشل الحذف: ') +
+        (err instanceof Error ? err.message : String(err)),
+        'error',
+      );
     }
   };
 

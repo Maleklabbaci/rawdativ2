@@ -11,6 +11,7 @@ import Dashboard from './components/Dashboard';
 import Sidebar from './components/Sidebar';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { ToastContainer } from './components/ToastContainer';
+import { ConfirmProvider } from './contexts/ConfirmDialogContext';
 import {
   clearPushSessionUser,
   registerAndroidPushNotifications,
@@ -413,7 +414,7 @@ function AppContent() {
 
   const whatsappLink = `https://wa.me/213697660969?text=${encodeURIComponent(whatsappMessage)}`;
 
-if (isSubscriptionExpired) {
+if (isSubscriptionExpired && !isPendingApproval) {
     const isAr = language === 'ar';
     return (
       <div className="min-h-screen bg-gradient-to-b from-slate-50 to-indigo-50/40 flex flex-col items-center justify-center p-4 font-sans" dir={isAr ? 'rtl' : 'ltr'}>
@@ -743,7 +744,8 @@ if (isSubscriptionExpired) {
 export default function App() {
   return (
     <LanguageProvider>
-      <ToastProvider>
+      <ConfirmProvider>
+        <ToastProvider>
         <AuthProvider>
           <DbProvider>
             <AppContent />
@@ -751,6 +753,7 @@ export default function App() {
           </DbProvider>
         </AuthProvider>
       </ToastProvider>
+      </ConfirmProvider>
     </LanguageProvider>
   );
 }

@@ -17,6 +17,7 @@ import {
   Clock
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Personnel as PersonnelType } from '../types';
@@ -33,6 +34,7 @@ interface RichPersonnel extends PersonnelType {
 export default function Personnel() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
+  const { confirm } = useConfirmDialog();
 
   const { personnel: allDbPersonnel, classes: allDbClasses, addPersonnel, deletePersonnel } = useDb();
   const { user } = useAuth();
@@ -260,14 +262,17 @@ export default function Personnel() {
                     </span>
                     <button 
                       className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer z-10"
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
-                        const confirmationMsg = isArabic
-                          ? 'هل أنت متأكد من حذف هذا الموظف؟'
-                          : 'Êtes-vous sûr de vouloir supprimer ce membre du personnel ?';
-                        if (window.confirm(confirmationMsg)) {
-                          deletePersonnel(p.id);
-                        }
+                        const confirmed = await confirm({
+                          title: isArabic ? 'تأكيد حذف الموظف' : 'Confirmer la suppression du personnel',
+                          message: isArabic
+                            ? 'سيتم حذف هذا الموظف نهائياً.'
+                            : 'Ce membre du personnel sera supprimé définitivement.',
+                          confirmLabel: isArabic ? 'حذف الموظف' : 'Supprimer le membre',
+                          variant: 'danger',
+                        });
+                        if (confirmed) await deletePersonnel(p.id);
                       }}
                     >
                       <Trash2 size={15} />

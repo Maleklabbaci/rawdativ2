@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { useDb } from '../contexts/DbContext';
 import type { Signalement, SignalementStatut, SignalementType } from '../types';
 
@@ -26,6 +27,7 @@ const signalementStatuses: SignalementStatut[] = ['nouveau', 'en_cours', 'resolu
 export default function CommunicationAdmin() {
   const { user } = useAuth();
   const { language } = useLanguage();
+  const { confirm } = useConfirmDialog();
   const {
     comptes,
     messages,
@@ -111,16 +113,26 @@ export default function CommunicationAdmin() {
     const question = isFrench
       ? 'Supprimer définitivement cet avis ? Cette action est irréversible.'
       : 'هل تريد حذف هذا التقييم نهائياً؟ لا يمكن التراجع عن هذا الإجراء.';
-    if (!window.confirm(question)) return;
-    await deleteAvis(id);
+    const confirmed = await confirm({
+      title: isFrench ? 'Confirmer la suppression de l’avis' : 'تأكيد حذف التقييم',
+      message: question,
+      confirmLabel: isFrench ? 'Supprimer l’avis' : 'حذف التقييم',
+      variant: 'danger',
+    });
+    if (confirmed) await deleteAvis(id);
   };
 
   const handleDeleteSignalement = async (item: Signalement) => {
     const question = isFrench
       ? `Supprimer définitivement « ${item.titre} » ? Cette action est irréversible.`
       : `هل تريد حذف « ${item.titre} » نهائياً؟ لا يمكن التراجع عن هذا الإجراء.`;
-    if (!window.confirm(question)) return;
-    await deleteSignalement(item.id);
+    const confirmed = await confirm({
+      title: isFrench ? 'Confirmer la suppression du signalement' : 'تأكيد حذف البلاغ',
+      message: question,
+      confirmLabel: isFrench ? 'Supprimer le signalement' : 'حذف البلاغ',
+      variant: 'danger',
+    });
+    if (confirmed) await deleteSignalement(item.id);
   };
 
   const handleStatusChange = async (id: string, statut: SignalementStatut) => {

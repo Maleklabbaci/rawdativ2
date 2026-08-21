@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
+import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
+import { useToast } from '../contexts/ToastContext';
 import { supabase } from '../supabase';
 import { Megaphone, Send, Trash2, Users, CheckCheck, Palette, Eye } from 'lucide-react';
 
@@ -19,6 +21,8 @@ const PRESET_ICONS = ['📢', '🎉', '⚠️', '✅', '💡', '🔧', '🎁', '
 export default function Notifications() {
   const { user } = useAuth();
   const { language } = useLanguage();
+  const { confirm } = useConfirmDialog();
+  const { showToast } = useToast();
   const { notifications, comptes, addNotification, deleteNotification } = useDb();
   const isFrench = language === 'fr';
 
@@ -57,9 +61,12 @@ export default function Notifications() {
     if (!title.trim() || !message.trim()) return;
 
     if (ctaLabel.trim() && ctaType === 'link' && ctaUrl.trim() && !/^https?:\/\//i.test(ctaUrl.trim())) {
-      alert(isFrench
-        ? 'Le lien du bouton doit commencer par https:// ou http://.'
-        : 'يجب أن يبدأ رابط الزر بـ https:// أو http://.');
+      showToast(
+        isFrench
+          ? 'Le lien du bouton doit commencer par https:// ou http://.'
+          : 'يجب أن يبدأ رابط الزر بـ https:// أو http://.',
+        'error',
+      );
       return;
     }
 
@@ -68,9 +75,13 @@ export default function Notifications() {
       : (directeurs.find(d => d.id === recipientId)
         ? `${directeurs.find(d => d.id === recipientId)?.prenom} ${directeurs.find(d => d.id === recipientId)?.nom}`
         : (isFrench ? 'le directeur sélectionné' : 'المدير المحدد'));
-    const confirmed = window.confirm(isFrench
-      ? `Envoyer cette annonce à ${recipientLabel} ? Cette action publiera immédiatement le message.`
-      : `هل تريد إرسال هذا الإعلان إلى ${recipientLabel}؟ سيُنشر الإعلان فوراً.`);
+    const confirmed = await confirm({
+      title: isFrench ? 'Confirmer la publication' : 'تأكيد النشر',
+      message: isFrench
+        ? `Envoyer cette annonce à ${recipientLabel} ? Cette action publiera immédiatement le message.`
+        : `هل تريد إرسال هذا الإعلان إلى ${recipientLabel}؟ سيُنشر الإعلان فوراً.`,
+      confirmLabel: isFrench ? 'Publier l’annonce' : 'نشر الإعلان',
+    });
     if (!confirmed) return;
 
     setSending(true);
@@ -138,17 +149,23 @@ export default function Notifications() {
       setTimeout(() => setSuccess(false), 2500);
     } catch (err) {
       console.error('Erreur envoi notification:', err);
-      alert(isFrench ? 'Échec de l\'enregistrement de l\'annonce.' : 'فشل حفظ الإعلان.');
+      showToast(
+        isFrench ? 'Échec de l’enregistrement de l’annonce.' : 'فشل حفظ الإعلان.',
+        'error',
+      );
     } finally {
       setSending(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    const confirmText = isFrench ? 'Supprimer cette annonce ?' : 'حذف هذا الإعلان؟';
-    if (window.confirm(confirmText)) {
-      await deleteNotification(id);
-    }
+    const confirmed = await confirm({
+      title: isFrench ? 'Confirmer la suppression' : 'تأكيد الحذف',
+      message: isFrench ? 'Supprimer cette annonce ?' : 'حذف هذا الإعلان؟',
+      confirmLabel: isFrench ? 'Supprimer l’annonce' : 'حذف الإعلان',
+      variant: 'danger',
+    });
+    if (confirmed) await deleteNotification(id);
   };
 
   return (

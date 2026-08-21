@@ -37,6 +37,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { Enfant, InscriptionLink } from '../types';
 import EnfantDetails from './EnfantDetails';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
+import { useToast } from '../contexts/ToastContext';
 import { motion, AnimatePresence } from 'motion/react';
 import * as QRCode from 'qrcode';
 
@@ -156,6 +158,8 @@ function getDocumentsRequis(enfant?: Partial<Enfant> | null): Record<DocumentKey
 export default function Enfants() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
+  const { confirm } = useConfirmDialog();
+  const { showToast } = useToast();
 
   const {
     enfants: allEnfants,
@@ -171,6 +175,19 @@ export default function Enfants() {
   const enfants = allEnfants
     .filter((e): e is Enfant => Boolean(e && e.id))
     .filter(e => !isDirecteur || e.crecheId === user?.id);
+
+  const handleDeleteEnfant = async (enfant: Enfant) => {
+    const confirmed = await confirm({
+      title: isArabic ? 'تأكيد حذف ملف الطفل' : 'Confirmer la suppression du dossier',
+      message: isArabic
+        ? 'سيتم حذف الطفل وجميع سجلات الحضور والفواتير المرتبطة به. لا يمكن التراجع عن هذا الإجراء.'
+        : 'L’enfant ainsi que ses présences et factures associées seront supprimés. Cette action est irréversible.',
+      confirmLabel: isArabic ? 'حذف نهائياً' : 'Supprimer définitivement',
+      cancelLabel: isArabic ? 'إلغاء' : 'Annuler',
+      variant: 'danger',
+    });
+    if (confirmed) await deleteEnfant(enfant.id);
+  };
   
   const [searchTerm, setSearchTerm] = useState('');
   const [filterGroupe, setFilterGroupe] = useState('Tous');
@@ -304,7 +321,10 @@ export default function Enfants() {
   const handleDocumentFile = (key: DocumentKey, file?: File) => {
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) {
-      alert(isArabic ? 'الملف كبير جداً (الحد الأقصى 2 ميغابايت).' : 'Le fichier est trop volumineux (2 Mo maximum).');
+      showToast(
+        isArabic ? 'الملف كبير جداً (الحد الأقصى 2 ميغابايت).' : 'Le fichier est trop volumineux (2 Mo maximum).',
+        'error',
+      );
       return;
     }
     const reader = new FileReader();
@@ -437,7 +457,7 @@ export default function Enfants() {
       const message = error instanceof Error && error.message === 'too_many_rows'
         ? (isArabic ? 'الملف يحتوي على أكثر من 10000 سطر.' : 'Le fichier dépasse la limite de 10 000 lignes.')
         : (isArabic ? 'تعذر قراءة الملف. استخدم CSV مفصولاً بفاصلة أو فاصلة منقوطة.' : 'Impossible de lire ce fichier. Utilisez un CSV séparé par une virgule ou un point-virgule.');
-      alert(message);
+      showToast(message, 'error');
     } finally {
       setImportingCsv(false);
     }
@@ -482,7 +502,10 @@ export default function Enfants() {
       setImportResult(importResultData);
       setImportPreview(null);
     } catch {
-      alert(isArabic ? 'تعذر حفظ بعض السجلات. يرجى المحاولة مرة أخرى.' : 'L’import a rencontré un problème. Vérifiez votre connexion puis réessayez.');
+      showToast(
+        isArabic ? 'تعذر حفظ بعض السجلات. يرجى المحاولة مرة أخرى.' : 'L’import a rencontré un problème. Vérifiez votre connexion puis réessayez.',
+        'error',
+      );
     } finally {
       setImportingCsv(false);
     }
@@ -491,7 +514,10 @@ export default function Enfants() {
   const handleAjouter = () => {
     if (!formData.nom || !formData.prenom || !formData.dateNaissance || 
         !formData.parentNom || !formData.parentTelephone) {
-      alert(isArabic ? 'يرجى ملء جميع الحقول المطلوبة *' : 'Veuillez remplir tous les champs obligatoires *');
+      showToast(
+        isArabic ? 'يرجى ملء جميع الحقول المطلوبة *' : 'Veuillez remplir tous les champs obligatoires *',
+        'error',
+      );
       return;
     }
 
@@ -979,11 +1005,7 @@ export default function Enfants() {
                           <button 
                             aria-label={isArabic ? 'حذف ملف الطفل' : 'Supprimer le dossier de l’enfant'}
                             title={isArabic ? 'حذف ملف الطفل' : 'Supprimer le dossier de l’enfant'}
-                            onClick={() => {
-                              if (window.confirm(isArabic ? 'هل أنت متأكد من حذف هذا الطفل؟' : 'Êtes-vous sûr de vouloir supprimer cet enfant ?')) {
-                                deleteEnfant(enfant.id);
-                              }
-                            }}
+                            onClick={() => { void handleDeleteEnfant(enfant); }}
                             className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
                           >
                             <Trash2 size={16} />
@@ -1170,11 +1192,7 @@ export default function Enfants() {
                       {enfant.statut === 'Actif' ? <LogOut size={15} /> : <RotateCcw size={15} />}
                     </button>
                     <button 
-                      onClick={() => {
-                        if (window.confirm(isArabic ? 'هل أنت متأكد من حذف هذا الطفل وجميع سجلات الحضور والدفع الخاصة به؟' : 'Êtes-vous sûr de vouloir supprimer cet enfant et l’ensemble de ses rapports d’absences et de factures ?')) {
-                          deleteEnfant(enfant.id);
-                        }
-                      }}
+                      onClick={() => { void handleDeleteEnfant(enfant); }}
                       className="p-3 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl font-bold text-xs transition cursor-pointer"
                       title={isArabic ? 'حذف' : 'Supprimer'}
                     >

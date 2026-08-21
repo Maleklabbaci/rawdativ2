@@ -18,6 +18,7 @@ import {
   MessageCircle
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -75,6 +76,7 @@ interface RichPaiement extends Paiement {
 export default function Paiements() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
+  const { confirm } = useConfirmDialog();
   const { showToast } = useToast();
 
   const { 
@@ -481,13 +483,16 @@ export default function Paiements() {
 
                           <button 
                             className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer" 
-                            onClick={() => {
-                              const confirmationMsg = isArabic
-                                ? 'هل أنت متأكد من حذف هذه الفاتورة؟'
-                                : 'Êtes-vous sûr de vouloir supprimer cette facture ?';
-                              if (window.confirm(confirmationMsg)) {
-                                deletePaiement(p.id);
-                              }
+                            onClick={async () => {
+                              const confirmed = await confirm({
+                                title: isArabic ? 'تأكيد حذف الفاتورة' : 'Confirmer la suppression de la facture',
+                                message: isArabic
+                                  ? 'سيتم حذف هذه الفاتورة نهائياً.'
+                                  : 'Cette facture sera supprimée définitivement.',
+                                confirmLabel: isArabic ? 'حذف الفاتورة' : 'Supprimer la facture',
+                                variant: 'danger',
+                              });
+                              if (confirmed) await deletePaiement(p.id);
                             }}
                             title={isArabic ? 'حذف' : 'Supprimer'}
                           >

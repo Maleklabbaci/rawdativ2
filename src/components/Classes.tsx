@@ -15,6 +15,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { usePagination } from '../hooks/usePagination';
 import { Classe } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -30,6 +31,7 @@ export default function Classes() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
   const { showToast } = useToast();
+  const { confirm: confirmDialog } = useConfirmDialog();
 
   const { classes: allDbClasses, enfants: enfantsData, personnel: personnelData, addClasse, deleteClasse, updateClasse } = useDb();
   const { user } = useAuth();
@@ -117,7 +119,7 @@ export default function Classes() {
     setShowModal(true);
   };
 
-  const handleAjouterOuModifier = useCallback(() => {
+  const handleAjouterOuModifier = useCallback(async () => {
     if (!formData.nom || formData.capacite <= 0) {
       showToast(isArabic ? 'يرجى ملء جميع الحقول' : 'Veuillez remplir tous les champs', 'error');
       return;
@@ -125,11 +127,11 @@ export default function Classes() {
     try {
       if (editingClasseId) {
         // Mode Modification
-        updateClasse(editingClasseId, formData as any);
+        await updateClasse(editingClasseId, formData as any);
         showToast(isArabic ? 'تم تعديل الفصل بنجاح ✅' : 'Classe modifiée avec succès ✅', 'success');
       } else {
         // Mode Ajout standard
-        addClasse({ ...formData, crecheId: isDirecteur ? user!.id : undefined } as any);
+        await addClasse({ ...formData, crecheId: isDirecteur ? user!.id : undefined } as any);
         showToast(isArabic ? 'تمت إضافة الفصل بنجاح ✅' : 'Classe ajoutée avec succès ✅', 'success');
       }
       
@@ -145,22 +147,32 @@ export default function Classes() {
         couleurTheme: 'indigo'
       });
     } catch (error) {
+      if (error instanceof Error && error.message.includes('lecture seule')) return;
       showToast(isArabic ? 'فشل العملية ❌' : 'Erreur lors de l\'opération ❌', 'error');
     }
   }, [formData, addClasse, updateClasse, editingClasseId, isDirecteur, user, showToast, isArabic, personnelData]);
 
-  const handleDeleteClasse = useCallback((id: string) => {
-    if (confirm(isArabic ? 'هل أنت متأكد من حذف هذا الفصل؟' : 'Êtes-vous sûr de vouloir supprimer cette classe ?')) {
-      try {
-        deleteClasse(id);
-        showToast(isArabic ? 'تم حذف الفصل بنجاح ✅' : 'Classe supprimée ✅', 'success');
-        setSelectedClasse(null);
-        setExpandedClasseId(null);
-      } catch (error) {
-        showToast(isArabic ? 'فشل الحذف ❌' : 'Erreur de suppression ❌', 'error');
-      }
+  const handleDeleteClasse = useCallback(async (id: string) => {
+    const confirmed = await confirmDialog({
+      title: isArabic ? 'تأكيد حذف الفصل' : 'Confirmer la suppression de la classe',
+      message: isArabic
+        ? 'سيتم حذف هذا الفصل نهائياً.'
+        : 'Cette classe sera supprimée définitivement.',
+      confirmLabel: isArabic ? 'حذف الفصل' : 'Supprimer la classe',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    try {
+      await deleteClasse(id);
+      showToast(isArabic ? 'تم حذف الفصل بنجاح ✅' : 'Classe supprimée ✅', 'success');
+      setSelectedClasse(null);
+      setExpandedClasseId(null);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('lecture seule')) return;
+      showToast(isArabic ? 'فشل الحذف ❌' : 'Erreur de suppression ❌', 'error');
     }
-  }, [deleteClasse, showToast, isArabic]);
+  }, [confirmDialog, deleteClasse, showToast, isArabic]);
 
   // ===== BULK ADD CHILDREN TO CLASS =====
   const handleBulkAddChildren = useCallback(async () => {

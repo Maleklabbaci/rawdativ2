@@ -16,19 +16,33 @@ import {
   Users,
   Calendar,
   Layers,
-  ArrowLeftRight
+  ArrowLeftRight,
+  MessageCircle,
+  Send
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { Presence } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+
+const normalizeAlgerianWhatsApp = (raw?: string) => {
+  const digits = (raw || '').replace(/\D/g, '');
+  if (!digits) return null;
+  let normalized = digits;
+  if (normalized.startsWith('00213')) normalized = normalized.slice(2);
+  else if (normalized.startsWith('0') && normalized.length === 10) normalized = `213${normalized.slice(1)}`;
+  else if (normalized.length === 9 && /^[567]/.test(normalized)) normalized = `213${normalized}`;
+  return /^213[567]\d{8}$/.test(normalized) ? normalized : null;
+};
 
 export default function PresencesPage() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
   const { showToast } = useToast();
+  const { confirm } = useConfirmDialog();
 
   const { 
     presences: allDbPresences, 
@@ -75,6 +89,7 @@ export default function PresencesPage() {
   const [selectedEnfantForAbsence, setSelectedEnfantForAbsence] = useState<string | null>(null);
   const [showPresenceDetailsModal, setShowPresenceDetailsModal] = useState(false);
   const [selectedEnfantForPresenceDetails, setSelectedEnfantForPresenceDetails] = useState<string | null>(null);
+  const [parentNotificationPreview, setParentNotificationPreview] = useState<{ phone: string; childName: string; message: string } | null>(null);
 
   // Formulaires Modals
   const [absenceForm, setAbsenceForm] = useState({
@@ -200,6 +215,45 @@ export default function PresencesPage() {
   };
 
   // Retirer un pointage (remettre à non-pointé)
+  const handleDeleteAbsence = async (absence: Presence) => {
+    const confirmed = await confirm({
+      title: isArabic ? 'تأكيد حذف الغياب' : 'Confirmer la suppression de l’absence',
+      message: isArabic
+        ? 'سيتم حذف تسجيل الغياب هذا نهائياً.'
+        : 'Cet enregistrement d’absence sera supprimé définitivement.',
+      confirmLabel: isArabic ? 'حذف الغياب' : 'Supprimer l’absence',
+      variant: 'danger',
+    });
+    if (confirmed) await deletePresence(absence.id);
+  };
+
+  const handleParentNotification = (presence: Presence) => {
+    const enfant = enfantsData.find(item => item.id === presence.enfantId);
+    const parent = enfant?.parents
+      .map(item => ({ ...item, phone: normalizeAlgerianWhatsApp(item.telephone) }))
+      .find(item => Boolean(item.phone));
+    if (!enfant || !parent?.phone) {
+      showToast(
+        isArabic ? 'لا يوجد رقم واتساب صالح لولي الطفل.' : 'Aucun numéro WhatsApp valide n’est enregistré pour ce parent.',
+        'error',
+      );
+      return;
+    }
+
+    const dateLabel = new Intl.DateTimeFormat(isArabic ? 'ar-DZ' : 'fr-FR', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    }).format(new Date(`${presence.date}T12:00:00`));
+    const childName = `${enfant.prenom} ${enfant.nom}`;
+    const message = presence.statut === 'Présent'
+      ? (isArabic
+        ? `السلام عليكم، نعلمكم بأن تسجيل حضور ${childName} ليوم ${dateLabel} تم بنجاح. وقت الدخول: ${presence.heureArrivee || 'غير محدد'}، وقت الانصراف: ${presence.heureDepart || 'غير محدد'}. إدارة الحضانة.`
+        : `Bonjour, le pointage de ${childName} pour le ${dateLabel} est enregistré comme présent. Arrivée : ${presence.heureArrivee || 'non précisée'} ; départ : ${presence.heureDepart || 'non précisé'}.\n\nLa direction de la crèche.`)
+      : (isArabic
+        ? `السلام عليكم، نعلمكم بأن ${childName} مسجل غائباً ليوم ${dateLabel} (${presence.statut === 'Absent justifié' ? 'غياب مبرر' : 'غياب غير مبرر'}). السبب: ${presence.motifAbsence || 'غير محدد'}. إدارة الحضانة.`
+        : `Bonjour, ${childName} est enregistré absent pour le ${dateLabel} (${presence.statut === 'Absent justifié' ? 'absence justifiée' : 'absence non justifiée'}). Motif : ${presence.motifAbsence || 'non précisé'}.\n\nLa direction de la crèche.`);
+    setParentNotificationPreview({ phone: parent.phone, childName, message });
+  };
+
   const handleResetPointing = (enfantId: string) => {
     if (isDayValidated) {
       showToast(isArabic ? 'هذا اليوم معتمد. افتحه من جديد قبل التعديل.' : 'Cette journée est validée. Rouvrez-la avant de modifier un pointage.', 'error');
@@ -531,15 +585,28 @@ export default function PresencesPage() {
                                       {isArabic ? 'غائب' : 'Absent'}
                                     </button>
 
-                                    {/* Bouton : Re-initialiser le pointage */}
+                                    {/* Actions après pointage */}
                                     {statusRecord && (
-                                      <button 
-                                        onClick={() => handleResetPointing(enfant.id)}
-                                        className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition cursor-pointer"
-                                        title={isArabic ? 'إلغاء التحديد' : 'Réinitialiser'}
-                                      >
-                                        <ArrowLeftRight className="w-4 h-4" />
-                                      </button>
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleParentNotification(statusRecord)}
+                                          className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
+                                          title={isArabic ? 'إعداد إشعار لولي الطفل' : 'Préparer une notification parent'}
+                                          aria-label={isArabic ? 'إعداد إشعار لولي الطفل' : 'Préparer une notification parent'}
+                                        >
+                                          <MessageCircle className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleResetPointing(enfant.id)}
+                                          className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+                                          title={isArabic ? 'إلغاء التحديد' : 'Réinitialiser'}
+                                          aria-label={isArabic ? 'إلغاء التحديد' : 'Réinitialiser le pointage'}
+                                        >
+                                          <ArrowLeftRight className="w-4 h-4" />
+                                        </button>
+                                      </>
                                     )}
                                   </div>
 
@@ -613,17 +680,26 @@ export default function PresencesPage() {
                           </p>
                         </div>
 
-                        {/* Action : Supprimer le rapport d'absence */}
-                        <button
-                          onClick={() => {
-                            if (window.confirm(isArabic ? 'هل تريد حذف تسجيل الغياب هذا؟' : 'Supprimer cette absence ?')) {
-                              deletePresence(abs.id);
-                            }
-                          }}
-                          className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition cursor-pointer self-end sm:self-auto"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-2 self-end sm:self-auto">
+                          <button
+                            type="button"
+                            onClick={() => handleParentNotification(abs)}
+                            className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
+                            title={isArabic ? 'إعداد إشعار لولي الطفل' : 'Préparer une notification parent'}
+                            aria-label={isArabic ? 'إعداد إشعار لولي الطفل' : 'Préparer une notification parent'}
+                          >
+                            <MessageCircle className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { void handleDeleteAbsence(abs); }}
+                            className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition cursor-pointer"
+                            title={isArabic ? 'حذف تسجيل الغياب' : 'Supprimer l’absence'}
+                            aria-label={isArabic ? 'حذف تسجيل الغياب' : 'Supprimer l’absence'}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
 
                       </div>
                     );
@@ -861,6 +937,39 @@ export default function PresencesPage() {
           </div>
         )}
       </AnimatePresence>
+
+      {parentNotificationPreview && (
+        <div
+          className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setParentNotificationPreview(null);
+          }}
+        >
+          <div
+            className="w-full max-w-lg rounded-3xl bg-white p-5 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="parent-notification-title"
+            dir={isArabic ? 'rtl' : 'ltr'}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">{isArabic ? 'معاينة قبل واتساب' : 'Aperçu avant WhatsApp'}</p>
+                <h2 id="parent-notification-title" className="mt-1 text-lg font-black text-slate-900">{isArabic ? `رسالة إلى ${parentNotificationPreview.childName}` : `Notification pour ${parentNotificationPreview.childName}`}</h2>
+                <p className="mt-1 text-xs font-semibold text-slate-500">{parentNotificationPreview.phone}</p>
+              </div>
+              <button type="button" onClick={() => setParentNotificationPreview(null)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100" aria-label={isArabic ? 'إغلاق' : 'Fermer'}>×</button>
+            </div>
+            <p className="mt-4 whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">{parentNotificationPreview.message}</p>
+            <p className="mt-3 text-xs font-semibold text-slate-500">{isArabic ? 'لن يتم إرسال أي رسالة قبل الضغط على زر واتساب.' : 'Aucun message n’est envoyé avant votre clic sur WhatsApp.'}</p>
+            <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setParentNotificationPreview(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-50">{isArabic ? 'إلغاء' : 'Annuler'}</button>
+              <a href={`https://wa.me/${parentNotificationPreview.phone}?text=${encodeURIComponent(parentNotificationPreview.message)}`} target="_blank" rel="noopener noreferrer" onClick={() => setParentNotificationPreview(null)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-black text-white hover:bg-emerald-700"><Send className="h-4 w-4" />{isArabic ? 'فتح واتساب' : 'Ouvrir WhatsApp'}</a>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

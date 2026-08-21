@@ -14,6 +14,7 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Repas } from '../types';
@@ -31,6 +32,7 @@ interface RichRepas extends Repas {
 export default function RepasPage() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
+  const { confirm } = useConfirmDialog();
   const displayAllergens = (value?: string) => isArabic && (value === 'Aucun allergène' || value === 'Aucun allergène majeur') ? 'لا توجد حساسية رئيسية' : value;
   const displayHydration = (value?: string) => isArabic && (value === 'Eau filtrée' || value === 'Eau minérale') ? 'ماء مفلتر' : value;
 
@@ -238,14 +240,17 @@ export default function RepasPage() {
                     )}
                     <button 
                       className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-bold text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer z-10"
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
-                        const confirmationMsg = isArabic
-                          ? 'هل أنت متأكد من حذف هذه الوجبة المبرمجة؟'
-                          : 'Êtes-vous sûr de vouloir supprimer ce repas planifié ?';
-                        if (window.confirm(confirmationMsg)) {
-                          deleteRepas(r.id);
-                        }
+                        const confirmed = await confirm({
+                          title: isArabic ? 'تأكيد حذف الوجبة' : 'Confirmer la suppression du repas',
+                          message: isArabic
+                            ? 'سيتم حذف هذه الوجبة المبرمجة نهائياً.'
+                            : 'Ce repas planifié sera supprimé définitivement.',
+                          confirmLabel: isArabic ? 'حذف الوجبة' : 'Supprimer le repas',
+                          variant: 'danger',
+                        });
+                        if (confirmed) await deleteRepas(r.id);
                       }}
                     >
                       <Trash2 size={15} aria-hidden="true" />

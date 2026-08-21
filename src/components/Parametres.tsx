@@ -30,12 +30,14 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { setCollectionDocument, getCollectionDocument } from '../supabase';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function Parametres() {
   const { t, language } = useLanguage();
   const { user, refreshCreche } = useAuth();
+  const { confirm } = useConfirmDialog();
   const isFrench = language === 'fr';
   const isArabic = language === 'ar';
 
@@ -175,13 +177,19 @@ export default function Parametres() {
     }
 
     if (user.role === 'admin' || user.role === 'directeur') {
-      const confirmed = window.confirm(user.role === 'admin'
-        ? (isFrench
-          ? 'Enregistrer ces paramètres globaux ? Ils peuvent modifier l’accès, les abonnements et l’affichage de la plateforme pour tous les comptes.'
-          : 'هل تريد حفظ إعدادات المنصة العامة؟ قد تؤثر هذه الخيارات على الدخول والاشتراكات والعرض لجميع الحسابات.')
-        : (isFrench
-          ? 'Enregistrer les modifications de votre crèche ? Les horaires, tarifs et alertes seront mis à jour pour votre équipe.'
-          : 'هل تريد حفظ تعديلات الحضانة؟ سيتم تحديث الأوقات والأسعار والتنبيهات لفريقكم.'));
+      const confirmed = await confirm({
+        title: user.role === 'admin'
+          ? (isFrench ? 'Confirmer les paramètres globaux' : 'تأكيد إعدادات المنصة العامة')
+          : (isFrench ? 'Confirmer les paramètres de la crèche' : 'تأكيد إعدادات الحضانة'),
+        message: user.role === 'admin'
+          ? (isFrench
+            ? 'Ces paramètres peuvent modifier l’accès, les abonnements et l’affichage de la plateforme pour tous les comptes.'
+            : 'قد تؤثر هذه الإعدادات على الدخول والاشتراكات والعرض لجميع الحسابات.')
+          : (isFrench
+            ? 'Les horaires, tarifs et alertes seront mis à jour pour votre équipe.'
+            : 'سيتم تحديث الأوقات والأسعار والتنبيهات لفريقكم.'),
+        confirmLabel: isFrench ? 'Enregistrer' : 'حفظ',
+      });
       if (!confirmed) return;
     }
 

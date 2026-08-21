@@ -17,6 +17,7 @@ import {
   Compass
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Activite } from '../types';
@@ -34,6 +35,7 @@ interface RichActivite extends Activite {
 export default function Activites() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
+  const { confirm } = useConfirmDialog();
 
   const { activites: allDbActivites, personnel: personnelData, addActivite, deleteActivite } = useDb();
   const { user } = useAuth();
@@ -243,14 +245,17 @@ export default function Activites() {
               <div className="mt-6 pt-4 border-t border-slate-50 flex justify-end">
                 <button 
                   className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer z-10"
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation();
-                    const confirmationMsg = isArabic
-                      ? 'هل أنت متأكد من حذف هذا النشاط المبرمج؟'
-                      : 'Êtes-vous sûr de vouloir supprimer cette activité planifiée ?';
-                    if (window.confirm(confirmationMsg)) {
-                      deleteActivite(a.id);
-                    }
+                    const confirmed = await confirm({
+                      title: isArabic ? 'تأكيد حذف النشاط' : 'Confirmer la suppression de l’activité',
+                      message: isArabic
+                        ? 'سيتم حذف هذا النشاط المبرمج نهائياً.'
+                        : 'Cette activité planifiée sera supprimée définitivement.',
+                      confirmLabel: isArabic ? 'حذف النشاط' : 'Supprimer l’activité',
+                      variant: 'danger',
+                    });
+                    if (confirmed) await deleteActivite(a.id);
                   }}
                 >
                   <Trash2 size={15} />
