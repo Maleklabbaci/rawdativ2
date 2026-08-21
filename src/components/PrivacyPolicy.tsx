@@ -26,7 +26,7 @@ export default function PrivacyPolicy() {
         <article className="rounded-3xl bg-white p-5 shadow-2xl sm:p-10">
           <div className="mb-8 flex items-start gap-3 rounded-2xl border border-indigo-100 bg-indigo-50 p-4 text-sm leading-6 text-indigo-950">
             <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />
-            <p>{isAr ? 'هذا النص يشرح باختصار كيف تعالج الروضة البيانات المرسلة عبر رابط التسجيل. يجب أن تستكمل الإدارة بيانات الاتصال ومدة الاحتفاظ بالبيانات قبل الإطلاق التجاري.' : "Ce texte explique de manière simple comment la crèche traite les données envoyées par le lien d’admission. La direction doit compléter ses coordonnées et valider les durées de conservation avant le lancement commercial."}</p>
+            <p>{isAr ? 'يوضح هذا النص بطريقة مبسطة كيف تعالج الروضة البيانات المرسلة عبر رابط التسجيل. يمكنكم الرجوع إلى بيانات الاتصال الموجودة في رسالة الدعوة لأي سؤال أو طلب.' : "Ce document explique simplement comment la crèche traite les données envoyées via le lien d’admission. Pour toute question ou demande, utilisez les coordonnées figurant dans le message d’invitation."}</p>
           </div>
 
           <div className="space-y-7 text-sm leading-7 text-slate-700">

@@ -158,6 +158,11 @@ export default function Comptes() {
       return;
     }
 
+    const creationConfirmed = window.confirm(isFrench
+      ? `Créer le compte de ${prenom} ${nom}${nomCreche ? ` pour la crèche « ${nomCreche} »` : ''} ? Le compte pourra être activé immédiatement.`
+      : `هل تريد إنشاء حساب ${prenom} ${nom}${nomCreche ? ` للروضة « ${nomCreche} »` : ''}؟ يمكن تفعيل الحساب مباشرة.`);
+    if (!creationConfirmed) return;
+
     try {
       setSubmitLoading(true);
       
@@ -269,6 +274,13 @@ export default function Comptes() {
   };
 
   const handleToggleSubscription = async (id: string, currentStatus: boolean) => {
+    const compte = comptes.find(c => c.id === id);
+    const name = compte ? `${compte.prenom} ${compte.nom}` : (isFrench ? 'ce directeur' : 'هذا المدير');
+    const confirmed = window.confirm(isFrench
+      ? `${currentStatus ? 'Suspendre' : 'Activer'} l’abonnement de ${name} ?`
+      : `${currentStatus ? 'هل تريد تعليق' : 'هل تريد تفعيل'} اشتراك ${name}؟`);
+    if (!confirmed) return;
+
     try {
       await updateCompte(id, { abonnementActif: !currentStatus });
     } catch (err) {
@@ -279,6 +291,13 @@ export default function Comptes() {
   };
 
   const handleUpdateEndDate = async (id: string, dateValue: string) => {
+    const compte = comptes.find(c => c.id === id);
+    const name = compte ? `${compte.prenom} ${compte.nom}` : (isFrench ? 'ce directeur' : 'هذا المدير');
+    const confirmed = window.confirm(isFrench
+      ? `Modifier la date d’expiration de ${name} au ${dateValue} ?`
+      : `هل تريد تغيير تاريخ انتهاء اشتراك ${name} إلى ${dateValue}؟`);
+    if (!confirmed) return;
+
     try {
       await updateCompte(id, { dateFinAbonnement: dateValue });
     } catch (err) {
@@ -751,11 +770,11 @@ export default function Comptes() {
               <p className="text-xs">{isFrench ? 'Essayez avec un autre mot-clé ou créez un compte.' : 'جرب كلمات بحث مختلفة أو قم بإنشاء حساب جديد.'}</p>
             </div>
           ) : (
-            <table className="w-full text-left border-collapse">
+              <table className="min-w-[760px] w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-slate-150 text-slate-500 text-[11px] font-black tracking-wider uppercase bg-slate-100/30">
                   <th className="px-6 py-4">{isFrench ? 'Utilisateur' : 'المستفيد'}</th>
-                  <th className="px-6 py-4">{isFrench ? 'Identifiants de Connexion' : 'خطوط الاتصال والسر'}</th>
+                      <th className="px-6 py-4">{isFrench ? 'Contact' : 'بيانات الاتصال'}</th>
                   {isAdmin ? (
                     <>
                       <th className="px-6 py-4">{isFrench ? 'Crèche' : 'اسم الروضة'}</th>
@@ -816,7 +835,6 @@ export default function Comptes() {
                                 </span>
                               )}
                             </p>
-                            <p className="text-[11px] text-slate-400 font-semibold">{c.id}</p>
                           </div>
                         </div>
                       </td>
@@ -828,8 +846,7 @@ export default function Comptes() {
                             {c.email}
                           </p>
                           <p className="text-[10px] text-slate-400 font-semibold">
-                            {isFrench ? 'Mot de passe : ' : 'الرمز السري : '}
-                            <strong className="text-slate-600 font-mono bg-slate-100/50 rounded px-1">••••••••••</strong>
+                            {isFrench ? 'Contact principal' : 'جهة الاتصال الرئيسية'}
                           </p>
                         </div>
                       </td>

@@ -166,6 +166,13 @@ export default function Parametres() {
     e.preventDefault();
     if (!user) return;
 
+    if (user.role === 'admin') {
+      const confirmed = window.confirm(isFrench
+        ? 'Enregistrer ces paramètres globaux ? Ils peuvent modifier l’accès, les abonnements et l’affichage de la plateforme pour tous les comptes.'
+        : 'هل تريد حفظ إعدادات المنصة العامة؟ قد تؤثر هذه الخيارات على الدخول والاشتراكات والعرض لجميع الحسابات.');
+      if (!confirmed) return;
+    }
+
     try {
       setSaveLoading(true);
       setErrorMessage('');
@@ -404,7 +411,7 @@ export default function Parametres() {
                         {isFrench ? 'Mode Maintenance Plateforme' : 'تفعيل وضع الصيانة العام'}
                       </span>
                       <span className="text-[10px] text-slate-400 block leading-normal">
-                        {isFrench ? 'Affiche un bandeau d\'avertissement de surcharge serveur' : 'إظهار شارة تحديث الخادم للمستفيدين للانتظار'}
+                        {isFrench ? 'Affiche un bandeau pour signaler une indisponibilité temporaire' : 'إظهار شارة لإبلاغ المستخدمين بتوقف مؤقت للخدمة'}
                       </span>
                     </div>
                     <button
@@ -463,8 +470,8 @@ export default function Parametres() {
                   <Info className="w-4 h-4 text-indigo-500 inline mr-1 -mt-0.5" />
                   <span>
                     {isFrench 
-                      ? 'Toute modification de ces paramètres s\'enregistre instantanément sur les instances Cloud et règle les paramètres globaux.' 
-                      : 'التعديلات العلوية تؤثر مباشرة على قواعد الخادم والاشتراكات لجميع الحسابات.'}
+                      ? 'Ces réglages s’appliquent à tous les comptes. Vérifiez les valeurs avant de confirmer l’enregistrement.'
+                      : 'تطبق هذه الإعدادات على جميع الحسابات. يرجى التحقق من القيم قبل تأكيد الحفظ.'}
                   </span>
                 </div>
               </div>

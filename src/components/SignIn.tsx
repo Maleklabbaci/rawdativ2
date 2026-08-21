@@ -30,14 +30,24 @@ function isValidAlgerianPhone(value: string): boolean {
   return digits.length === 9 && /^[5-7]\d{8}$/.test(digits);
 }
 
-function formatAuthError(message: string | null, fallback: string): string {
+function formatAuthError(message: string | null, fallback: string, isFrench: boolean): string {
   if (!message || message === '{}' || message === '[object Object]') return fallback;
   const normalized = message.toLowerCase();
-  if (normalized.includes('invalid login credentials')) return 'Identifiants incorrects. Vérifiez votre adresse e-mail et votre mot de passe.';
-  if (normalized.includes('email not confirmed')) return 'Votre accès n’est pas encore activé par l’administrateur.';
-  if (normalized.includes('too many') || normalized.includes('rate limit')) return 'Trop de demandes. Patientez quelques instants avant de réessayer.';
-  if (normalized.includes('user not found')) return 'Aucun compte Rawdha+ correspondant n’a été trouvé.';
-  if (normalized.includes('profile rawdha')) return 'Votre authentification est valide, mais votre compte n’est pas encore rattaché à Rawdha+.';
+  if (normalized.includes('invalid login credentials')) {
+    return isFrench ? 'Identifiants incorrects. Vérifiez votre adresse e-mail et votre mot de passe.' : 'بيانات الدخول غير صحيحة. تحققي من البريد الإلكتروني وكلمة المرور.';
+  }
+  if (normalized.includes('email not confirmed')) {
+    return isFrench ? 'Votre accès n’est pas encore activé par l’administrateur.' : 'لم يتم تفعيل حسابك من طرف المسؤول بعد.';
+  }
+  if (normalized.includes('too many') || normalized.includes('rate limit')) {
+    return isFrench ? 'Trop de demandes. Patientez quelques instants avant de réessayer.' : 'عدد المحاولات كبير جداً. انتظري قليلاً ثم حاولي من جديد.';
+  }
+  if (normalized.includes('user not found')) {
+    return isFrench ? 'Aucun compte Rawdha+ correspondant n’a été trouvé.' : 'لم يتم العثور على حساب مطابق في روضة+.';
+  }
+  if (normalized.includes('profile rawdha')) {
+    return isFrench ? 'Votre authentification est valide, mais votre compte n’est pas encore rattaché à Rawdha+.' : 'تم التحقق من هويتك، لكن حسابك غير مرتبط بمنصة روضة+ بعد.';
+  }
   return message;
 }
 
@@ -49,7 +59,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
   const { loginWithCredentials } = useAuth();
   const view = mode;
   const copy = isFrench ? {
-    brandSubtitle: 'Premium Nursery Platform',
+    brandSubtitle: 'Plateforme professionnelle de gestion de crèche',
     badge: 'Gestion de crèche de nouvelle génération',
     heroTitle: 'L’excellence dans la gestion de votre crèche.',
     heroDescription: 'Présences, enfants, équipe, activités, repas et facturation réunis dans un espace clair et sécurisé.',
@@ -247,7 +257,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
       if (result.error || !result.user) {
         setError(formatAuthError(result.error, isFrench
           ? 'Identifiants incorrects. Vérifiez votre adresse e-mail et votre mot de passe.'
-          : 'بيانات الاعتماد غير صحيحة.'));
+          : 'بيانات الدخول غير صحيحة.', isFrench));
       }
     } catch (loginError) {
       console.error('Erreur inattendue dans le formulaire de connexion:', loginError);
@@ -463,6 +473,12 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
           <p className="text-center text-xs text-slate-400 leading-relaxed">
             {copy.parentNote}
           </p>
+
+          <div className="flex items-center justify-center gap-3 pt-1 text-xs font-semibold">
+            <a href="/confidentialite" className="text-indigo-600 underline underline-offset-2 hover:text-indigo-800">
+              {isFrench ? 'Politique de confidentialité' : 'سياسة الخصوصية'}
+            </a>
+          </div>
 
           <div className="flex justify-center pt-1">
             <a

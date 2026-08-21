@@ -55,6 +55,24 @@ export default function Notifications() {
 
   const handleSend = async () => {
     if (!title.trim() || !message.trim()) return;
+
+    if (ctaLabel.trim() && ctaType === 'link' && ctaUrl.trim() && !/^https?:\/\//i.test(ctaUrl.trim())) {
+      alert(isFrench
+        ? 'Le lien du bouton doit commencer par https:// ou http://.'
+        : 'يجب أن يبدأ رابط الزر بـ https:// أو http://.');
+      return;
+    }
+
+    const recipientLabel = recipientId === 'all_directeurs'
+      ? (isFrench ? `tous les directeurs (${directeurs.length})` : `جميع المديرين (${directeurs.length})`)
+      : (directeurs.find(d => d.id === recipientId)
+        ? `${directeurs.find(d => d.id === recipientId)?.prenom} ${directeurs.find(d => d.id === recipientId)?.nom}`
+        : (isFrench ? 'le directeur sélectionné' : 'المدير المحدد'));
+    const confirmed = window.confirm(isFrench
+      ? `Envoyer cette annonce à ${recipientLabel} ? Cette action publiera immédiatement le message.`
+      : `هل تريد إرسال هذا الإعلان إلى ${recipientLabel}؟ سيُنشر الإعلان فوراً.`);
+    if (!confirmed) return;
+
     setSending(true);
     setPushStatus(null);
     try {
@@ -177,8 +195,13 @@ export default function Notifications() {
           </div>
 
           {/* --- Personnalisation visuelle --- */}
-          <div className="pt-1 border-t border-slate-100">
-            <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase mb-3 mt-4">
+          <details open className="rounded-xl border border-slate-100 px-4 pb-4 pt-1">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 py-3 text-[11px] font-bold uppercase text-slate-500">
+              <Palette className="w-3.5 h-3.5 text-indigo-500" />
+              {isFrench ? 'Personnalisation de l’annonce' : 'تخصيص الإعلان'}
+            </summary>
+            <div>
+            <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase mb-3 mt-1">
               <Palette className="w-3.5 h-3.5 text-indigo-500" />
               {isFrench ? 'Style du popup' : 'تصميم النافذة'}
             </label>
@@ -263,7 +286,8 @@ export default function Notifications() {
                 ? 'Les annonces sont publiées dans la page Notifications des directeurs.'
                 : 'تظهر الإعلانات في صفحة الإشعارات الخاصة بالمديرين.'}
             </p>
-          </div>
+            </div>
+          </details>
 
           {/* ✅ Destinataire */}
           <div>

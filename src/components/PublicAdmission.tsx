@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Baby, CheckCircle2, FileText, HeartPulse, Loader2, Send, ShieldCheck, Upload, Users } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Baby, CheckCircle2, FileText, HeartPulse, Loader2, Send, ShieldCheck, Upload, Users } from 'lucide-react';
 import { supabase } from '../supabase';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -192,6 +192,22 @@ export default function PublicAdmission() {
             <AlertCircle className="mx-auto mb-4 h-12 w-12 text-rose-500" />
             <h2 className="text-xl font-black text-slate-900">{isAr ? 'الرابط غير متاح' : 'Lien non disponible'}</h2>
             <p className="mt-2 text-sm text-slate-500">{error || (isAr ? 'تحقق من الرابط المرسل من الروضة.' : 'Vérifiez le lien transmis par la crèche.')}</p>
+            <p className="mt-3 text-xs leading-5 text-slate-400">
+              {isAr ? 'اطلبوا من إدارة الروضة إرسال رابط تسجيل جديد إذا استمرت المشكلة.' : 'Si le problème persiste, demandez à la direction de la crèche un nouveau lien d’inscription.'}
+            </p>
+            <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+              <a href="/login/" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white transition hover:bg-indigo-700">
+                <ArrowLeft className="h-4 w-4" />
+                {isAr ? 'العودة إلى الصفحة الرئيسية' : 'Retour à l’accueil'}
+              </a>
+              <button
+                type="button"
+                onClick={() => { if (window.history.length > 1) window.history.back(); else window.location.href = '/login/'; }}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 px-5 py-3 text-sm font-black text-slate-600 transition hover:bg-slate-50"
+              >
+                {isAr ? 'العودة' : 'Page précédente'}
+              </button>
+            </div>
           </div>
         ) : submitted ? (
           <div className="mx-auto max-w-xl rounded-3xl bg-white p-8 text-center shadow-2xl sm:p-12">
