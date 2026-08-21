@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // ✅ FIX: Use environment variables instead of hardcoded keys
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -15,7 +15,14 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   if (import.meta.env.PROD) throw new Error('Supabase config missing!');
 }
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+type SupabaseClientInstance = SupabaseClient<any>;
+
+type SupabaseGlobal = typeof globalThis & {
+  __rawdatiSupabaseClient__?: SupabaseClientInstance;
+};
+
+const runtimeGlobal = globalThis as SupabaseGlobal;
+export const supabase = runtimeGlobal.__rawdatiSupabaseClient__ ?? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     // La session est conservée dans le stockage local du navigateur entre les reloads.
     persistSession: true,
@@ -23,6 +30,8 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     detectSessionInUrl: false,
   },
 });
+
+if (import.meta.env.DEV) runtimeGlobal.__rawdatiSupabaseClient__ = supabase;
 
 export enum OperationType {
   CREATE = 'create',
@@ -153,11 +162,12 @@ export async function updateCollectionDocument<T>(
     if (fetchError) throw fetchError;
 
     const mergedData = { ...((existing?.data as object) || {}), ...partialData };
-    const { error } = await supabase
+    const { count, error } = await supabase
       .from(collectionName)
-      .update({ data: mergedData })
+      .update({ data: mergedData }, { count: 'exact' })
       .eq('id', id);
     if (error) throw error;
+    if (count !== 1) throw new Error(`Document introuvable ou modification non autorisée: ${collectionName}/${id}`);
   } catch (err) {
     logError(err, OperationType.UPDATE, `${collectionName}/${id}`);
     throw err;
@@ -169,8 +179,12 @@ export async function deleteCollectionDocument(
   id: string
 ): Promise<void> {
   try {
-    const { error } = await supabase.from(collectionName).delete().eq('id', id);
+    const { count, error } = await supabase
+      .from(collectionName)
+      .delete({ count: 'exact' })
+      .eq('id', id);
     if (error) throw error;
+    if (count !== 1) throw new Error(`Document introuvable ou suppression non autorisée: ${collectionName}/${id}`);
   } catch (err) {
     logError(err, OperationType.DELETE, `${collectionName}/${id}`);
     throw err;

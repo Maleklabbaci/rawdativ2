@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Enfant, Presence, PresenceJournee, Paiement, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction, CommunityFeature } from '../types';
+import { Enfant, Presence, PresenceJournee, Paiement, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction, CommunityFeature, CommunityFeatureKind } from '../types';
 import { 
   getCollectionData, 
   addCollectionDocument, 
@@ -156,6 +156,36 @@ function normalizeCommunityReaction(reaction: Partial<CommunityReaction> | null 
   } as CommunityReaction;
 }
 
+const COMMUNITY_FEATURE_KINDS = new Set<CommunityFeatureKind>([
+  'follow', 'saved_post', 'social_notification', 'poll_vote', 'report', 'pin', 'profile_details', 'private_message', 'post_view',
+]);
+
+function normalizeCommunityFeature(feature: Partial<CommunityFeature> | null | undefined, index = 0): CommunityFeature | null {
+  const candidate = (feature || {}) as Record<string, unknown>;
+  const kind = typeof candidate.kind === 'string' && COMMUNITY_FEATURE_KINDS.has(candidate.kind as CommunityFeatureKind)
+    ? candidate.kind as CommunityFeatureKind
+    : null;
+  const actorId = typeof candidate.actorId === 'string' ? candidate.actorId.trim() : '';
+  const targetId = typeof candidate.targetId === 'string' && candidate.targetId.trim() ? candidate.targetId.trim() : undefined;
+  const recipientId = typeof candidate.recipientId === 'string' && candidate.recipientId.trim() ? candidate.recipientId.trim() : undefined;
+  const targetRequired = new Set<CommunityFeatureKind>(['follow', 'saved_post', 'poll_vote', 'report', 'pin', 'post_view']);
+  if (!kind || !actorId || (targetRequired.has(kind) && !targetId) || (kind === 'social_notification' && !recipientId) || (kind === 'private_message' && !recipientId)) return null;
+  const payload = candidate.payload && typeof candidate.payload === 'object' && !Array.isArray(candidate.payload)
+    ? candidate.payload as Record<string, unknown>
+    : undefined;
+  return {
+    id: typeof candidate.id === 'string' && candidate.id ? candidate.id : `community_feature_unknown_${index}`,
+    kind,
+    actorId,
+    targetId,
+    recipientId,
+    visibility: candidate.visibility === 'public' ? 'public' : 'private',
+    createdAt: typeof candidate.createdAt === 'string' && candidate.createdAt ? candidate.createdAt : new Date(0).toISOString(),
+    updatedAt: typeof candidate.updatedAt === 'string' && candidate.updatedAt ? candidate.updatedAt : undefined,
+    payload,
+  };
+}
+
 interface DbContextType {
   enfants: Enfant[];
   classes: Classe[];
@@ -205,6 +235,7 @@ interface DbContextType {
   toggleCommunityReaction: (postId: string) => Promise<void>;
   addCommunityFeature: (feature: Omit<CommunityFeature, 'id'>) => Promise<string>;
   updateCommunityFeature: (id: string, feature: Partial<CommunityFeature>) => Promise<void>;
+  markCommunityFeatureRead: (id: string) => Promise<void>;
   deleteCommunityFeature: (id: string) => Promise<void>;
 
   ensureInscriptionLink: () => Promise<(InscriptionLink & { token: string }) | null>;
@@ -269,9 +300,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const isPendingDirector = user?.role === 'directeur' && user.approvalStatus === 'pending';
   const assertWriteAccess = () => {
     if (!isPendingDirector) return;
-    const message = 'Votre compte est en attente de validation par l’administrateur. La plateforme est actuellement en lecture seule.';
-    showToast(message, 'info', 7000);
-    throw new Error(message);
+    throw new Error('Votre compte est en attente de validation par l’administrateur. La plateforme est actuellement en lecture seule.');
   };
   
   const [enfants, setEnfants] = useState<Enfant[]>([]);
@@ -398,7 +427,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
           setCommunityPosts((Array.isArray(dbCommunityPosts) ? dbCommunityPosts : []).filter(Boolean).map(normalizeCommunityPost));
           setCommunityComments((Array.isArray(dbCommunityComments) ? dbCommunityComments : []).filter(Boolean).map(normalizeCommunityComment));
           setCommunityReactions((Array.isArray(dbCommunityReactions) ? dbCommunityReactions : []).filter(Boolean).map(normalizeCommunityReaction));
-          setCommunityFeatures((Array.isArray(dbCommunityFeatures) ? dbCommunityFeatures : []).filter(Boolean) as CommunityFeature[]);
+          setCommunityFeatures((Array.isArray(dbCommunityFeatures) ? dbCommunityFeatures : []).map((feature, index) => normalizeCommunityFeature(feature, index)).filter((feature): feature is CommunityFeature => feature !== null));
           setInscriptionLinks(dbInscriptionLinks);
           setDemandesAdmission(dbDemandesAdmission);
           setNotifications(dbNotifications);
@@ -1195,11 +1224,14 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   const addCommunityFeature = async (featureData: Omit<CommunityFeature, 'id'>) => {
     assertWriteAccess();
+    const normalized = normalizeCommunityFeature({ ...featureData, id: 'pending' });
+    if (!normalized) throw new Error('Fonctionnalité sociale invalide.');
+    const { id: _normalizedId, ...cleanFeature } = normalized;
     const tempId = `community_feature_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const optimistic = { ...featureData, id: tempId } as CommunityFeature;
+    const optimistic = { ...cleanFeature, id: tempId } as CommunityFeature;
     setCommunityFeatures(prev => [optimistic, ...prev]);
     try {
-      const freshId = await addCollectionDocument('community_features', featureData);
+      const freshId = await addCollectionDocument('community_features', cleanFeature);
       setCommunityFeatures(prev => prev.map(item => item.id === tempId ? { ...optimistic, id: freshId } : item));
       return freshId;
     } catch (err) {
@@ -1219,6 +1251,20 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       if (previous) setCommunityFeatures(prev => prev.map(item => item.id === id ? previous : item));
       notifyWriteError('modification');
       throw err;
+    }
+  };
+
+  const markCommunityFeatureRead = async (id: string) => {
+    if (!user?.id) throw new Error('Session requise');
+    if (user.role === 'directeur' && user.approvalStatus === 'pending') return;
+    const target = communityFeatures.find(feature => feature.id === id);
+    if (!target || target.recipientId !== user.id || !['private_message', 'social_notification'].includes(target.kind)) return;
+    if (target.payload?.read === true) return;
+    setCommunityFeatures(prev => prev.map(feature => feature.id === id ? { ...feature, payload: { ...feature.payload, read: true } } : feature));
+    const { data, error } = await supabase.rpc('rawdha_mark_community_feature_read', { p_id: id });
+    if (error || data !== true) {
+      setCommunityFeatures(prev => prev.map(feature => feature.id === id ? target : feature));
+      throw error || new Error('Impossible de marquer cet élément comme lu.');
     }
   };
 
@@ -1468,6 +1514,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       toggleCommunityReaction,
       addCommunityFeature,
       updateCommunityFeature,
+      markCommunityFeatureRead,
       deleteCommunityFeature,
       ensureInscriptionLink,
       createInscriptionLink,
