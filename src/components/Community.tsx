@@ -1085,7 +1085,7 @@ export default function Community() {
     <div className="min-h-full min-w-0 overflow-x-hidden bg-slate-50 pb-14" dir={isAr ? 'rtl' : 'ltr'}>
       <div className="mx-auto min-w-0 max-w-7xl px-3 py-4 sm:px-4 sm:py-5 md:px-6">
         <AnimatePresence initial={false}>{showProfileEditor && renderProfileEditor()}</AnimatePresence>
-        <div className="sticky top-20 z-20 mb-5 grid grid-cols-6 gap-1.5 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-md shadow-slate-900/5 backdrop-blur-md lg:flex lg:gap-2">
+        <div className="sticky top-0 z-20 mb-5 grid grid-cols-6 gap-1.5 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-md shadow-slate-900/5 backdrop-blur-md lg:flex lg:gap-2">
           <button type="button" onClick={() => setActiveView('feed')} aria-label={ui.home} title={ui.home} className={`relative inline-flex min-w-0 items-center justify-center rounded-xl p-2.5 text-xs font-black ${activeView === 'feed' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'} lg:gap-2 lg:px-4 lg:py-2.5 lg:text-sm lg:whitespace-nowrap`}>
             <House className="h-4 w-4 shrink-0" /><span className="hidden lg:inline">{ui.home}</span>
           </button>
