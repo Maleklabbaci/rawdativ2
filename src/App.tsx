@@ -7,8 +7,8 @@ import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { DbProvider, useDb } from './contexts/DbContext';
 import SignIn from './components/SignIn';
 import MobileWelcome from './components/MobileWelcome';
-/** Style context — L’Atelier du Matin: la route `/` est une vitrine éditoriale publique,
- * tandis que les routes de gestion existantes conservent leur interface opérationnelle. */
+/** Style context — Vitrine officielle Rawdha+: la route `/` présente les modules réels
+ * avec l’identité existante; les routes de gestion conservent leur interface opérationnelle. */
 import LandingPage from './components/LandingPage';
 import Dashboard from './components/Dashboard';
 import Sidebar from './components/Sidebar';
@@ -313,7 +313,7 @@ function AppContent() {
   // ✅ Favicon + titre d'onglet dynamiques : le logo PNG uploadé dans Paramètres
   // remplace l'icône par défaut de RAWDHA+ dans la barre de tâches / onglet du navigateur.
   useEffect(() => {
-    const faviconHref = isPublicLanding ? 'https://files.manuscdn.com/user_upload_by_module/session_file/310519663894126178/rZmvoQPdCIVaysUS.png' : (creche?.logoUrl || '/favicon.png');
+    const faviconHref = isPublicLanding ? '/rawdah-logo.png' : (creche?.logoUrl || '/favicon.png');
     let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
     if (!link) {
       link = document.createElement('link');
