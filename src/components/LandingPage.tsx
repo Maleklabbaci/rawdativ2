@@ -29,18 +29,18 @@ interface LandingPageProps {
   onNavigate: (destination: LandingDestination) => void;
 }
 
-const modules = {
+const featureGroups = {
   fr: [
-    { icon: ClipboardList, title: 'Admissions', text: 'Centralisez les demandes et préparez les dossiers enfants sans perdre d’information.' },
-    { icon: CalendarCheck, title: 'Présences', text: 'Suivez les arrivées, absences, sorties et récapitulatifs de chaque journée.' },
-    { icon: Users, title: 'Équipe & activités', text: 'Organisez vos classes, votre personnel, les activités et les repas au même endroit.' },
-    { icon: CreditCard, title: 'Paiements', text: 'Consultez les échéances, les règlements et les éléments à vérifier simplement.' },
+    { title: 'Accueil & enfants', text: 'Le suivi de votre crèche dès l’ouverture de la journée.', items: ['Tableau de bord', 'Enfants', 'Classes', 'Admissions'] },
+    { title: 'Présences & équipe', text: 'Les opérations de terrain organisées au même endroit.', items: ['Présences', 'Personnel', 'Activités', 'Repas'] },
+    { title: 'Gestion & pilotage', text: 'Les informations utiles pour décider et suivre votre activité.', items: ['Paiements', 'Rapports', 'Comptes', 'Paramètres'] },
+    { title: 'Communication & réseau', text: 'Les échanges utiles avec vos familles, votre équipe et votre réseau.', items: ['Communication', 'Notifications', 'Rawdha Connect', 'Aide & support'] },
   ],
   ar: [
-    { icon: ClipboardList, title: 'طلبات التسجيل', text: 'اجمعي الطلبات وجهّزي ملفات الأطفال دون ضياع أي معلومة.' },
-    { icon: CalendarCheck, title: 'الحضور', text: 'تابعي الوصول والغياب والخروج وملخص كل يوم.' },
-    { icon: Users, title: 'الفريق والأنشطة', text: 'نظّمي الأقسام والموظفين والأنشطة والوجبات في مكان واحد.' },
-    { icon: CreditCard, title: 'الدفعات', text: 'راجعي الاستحقاقات والتسديدات والعناصر التي تحتاج متابعة ببساطة.' },
+    { title: 'الواجهة والأطفال', text: 'متابعة حضانتك منذ بداية اليوم.', items: ['لوحة المتابعة', 'الأطفال', 'الأقسام', 'طلبات التسجيل'] },
+    { title: 'الحضور والفريق', text: 'عمليات الميدان منظمة في مكان واحد.', items: ['الحضور', 'الموظفون', 'الأنشطة', 'الوجبات'] },
+    { title: 'التسيير والمتابعة', text: 'المعلومات المفيدة لاتخاذ القرار ومتابعة النشاط.', items: ['الدفعات', 'التقارير', 'الحسابات', 'الإعدادات'] },
+    { title: 'التواصل والشبكة', text: 'التبادلات المفيدة مع الأولياء والفريق والشبكة.', items: ['التواصل', 'الإشعارات', 'Rawdha Connect', 'المساعدة والدعم'] },
   ],
 };
 
@@ -50,16 +50,16 @@ const copy = {
     badge: 'Plateforme de gestion de crèche',
     title: 'Gérez votre crèche avec une vision claire de chaque journée.',
     text: 'Rawdha+ rassemble les admissions, présences, classes, activités, équipe, paiements et communication dans un seul espace bilingue.',
-    primary: 'Demander un accès',
+    primary: 'Essai gratuit de 15 jours',
     secondary: 'Se connecter',
-    assurance: ['Français & العربية', 'Accès Directeur validé', 'Données organisées'],
+    assurance: ['15 jours gratuits', 'Sans engagement', 'Toutes les fonctionnalités'],
     previewLabel: 'Aperçu de la plateforme',
     previewTitle: 'Tableau de bord',
     previewToday: 'Aujourd’hui',
     previewItems: ['Présences à consulter', 'Demandes d’admission', 'Paiements à vérifier'],
-    overview: 'Une plateforme faite pour le travail quotidien des crèches.',
-    overviewText: 'Vous gardez les informations importantes au même endroit et vous passez moins de temps entre les listes, messages et documents.',
-    modulesLabel: 'Les modules Rawdha+',
+    overview: 'Tout ce que vous gérez dans votre crèche, réuni dans Rawdha+.',
+    overviewText: 'Rawdha+ couvre les opérations du quotidien, le suivi administratif, la communication et le réseau professionnel dans la même plateforme.',
+    modulesLabel: 'Les fonctionnalités Rawdha+',
     connectLabel: 'Rawdha Connect',
     connectTitle: 'Le réseau professionnel des Directrices, directement dans Rawdha+.',
     connectText: 'Partagez une activité, échangez avec votre réseau, découvrez une annonce ou recevez une information officielle sans quitter la plateforme.',
@@ -68,9 +68,12 @@ const copy = {
     securityLabel: 'Un accès simple et maîtrisé',
     securityTitle: 'Chaque Directeur rejoint la plateforme après validation.',
     securityText: 'Une demande crée un accès en attente. L’administrateur garde le contrôle avant l’activation complète du compte.',
-    finalTitle: 'Prêt à organiser votre crèche avec Rawdha+ ?',
-    finalText: 'Envoyez votre demande d’accès. L’équipe Rawdha+ examine votre dossier puis active votre espace.',
-    finalPrimary: 'Créer ma demande Directeur',
+    trialLabel: 'Essai gratuit',
+    trialTitle: '15 jours pour essayer Rawdha+ gratuitement.',
+    trialText: 'Découvrez toutes les fonctionnalités de la plateforme pendant 15 jours, sans engagement. Votre demande Directeur est ensuite examinée avant l’activation complète.',
+    finalTitle: 'Commencez à gérer votre crèche avec plus de visibilité.',
+    finalText: 'Créez votre demande et démarrez votre essai gratuit de 15 jours après validation.',
+    finalPrimary: 'Commencer mon essai gratuit',
     finalSecondary: 'J’ai déjà un compte',
     footer: 'Plateforme professionnelle de gestion de crèche',
     menu: 'Ouvrir la navigation',
@@ -81,16 +84,16 @@ const copy = {
     badge: 'منصة تسيير الحضانة',
     title: 'سيّري حضانتك برؤية واضحة لكل يوم.',
     text: 'تجمع Rawdha+ طلبات التسجيل والحضور والأقسام والأنشطة والفريق والدفعات والتواصل في فضاء واحد ثنائي اللغة.',
-    primary: 'اطلبي الولوج',
+    primary: 'تجربة مجانية لمدة 15 يوماً',
     secondary: 'تسجيل الدخول',
-    assurance: ['Français & العربية', 'ولوج المديرة بعد المصادقة', 'بيانات منظمة'],
+    assurance: ['15 يوماً مجاناً', 'دون التزام', 'كل الوظائف متاحة'],
     previewLabel: 'نظرة على المنصة',
     previewTitle: 'لوحة المتابعة',
     previewToday: 'اليوم',
     previewItems: ['حضور يحتاج مراجعة', 'طلبات تسجيل', 'دفعات تحتاج متابعة'],
-    overview: 'منصة للعمل اليومي الحقيقي داخل الحضانات.',
-    overviewText: 'تبقى المعلومات المهمة في مكان واحد وتقللين الوقت بين القوائم والرسائل والوثائق.',
-    modulesLabel: 'وحدات Rawdha+',
+    overview: 'كل ما تسيّرينه في حضانتك، مجمع في Rawdha+.',
+    overviewText: 'تغطي Rawdha+ عمليات اليوم والتسيير الإداري والتواصل والشبكة المهنية في المنصة نفسها.',
+    modulesLabel: 'وظائف Rawdha+',
     connectLabel: 'Rawdha Connect',
     connectTitle: 'شبكة مهنية للمديرات، داخل Rawdha+ مباشرة.',
     connectText: 'شاركي نشاطاً وتبادلي الخبرات مع شبكتك واكتشفي إعلاناً أو استقبلي معلومة رسمية دون مغادرة المنصة.',
@@ -99,9 +102,12 @@ const copy = {
     securityLabel: 'ولوج بسيط ومتحكم فيه',
     securityTitle: 'كل مديرة تنضم إلى المنصة بعد المصادقة.',
     securityText: 'ينشئ الطلب ولوجاً في انتظار المراجعة. يبقى المسؤول متحكماً قبل التفعيل الكامل للحساب.',
-    finalTitle: 'جاهزة لتنظيم حضانتك مع Rawdha+؟',
-    finalText: 'أرسلي طلب الولوج. يراجع فريق Rawdha+ ملفك ثم يفعّل فضاءك.',
-    finalPrimary: 'إنشاء طلب مديرة',
+    trialLabel: 'تجربة مجانية',
+    trialTitle: '15 يوماً لتجربة Rawdha+ مجاناً.',
+    trialText: 'اكتشفي كل وظائف المنصة لمدة 15 يوماً دون التزام. يُراجع طلب المديرة قبل التفعيل الكامل.',
+    finalTitle: 'ابدئي تسيير حضانتك برؤية أوضح.',
+    finalText: 'أنشئي طلبك وابدئي تجربتك المجانية لمدة 15 يوماً بعد المصادقة.',
+    finalPrimary: 'بدء التجربة المجانية',
     finalSecondary: 'لدي حساب بالفعل',
     footer: 'منصة احترافية لتسيير الحضانة',
     menu: 'فتح التنقل',
@@ -113,7 +119,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
   const { language, setLanguage } = useLanguage();
   const isArabic = language === 'ar';
   const content = isArabic ? copy.ar : copy.fr;
-  const currentModules = isArabic ? modules.ar : modules.fr;
+  const currentFeatures = isArabic ? featureGroups.ar : featureGroups.fr;
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -165,7 +171,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
           </div>
         </section>
 
-        <section id="modules" className="scroll-mt-20 bg-white px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-24"><div className="mx-auto max-w-7xl"><div className="max-w-2xl"><p className="text-sm font-bold text-[#e85b2d]">{content.modulesLabel}</p><h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">{content.overview}</h2><p className="mt-4 text-base leading-7 text-slate-600">{content.overviewText}</p></div><div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{currentModules.map(({ icon: Icon, title, text }) => <article key={title} className="rounded-xl border border-slate-200 bg-white p-5 transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"><Icon aria-hidden="true" className="h-5 w-5 stroke-[1.6] text-slate-500" /><h3 className="mt-4 text-base font-black text-slate-900">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{text}</p></article>)}</div></div></section>
+        <section id="modules" className="scroll-mt-20 bg-white px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-24"><div className="mx-auto max-w-7xl"><div className="max-w-3xl"><p className="text-sm font-bold text-[#e85b2d]">{content.modulesLabel}</p><h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">{content.overview}</h2><p className="mt-4 text-base leading-7 text-slate-600">{content.overviewText}</p></div><div className="mt-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{currentFeatures.map(({ title, text, items }) => <article key={title} className="rounded-xl border border-slate-200 bg-white p-5"><h3 className="text-base font-black text-slate-900">{title}</h3><p className="mt-2 min-h-12 text-sm leading-6 text-slate-600">{text}</p><ul className="mt-5 border-t border-slate-100 pt-3 text-sm font-bold text-slate-700">{items.map((item) => <li key={item} className="border-b border-slate-100 py-2.5 last:border-b-0">{item}</li>)}</ul></article>)}</div></div></section>
 
         <section id="connect" className="scroll-mt-20 border-y border-slate-200 bg-slate-50 px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-24">
           <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1fr_0.85fr] lg:items-center lg:gap-20">
@@ -189,7 +195,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
 
         <section className="bg-white px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-24"><div className="mx-auto grid max-w-7xl gap-10 rounded-2xl border border-slate-200 bg-[#fff8f4] p-7 sm:p-10 lg:grid-cols-[1fr_0.8fr] lg:items-center lg:p-14"><div><p className="text-sm font-bold text-[#e85b2d]">{content.securityLabel}</p><h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">{content.securityTitle}</h2><p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">{content.securityText}</p></div><div className="rounded-xl border border-orange-200 bg-white p-5"><ShieldCheck className="h-7 w-7 text-[#e85b2d]" /><p className="mt-4 text-sm font-black text-slate-900">{isArabic ? 'حالة الوصول' : 'Statut d’accès'}</p><div className="mt-3 space-y-2 text-sm font-medium text-slate-600"><p className="flex items-center justify-between"><span>{isArabic ? 'الطلب' : 'Demande'}</span><span className="rounded-full bg-orange-50 px-2.5 py-1 text-xs font-bold text-[#c94b24]">{isArabic ? 'في الانتظار' : 'En attente'}</span></p><p className="flex items-center justify-between"><span>{isArabic ? 'التفعيل' : 'Activation'}</span><span className="text-xs font-bold text-slate-500">{isArabic ? 'بعد المراجعة' : 'Après validation'}</span></p></div></div></div></section>
 
-        <section className="bg-[#172b4d] px-4 py-16 text-white sm:px-6 sm:py-20 lg:px-8 lg:py-24"><div className="mx-auto flex max-w-7xl flex-col justify-between gap-8 lg:flex-row lg:items-end"><div className="max-w-3xl"><h2 className="text-3xl font-black tracking-tight sm:text-5xl">{content.finalTitle}</h2><p className="mt-5 max-w-2xl text-base leading-7 text-slate-300">{content.finalText}</p></div><div className="flex flex-col gap-3 sm:flex-row lg:flex-col"><button type="button" onClick={() => onNavigate('request')} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#e85b2d] px-5 py-3.5 text-sm font-bold text-white transition hover:bg-[#d84d21] active:scale-[0.97]">{content.finalPrimary}<Arrow className="h-4 w-4" /></button><button type="button" onClick={() => onNavigate('login')} className="rounded-lg border border-white/25 px-5 py-3.5 text-sm font-bold text-white transition hover:bg-white/10">{content.finalSecondary}</button></div></div></section>
+        <section className="bg-[#172b4d] px-4 py-16 text-white sm:px-6 sm:py-20 lg:px-8 lg:py-24"><div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1fr_0.82fr] lg:items-end"><div><p className="text-sm font-bold text-[#ff9b7d]">{content.trialLabel}</p><h2 className="mt-3 max-w-3xl text-3xl font-black tracking-tight sm:text-5xl">{content.trialTitle}</h2><p className="mt-5 max-w-2xl text-base leading-7 text-slate-300">{content.trialText}</p><div className="mt-7 flex flex-wrap gap-x-5 gap-y-2 text-sm font-bold text-slate-200"><span>15 jours</span><span>•</span><span>{isArabic ? 'دون التزام' : 'Sans engagement'}</span><span>•</span><span>{isArabic ? 'كل الوظائف' : 'Toutes les fonctionnalités'}</span></div></div><div className="rounded-xl border border-white/15 bg-white/5 p-6"><h3 className="text-xl font-black">{content.finalTitle}</h3><p className="mt-3 text-sm leading-6 text-slate-300">{content.finalText}</p><div className="mt-6 flex flex-col gap-3"><button type="button" onClick={() => onNavigate('request')} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#e85b2d] px-5 py-3.5 text-sm font-bold text-white transition hover:bg-[#d84d21] active:scale-[0.97]">{content.finalPrimary}<Arrow className="h-4 w-4" /></button><button type="button" onClick={() => onNavigate('login')} className="rounded-lg border border-white/25 px-5 py-3.5 text-sm font-bold text-white transition hover:bg-white/10">{content.finalSecondary}</button></div></div></div></section>
       </main>
 
       <footer className="border-t border-slate-200 bg-white px-4 py-7 sm:px-6 lg:px-8"><div className="mx-auto flex max-w-7xl flex-col gap-4 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2"><img src="/rawdah-logo.png" alt="Rawdha+" className="h-7 w-7 rounded-lg object-contain" /><span className="font-black text-slate-800">RAWDHA<span className="text-[#e85b2d]">+</span></span><span>{content.footer}</span></div><div className="flex items-center gap-3"><Globe2 className="h-4 w-4" /><button type="button" onClick={() => setLanguage(isArabic ? 'fr' : 'ar')} className="font-bold text-slate-700 hover:text-[#e85b2d]">{isArabic ? 'Français' : 'العربية'}</button><span>© 2026 RAWDHA+</span></div></div></footer>
