@@ -169,10 +169,11 @@ export default function CommandCenter({
       const status = statusByChild.get(enfant.id);
       return status === 'Absent justifié' || status === 'Absent non justifié';
     }).length;
+    const unrecorded = Math.max(0, activeChildren.length - presents - absents);
     const attendanceRate = activeChildren.length > 0 ? Math.round((presents / activeChildren.length) * 100) : 0;
 
     return {
-      expected: activeChildren.length,
+      unrecorded,
       presents,
       absents,
       attendanceRate,
@@ -237,8 +238,8 @@ export default function CommandCenter({
           <p className="mt-1 text-xl font-black text-slate-800">{todaySummary.absents}</p>
         </div>
         <div className="rounded-xl bg-indigo-50/80 p-3 text-start">
-          <span className="break-words text-[10px] font-black uppercase leading-tight tracking-wide text-indigo-600">{isArabic ? 'المتوقعون' : 'Attendus'}</span>
-          <p className="mt-1 text-xl font-black text-indigo-900">{todaySummary.expected}</p>
+          <span className="break-words text-[10px] font-black uppercase leading-tight tracking-wide text-indigo-600">{isArabic ? 'لم يُسجَّل بعد' : 'À pointer'}</span>
+          <p className="mt-1 text-xl font-black text-indigo-900">{todaySummary.unrecorded}</p>
         </div>
       </div>
 
@@ -269,7 +270,7 @@ export default function CommandCenter({
           </div>
           {alerts.length > 0 && (
             <span className="rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-500">
-              {isArabic ? `${alerts.length} إشارات` : `${alerts.length} signal${alerts.length > 1 ? 'aux' : ''}`}
+              {isArabic ? `${alerts.length} تنبيهات` : `${alerts.length} alerte${alerts.length > 1 ? 's' : ''}`}
             </span>
           )}
         </div>

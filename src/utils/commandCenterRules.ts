@@ -147,7 +147,7 @@ function buildAttendanceAlert(
     title: locale === 'ar' ? 'استكمال تسجيل الحضور' : 'Pointage à compléter',
     message: locale === 'ar'
       ? `لم يُسجَّل حضور ${missingAttendance.length} من الأطفال اليوم.`
-      : `${missingAttendance.length} enfant${missingAttendance.length > 1 ? 's' : ''} n'a${missingAttendance.length > 1 ? 'nt' : ''} pas encore de présence enregistrée aujourd'hui.`,
+        : `${missingAttendance.length} enfant${missingAttendance.length > 1 ? 's' : ''} ${missingAttendance.length > 1 ? "n'ont" : "n'a"} pas encore de présence enregistrée aujourd'hui.`,
     targetPage: 'presences',
     count: missingAttendance.length,
   };

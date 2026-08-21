@@ -26,6 +26,16 @@ export default function Support() {
   const ownReports = useMemo(() => signalements.filter(item => item.userId === user?.id).slice().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [signalements, user?.id]);
   const ownReview = avis.find(item => item.userId === user?.id);
 
+  const reportTypeLabel = (type: SignalementType) => {
+    if (isFrench) return type === 'bug' ? 'Bug technique' : type === 'probleme' ? 'Problème' : type === 'suggestion' ? 'Suggestion' : 'Amélioration';
+    return type === 'bug' ? 'خلل تقني' : type === 'probleme' ? 'مشكلة' : type === 'suggestion' ? 'اقتراح' : 'تحسين';
+  };
+
+  const reportStatusLabel = (value: string) => {
+    if (isFrench) return value === 'resolu' ? 'Résolu' : value === 'en_cours' ? 'En cours' : 'Nouveau';
+    return value === 'resolu' ? 'تم الحل' : value === 'en_cours' ? 'قيد المعالجة' : 'جديد';
+  };
+
   const showStatus = (text: string) => {
     setStatus(text);
     window.setTimeout(() => setStatus(''), 3000);
@@ -73,7 +83,9 @@ export default function Support() {
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center gap-3 border-b border-slate-100 pb-4"><Headset className="h-5 w-5 text-indigo-600" /><div><h2 className="font-bold text-slate-900">{isFrench ? 'Écrire au support' : 'مراسلة الدعم'}</h2><p className="text-xs text-slate-500">{isFrench ? 'Réponse depuis la plateforme.' : 'الرد من داخل المنصة.'}</p></div></div>
           <form onSubmit={sendMessage} className="mt-4 space-y-3">
-            <textarea className={inputClass} rows={5} value={message} onChange={event => setMessage(event.target.value)} placeholder={isFrench ? 'Votre message...' : 'رسالتكم...'} />
+            <label className={labelClass}>{isFrench ? 'Message à l’équipe Rawdha+' : 'رسالة إلى فريق روضتي+'}</label>
+            <textarea className={inputClass} rows={5} value={message} onChange={event => setMessage(event.target.value)} placeholder={isFrench ? 'Décrivez votre demande avec le nom de l’écran concerné...' : 'اشرحوا طلبكم مع ذكر الصفحة المعنية...'} />
+            <p className="text-xs text-slate-400">{isFrench ? 'Ajoutez le nom du module et les étapes suivies pour accélérer la réponse.' : 'أضيفوا اسم الوحدة والخطوات المتبعة لتسريع الرد.'}</p>
             <button type="submit" disabled={!message.trim()} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"><Send className="h-4 w-4" />{isFrench ? 'Envoyer le message' : 'إرسال الرسالة'}</button>
           </form>
           {ownMessages.length > 0 && <div className="mt-5 space-y-2 border-t border-slate-100 pt-4">{ownMessages.slice(-4).map(item => <div key={item.id} className={`rounded-lg px-3 py-2 text-sm ${item.senderId === user?.id ? 'bg-indigo-50 text-indigo-900' : 'bg-slate-50 text-slate-700'}`}><p>{item.text}</p><p className="mt-1 text-[11px] text-slate-400">{new Date(item.timestamp).toLocaleString(isFrench ? 'fr-FR' : 'ar-DZ')}</p></div>)}</div>}
@@ -83,8 +95,8 @@ export default function Support() {
           <div className="flex items-center gap-3 border-b border-slate-100 pb-4"><Flag className="h-5 w-5 text-rose-600" /><div><h2 className="font-bold text-slate-900">{isFrench ? 'Signaler ou suggérer' : 'الإبلاغ أو الاقتراح'}</h2><p className="text-xs text-slate-500">{isFrench ? 'Les retours sont suivis par l’équipe.' : 'يتابع الفريق ملاحظاتكم.'}</p></div></div>
           <form onSubmit={sendReport} className="mt-4 space-y-3">
             <div><label className={labelClass}>{isFrench ? 'Type' : 'النوع'}</label><select className={inputClass} value={feedbackType} onChange={event => setFeedbackType(event.target.value as SignalementType)}>{feedbackTypes.map(type => <option key={type} value={type}>{type === 'bug' ? (isFrench ? 'Bug technique' : 'خلل تقني') : type === 'probleme' ? (isFrench ? 'Problème' : 'مشكلة') : type === 'suggestion' ? (isFrench ? 'Suggestion' : 'اقتراح') : (isFrench ? 'Amélioration' : 'تحسين')}</option>)}</select></div>
-            <div><label className={labelClass}>{isFrench ? 'Titre' : 'العنوان'}</label><input className={inputClass} value={feedbackTitle} onChange={event => setFeedbackTitle(event.target.value)} /></div>
-            <div><label className={labelClass}>{isFrench ? 'Description' : 'الوصف'}</label><textarea className={inputClass} rows={4} value={feedbackDescription} onChange={event => setFeedbackDescription(event.target.value)} /></div>
+            <div><label className={labelClass}>{isFrench ? 'Titre' : 'العنوان'}</label><input className={inputClass} value={feedbackTitle} onChange={event => setFeedbackTitle(event.target.value)} placeholder={isFrench ? 'Ex. : Le pointage ne s’enregistre pas' : 'مثال: لا يتم حفظ تسجيل الحضور'} /></div>
+            <div><label className={labelClass}>{isFrench ? 'Description' : 'الوصف'}</label><textarea className={inputClass} rows={4} value={feedbackDescription} onChange={event => setFeedbackDescription(event.target.value)} placeholder={isFrench ? 'Décrivez ce que vous attendiez et ce qui s’est passé.' : 'اشرحوا ما كنتم تتوقعونه وما حدث فعلياً.'} /></div>
             <button type="submit" disabled={!feedbackTitle.trim() || !feedbackDescription.trim()} className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"><Send className="h-4 w-4" />{isFrench ? 'Envoyer le retour' : 'إرسال الملاحظة'}</button>
           </form>
         </section>
@@ -93,7 +105,22 @@ export default function Support() {
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-3 border-b border-slate-100 pb-4"><Star className="h-5 w-5 text-amber-500" /><div><h2 className="font-bold text-slate-900">{isFrench ? 'Donner votre avis' : 'شاركوا تقييمكم'}</h2><p className="text-xs text-slate-500">{isFrench ? 'Un avis par compte.' : 'تقييم واحد لكل حساب.'}</p></div></div>
         {ownReview ? <p className="mt-4 text-sm text-slate-600">{isFrench ? 'Votre avis a déjà été enregistré. Merci.' : 'تم تسجيل تقييمكم، شكراً.'}</p> : <form onSubmit={sendReview} className="mt-4 space-y-3"><div className="flex gap-1">{[1, 2, 3, 4, 5].map(value => <button type="button" key={value} onClick={() => setRating(value)} aria-label={`${value} / 5`}><Star className={`h-7 w-7 ${value <= rating ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`} /></button>)}</div><textarea className={inputClass} rows={3} value={comment} onChange={event => setComment(event.target.value)} placeholder={isFrench ? 'Votre commentaire...' : 'تعليقكم...'} /><button type="submit" disabled={!comment.trim()} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"><MessageSquare className="h-4 w-4" />{isFrench ? 'Enregistrer mon avis' : 'حفظ التقييم'}</button></form>}
-        {ownReports.length > 0 && <p className="mt-4 text-xs text-slate-500">{isFrench ? `${ownReports.length} retour(s) envoyé(s).` : `تم إرسال ${ownReports.length} ملاحظة.`}</p>}
+        {ownReports.length > 0 && (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <p className="text-xs font-bold text-slate-500">{isFrench ? `${ownReports.length} retour(s) envoyé(s)` : `تم إرسال ${ownReports.length} ملاحظة`}</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {ownReports.slice(0, 6).map(report => (
+                <div key={report.id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-bold text-slate-800">{report.titre}</p>
+                    <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-slate-600">{reportStatusLabel(report.statut)}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">{reportTypeLabel(report.type)} · {new Date(report.date).toLocaleDateString(isFrench ? 'fr-FR' : 'ar-DZ')}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );

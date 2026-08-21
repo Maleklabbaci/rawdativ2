@@ -166,10 +166,22 @@ export default function Parametres() {
     e.preventDefault();
     if (!user) return;
 
-    if (user.role === 'admin') {
-      const confirmed = window.confirm(isFrench
-        ? 'Enregistrer ces paramètres globaux ? Ils peuvent modifier l’accès, les abonnements et l’affichage de la plateforme pour tous les comptes.'
-        : 'هل تريد حفظ إعدادات المنصة العامة؟ قد تؤثر هذه الخيارات على الدخول والاشتراكات والعرض لجميع الحسابات.');
+    if (user.role === 'directeur') {
+      const phoneDigits = crecheData.phoneNumbers.replace(/\D/g, '');
+      if (phoneDigits.length < 9) {
+        setErrorMessage(isFrench ? 'Saisissez un numéro de téléphone valide (au moins 9 chiffres).' : 'يرجى إدخال رقم هاتف صحيح (9 أرقام على الأقل).');
+        return;
+      }
+    }
+
+    if (user.role === 'admin' || user.role === 'directeur') {
+      const confirmed = window.confirm(user.role === 'admin'
+        ? (isFrench
+          ? 'Enregistrer ces paramètres globaux ? Ils peuvent modifier l’accès, les abonnements et l’affichage de la plateforme pour tous les comptes.'
+          : 'هل تريد حفظ إعدادات المنصة العامة؟ قد تؤثر هذه الخيارات على الدخول والاشتراكات والعرض لجميع الحسابات.')
+        : (isFrench
+          ? 'Enregistrer les modifications de votre crèche ? Les horaires, tarifs et alertes seront mis à jour pour votre équipe.'
+          : 'هل تريد حفظ تعديلات الحضانة؟ سيتم تحديث الأوقات والأسعار والتنبيهات لفريقكم.'));
       if (!confirmed) return;
     }
 
@@ -594,7 +606,9 @@ export default function Parametres() {
                     <div className="relative">
                       <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                       <input 
-                        type="text" 
+                        type="tel"
+                        inputMode="tel"
+                        placeholder={isFrench ? 'Ex. : 0555 12 34 56' : 'مثال: 0555 12 34 56'}
                         className="w-full pl-10 pr-4 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800" 
                         value={crecheData.phoneNumbers}
                         onChange={e => setCrecheData({...crecheData, phoneNumbers: e.target.value})}
@@ -701,8 +715,8 @@ export default function Parametres() {
                   {/* SMS Presence */}
                   <div className="flex items-start justify-between gap-2.5">
                     <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-slate-800 block">Envoi SMS Absents 09H00</span>
-                      <p className="text-[10px] text-slate-400 leading-normal">Alerte SMS automatique aux parents s'ils ne sont pas enregistrés.</p>
+                      <span className="text-xs font-bold text-slate-800 block">{isFrench ? 'SMS des absences à 09 h 00' : 'رسائل الغياب على الساعة 09:00'}</span>
+                      <p className="text-[10px] text-slate-400 leading-normal">{isFrench ? 'Alerte les parents si le pointage de leur enfant n’est pas enregistré.' : 'تنبيه الأولياء إذا لم يتم تسجيل حضور طفلهم.'}</p>
                     </div>
                     <button
                       type="button"
@@ -720,8 +734,8 @@ export default function Parametres() {
                   {/* Mail Weekly */}
                   <div className="flex items-start justify-between gap-2.5 pt-3 border-t border-slate-100">
                     <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-slate-800 block">Rapports Hebdomadaires Email</span>
-                      <p className="text-[10px] text-slate-400 leading-normal">Partager par mail le bilan des activités et photos chaque samedi.</p>
+                      <span className="text-xs font-bold text-slate-800 block">{isFrench ? 'Rapport hebdomadaire par e-mail' : 'التقرير الأسبوعي عبر البريد الإلكتروني'}</span>
+                      <p className="text-[10px] text-slate-400 leading-normal">{isFrench ? 'Envoie chaque samedi le bilan des activités et des photos.' : 'إرسال حصيلة الأنشطة والصور كل يوم سبت.'}</p>
                     </div>
                     <button
                       type="button"
@@ -739,8 +753,8 @@ export default function Parametres() {
                   {/* Security check */}
                   <div className="flex items-start justify-between gap-2.5 pt-3 border-t border-slate-100">
                     <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-slate-800 block">Identité Sortie Strict</span>
-                      <p className="text-[10px] text-slate-400 leading-normal">Exiger deux cartes d'identity autorisées pour la remise de l'enfant.</p>
+                      <span className="text-xs font-bold text-slate-800 block">{isFrench ? 'Vérification d’identité à la sortie' : 'التحقق من الهوية عند المغادرة'}</span>
+                      <p className="text-[10px] text-slate-400 leading-normal">{isFrench ? 'Exige deux pièces d’identité autorisées pour remettre l’enfant.' : 'يشترط وثيقتي هوية معتمدتين لتسليم الطفل.'}</p>
                     </div>
                     <button
                       type="button"
@@ -758,8 +772,8 @@ export default function Parametres() {
                   {/* Bio Foods */}
                   <div className="flex items-start justify-between gap-2.5 pt-3 border-t border-slate-100">
                     <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-slate-800 block">Ingrédients 100% Bio</span>
-                      <p className="text-[10px] text-slate-400 leading-normal">Afficher le label biologique sur les compositions de repas.</p>
+                      <span className="text-xs font-bold text-slate-800 block">{isFrench ? 'Mettre en avant les ingrédients bio' : 'إبراز المكونات العضوية'}</span>
+                      <p className="text-[10px] text-slate-400 leading-normal">{isFrench ? 'Affiche le label bio lorsque la fiche repas le permet.' : 'إظهار علامة العضوي عندما تسمح بطاقة الوجبة بذلك.'}</p>
                     </div>
                     <button
                       type="button"

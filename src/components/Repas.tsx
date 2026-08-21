@@ -31,6 +31,8 @@ interface RichRepas extends Repas {
 export default function RepasPage() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
+  const displayAllergens = (value?: string) => isArabic && (value === 'Aucun allergène' || value === 'Aucun allergène majeur') ? 'لا توجد حساسية رئيسية' : value;
+  const displayHydration = (value?: string) => isArabic && (value === 'Eau filtrée' || value === 'Eau minérale') ? 'ماء مفلتر' : value;
 
   const { repas: allDbRepas, personnel: allPersonnelData, addRepas, deleteRepas } = useDb();
   const { user } = useAuth();
@@ -102,7 +104,7 @@ export default function RepasPage() {
             <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest">
               {isArabic ? 'الوجبات المبرمجة' : 'Menu de la semaine'}
             </p>
-            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{repas.length} {isArabic ? 'قوائم طعام' : 'repas configurés'}</p>
+            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{repas.length} {isArabic ? 'وجبات مبرمجة' : 'fiches repas programmées'}</p>
           </div>
         </div>
 
@@ -183,11 +185,11 @@ export default function RepasPage() {
                     </span>
                     <span className="text-[11px] text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100 font-black uppercase tracking-wider flex items-center gap-1.5">
                       <CalendarDays className="w-3.5 h-3.5" />
-                      {r.jour === 'Dimanche' && (isArabic ? 'كل أحد' : 'Chaque Dimanche')}
-                      {r.jour === 'Lundi' && (isArabic ? 'كل إثنين' : 'Chaque Lundi')}
-                      {r.jour === 'Mardi' && (isArabic ? 'كل ثلاثاء' : 'Chaque Mardi')}
-                      {r.jour === 'Mercredi' && (isArabic ? 'كل أربعاء' : 'Chaque Mercredi')}
-                      {r.jour === 'Jeudi' && (isArabic ? 'كل خميس' : 'Chaque Jeudi')}
+                      {r.jour === 'Dimanche' && (isArabic ? 'كل أحد' : 'Chaque dimanche')}
+                      {r.jour === 'Lundi' && (isArabic ? 'كل إثنين' : 'Chaque lundi')}
+                      {r.jour === 'Mardi' && (isArabic ? 'كل ثلاثاء' : 'Chaque mardi')}
+                      {r.jour === 'Mercredi' && (isArabic ? 'كل أربعاء' : 'Chaque mercredi')}
+                      {r.jour === 'Jeudi' && (isArabic ? 'كل خميس' : 'Chaque jeudi')}
                       {!['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi'].includes(r.jour || '') && r.jour}
                     </span>
                   </div>
@@ -205,17 +207,17 @@ export default function RepasPage() {
                   <div className="grid grid-cols-1 gap-2.5 text-xs font-semibold text-slate-500 pt-2 sm:grid-cols-2 sm:gap-4">
                     <div className="flex items-center gap-1.5 p-1">
                       <ShieldAlert className="w-4 h-4 text-rose-500" />
-                      <span>Allergènes: <strong className="text-slate-700">{r.allergenes}</strong></span>
+                      <span>{isArabic ? 'الحساسية: ' : 'Allergènes : '}<strong className="text-slate-700">{displayAllergens(r.allergenes)}</strong></span>
                     </div>
 
                     <div className="flex items-center gap-1.5 p-1">
                       <Flame className="w-4 h-4 text-orange-500" />
-                      <span>Calories: <strong className="text-slate-700">{r.apportCalorique}</strong></span>
+                      <span>{isArabic ? 'السعرات: ' : 'Calories : '}<strong className="text-slate-700">{r.apportCalorique}</strong></span>
                     </div>
 
                     <div className="flex items-center gap-1.5 p-1 col-span-2">
                       <Droplet className="w-4 h-4 text-sky-500" />
-                      <span>Boisson: <strong className="text-slate-700">{r.hydratationRappel}</strong></span>
+                      <span>{isArabic ? 'المشروب: ' : 'Boisson : '}<strong className="text-slate-700">{displayHydration(r.hydratationRappel)}</strong></span>
                     </div>
                   </div>
 
@@ -225,7 +227,7 @@ export default function RepasPage() {
                 <div className="mt-5 pt-4 border-t border-slate-50 flex flex-col gap-3 text-[11px] font-bold text-slate-400 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-1.5">
                     <ChefHat className="w-4 h-4 text-indigo-500" />
-                    <span>Cuisine par: <strong className="text-slate-700 truncate max-w-[120px] inline-block">{r.chefCuisine}</strong></span>
+                    <span>{isArabic ? 'الطاهي: ' : 'Cuisiné par : '}<strong className="text-slate-700 truncate max-w-[120px] inline-block">{r.chefCuisine}</strong></span>
                   </div>
                   <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
                     {r.bioIngrediens && (
@@ -235,7 +237,7 @@ export default function RepasPage() {
                       </span>
                     )}
                     <button 
-                      className="flex h-10 w-10 items-center justify-center p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer z-10"
+                      className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-bold text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer z-10"
                       onClick={(e) => {
                         e.stopPropagation();
                         const confirmationMsg = isArabic
@@ -247,6 +249,7 @@ export default function RepasPage() {
                       }}
                     >
                       <Trash2 size={15} aria-hidden="true" />
+                      <span>{isArabic ? 'حذف' : 'Supprimer'}</span>
                     </button>
                   </div>
                 </div>
@@ -375,7 +378,7 @@ export default function RepasPage() {
                     </label>
                     <input 
                       type="text" 
-                      placeholder="Ex: Eau filtrée"
+                      placeholder={isArabic ? 'مثال: ماء مفلتر' : 'Ex: Eau filtrée'}
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800" 
                       value={formData.hydratationRappel} 
                       onChange={e => setFormData({...formData, hydratationRappel: e.target.value})} 
@@ -476,11 +479,11 @@ export default function RepasPage() {
                   <div className="flex justify-between items-center text-[10px] font-black uppercase text-slate-400 tracking-wider mb-2">
                     <span>{isArabic ? 'الطبق الرئيسي المجدول' : 'Menu Principal du Jour'}</span>
                     <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
-                      {selectedRepas.jour === 'Dimanche' && (isArabic ? 'كل أحد' : 'Chaque Dimanche')}
-                      {selectedRepas.jour === 'Lundi' && (isArabic ? 'كل إثنين' : 'Chaque Lundi')}
-                      {selectedRepas.jour === 'Mardi' && (isArabic ? 'كل ثلاثاء' : 'Chaque Mardi')}
-                      {selectedRepas.jour === 'Mercredi' && (isArabic ? 'كل أربعاء' : 'Chaque Mercredi')}
-                      {selectedRepas.jour === 'Jeudi' && (isArabic ? 'كل خميس' : 'Chaque Jeudi')}
+                      {selectedRepas.jour === 'Dimanche' && (isArabic ? 'كل أحد' : 'Chaque dimanche')}
+                      {selectedRepas.jour === 'Lundi' && (isArabic ? 'كل إثنين' : 'Chaque lundi')}
+                      {selectedRepas.jour === 'Mardi' && (isArabic ? 'كل ثلاثاء' : 'Chaque mardi')}
+                      {selectedRepas.jour === 'Mercredi' && (isArabic ? 'كل أربعاء' : 'Chaque mercredi')}
+                      {selectedRepas.jour === 'Jeudi' && (isArabic ? 'كل خميس' : 'Chaque jeudi')}
                       {!['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi'].includes(selectedRepas.jour || '') && selectedRepas.jour}
                     </span>
                   </div>
@@ -502,7 +505,7 @@ export default function RepasPage() {
                     <Droplet className="w-5 h-5 text-sky-500" />
                     <div>
                       <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">{isArabic ? 'المشروب المرافق' : 'Hydratation'}</span>
-                      <span className="text-xs font-extrabold text-slate-800">{selectedRepas.hydratationRappel}</span>
+                      <span className="text-xs font-extrabold text-slate-800">{displayHydration(selectedRepas.hydratationRappel)}</span>
                     </div>
                   </div>
                 </div>
@@ -511,7 +514,7 @@ export default function RepasPage() {
                   <ShieldAlert className="w-5 h-5 text-rose-500 flex-shrink-0" />
                   <div>
                     <span className="text-[9px] font-bold text-rose-600 uppercase tracking-wider block">{isArabic ? 'تنبيه الحساسية الغذائية' : 'Alerte Allergènes'}</span>
-                    <span className="text-xs font-black text-rose-800">{selectedRepas.allergenes}</span>
+                    <span className="text-xs font-black text-rose-800">{displayAllergens(selectedRepas.allergenes)}</span>
                   </div>
                 </div>
 

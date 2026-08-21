@@ -62,11 +62,11 @@ export default function Demarrage({ onDone }: { onDone: () => void }) {
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
           {isFrench ? 'Configurer votre crèche' : 'إعداد الحضانة'}
         </h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-          {isFrench
-            ? 'Renseignez ces informations une seule fois. Vous pourrez les modifier ensuite dans Paramètres.'
-            : 'أدخلوا هذه المعلومات مرة واحدة، ويمكنكم تعديلها لاحقاً من الإعدادات.'}
-        </p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+            {isFrench
+              ? 'Vérifiez les informations affichées avant de les enregistrer. Vous pourrez les modifier ensuite dans Paramètres.'
+              : 'تحققوا من المعلومات المعروضة قبل حفظها، ويمكنكم تعديلها لاحقاً من الإعدادات.'}
+          </p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.4fr)]">
@@ -118,9 +118,14 @@ export default function Demarrage({ onDone }: { onDone: () => void }) {
           </div>
 
           {error && <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-semibold leading-5 text-amber-900">
+            {isFrench
+              ? 'Ces informations sont enregistrées dans la configuration de votre crèche. Vérifiez-les avant de continuer.'
+              : 'سيتم حفظ هذه المعلومات ضمن إعدادات الحضانة. يرجى التحقق منها قبل المتابعة.'}
+          </div>
           <div className="mt-6 flex justify-end">
             <button type="button" onClick={() => void handleSubmit()} disabled={saving} className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">
-              <Check className="h-4 w-4" />{saving ? (isFrench ? 'Enregistrement...' : 'جاري الحفظ...') : (isFrench ? 'Enregistrer et continuer' : 'حفظ ومتابعة')}
+              <Check className="h-4 w-4" />{saving ? (isFrench ? 'Enregistrement...' : 'جاري الحفظ...') : (isFrench ? 'Enregistrer la configuration' : 'حفظ الإعدادات')}
             </button>
           </div>
         </section>

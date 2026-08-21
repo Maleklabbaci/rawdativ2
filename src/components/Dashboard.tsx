@@ -61,6 +61,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
     setDailyRoutineClosed(window.localStorage.getItem(dailyRoutineClosedKey) === '1');
   }, [dailyRoutineClosedKey]);
   const presencesAujourdhui = presencesData.filter(p => p.date === today && p.statut === 'Présent');
+  const pointagesAujourdhui = new Set(presencesData.filter(p => p.date === today).map(p => p.enfantId));
   const enfantsActifs = enfantsData.filter(e => e.statut === 'Actif');
 
   // La capacité vient des classes enregistrées. Les enfants affectés sont dédupliqués
@@ -119,7 +120,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
         const enfant = enfantsData.find(e => e.id === p.enfantId);
         return enfant?.groupeAge === 'Bébés' && p.date === today && p.statut === 'Présent';
       }).length,
-      labelRef: isArabic ? 'رضع (0-2 سنوات)' : 'Tranche Bébés (0-2 ans)',
+      labelRef: isArabic ? '(0-2 سنوات)' : 'Tranche Bébés (0-2 ans)',
     },
     'Moyens': {
       total: enfantsData.filter(e => e.groupeAge === 'Moyens').length,
@@ -127,7 +128,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
         const enfant = enfantsData.find(e => e.id === p.enfantId);
         return enfant?.groupeAge === 'Moyens' && p.date === today && p.statut === 'Présent';
       }).length,
-      labelRef: isArabic ? 'متوسطين (2-4 سنوات)' : 'Tranche Moyens (2-4 ans)',
+      labelRef: isArabic ? '(2-4 سنوات)' : 'Tranche Moyens (2-4 ans)',
     },
     'Grands': {
       total: enfantsData.filter(e => e.groupeAge === 'Grands').length,
@@ -135,7 +136,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
         const enfant = enfantsData.find(e => e.id === p.enfantId);
         return enfant?.groupeAge === 'Grands' && p.date === today && p.statut === 'Présent';
       }).length,
-      labelRef: isArabic ? 'كبار (4-6 سنوات)' : 'Tranche Grands (4-6 ans)',
+      labelRef: isArabic ? '(4-6 سنوات)' : 'Tranche Grands (4-6 ans)',
     }
   };
 
@@ -196,7 +197,9 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
     {
       title: isArabic ? 'معدل الحضور اليومي' : 'Taux de Présence',
       value: `${tauxPresence}%`,
-      subtitle: isArabic ? `${presencesAujourdhui.length}/${enfantsActifs.length} حاضرون اليوم` : `${presencesAujourdhui.length}/${enfantsActifs.length} présents`,
+      subtitle: isArabic
+        ? `${presencesAujourdhui.length}/${enfantsActifs.length} حاضرون · ${pointagesAujourdhui.size}/${enfantsActifs.length} تم تسجيلهم`
+        : `${presencesAujourdhui.length}/${enfantsActifs.length} présents · ${pointagesAujourdhui.size}/${enfantsActifs.length} pointés`,
       icon: Users,
       color: 'from-emerald-500 to-emerald-600',
       bgLight: 'bg-emerald-50 text-emerald-600',
@@ -547,15 +550,15 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
             <p className="text-2xl font-black text-slate-900 mt-1">{formatCurrency(totalRevenusPayes)}</p>
           </div>
           <div className="p-5 bg-amber-50/50 border border-amber-100/30 rounded-xl">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isArabic ? 'في الانتظار' : 'Diligence'}</p>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isArabic ? 'في الانتظار' : 'En attente'}</p>
             <p className="text-2xl font-black text-slate-900 mt-1">{formatCurrency(totalRevenusAttendus)}</p>
           </div>
           <div className="p-5 bg-indigo-50/50 border border-indigo-100/30 rounded-xl">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isArabic ? 'القيمة الإجمالية' : 'Cible attendue'}</p>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isArabic ? 'إجمالي المستحق' : 'Total à recouvrer'}</p>
             <p className="text-2xl font-black text-slate-900 mt-1">{formatCurrency(totalRevenusPayes + totalRevenusAttendus)}</p>
           </div>
           <div className="p-5 bg-purple-50/50 border border-purple-100/30 rounded-xl">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isArabic ? 'معدل النجاح' : 'Taux de succès'}</p>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isArabic ? 'نسبة التحصيل' : 'Taux de recouvrement'}</p>
             <p className="text-2xl font-black text-indigo-600 mt-1">
               {totalRevenusPayes + totalRevenusAttendus > 0 ? Math.round((totalRevenusPayes / (totalRevenusPayes + totalRevenusAttendus)) * 100) : 0} %
             </p>

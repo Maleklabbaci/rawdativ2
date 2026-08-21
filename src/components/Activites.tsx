@@ -219,18 +219,18 @@ export default function Activites() {
                   </div>
                   <div className="flex items-center gap-2">
                     <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Lieu: <strong className="text-slate-700">{a.lieu}</strong></span>
+                    <span>{isArabic ? 'المكان: ' : 'Lieu : '}<strong className="text-slate-700">{a.lieu}</strong></span>
                   </div>
                   <div className="flex items-center gap-2">
                     <User className="w-3.5 h-3.5 text-emerald-500" />
-                    <span>Educateur: <strong className="text-slate-700">{a.educateurRef}</strong></span>
+                    <span>{isArabic ? 'المشرف: ' : 'Éducateur : '}<strong className="text-slate-700">{a.educateurRef}</strong></span>
                   </div>
                 </div>
 
                 {/* Material Supplies requirements */}
                 {a.materielRequis && (
                   <div className="mt-5 pt-3 border-t border-slate-50">
-                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">{isArabic ? 'المعدات المستعملة' : 'Diligence / Matériel à préparer'}</p>
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">{isArabic ? 'المستلزمات المطلوبة' : 'Matériel à préparer'}</p>
                     <p className="text-xs text-indigo-700 bg-indigo-50/50 rounded-lg p-2 font-medium leading-relaxed border border-indigo-100/30">
                       {a.materielRequis}
                     </p>
@@ -242,7 +242,7 @@ export default function Activites() {
               {/* Quick actions row */}
               <div className="mt-6 pt-4 border-t border-slate-50 flex justify-end">
                 <button 
-                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer z-10"
+                  className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer z-10"
                   onClick={(e) => {
                     e.stopPropagation();
                     const confirmationMsg = isArabic
@@ -253,7 +253,8 @@ export default function Activites() {
                     }
                   }}
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={15} />
+                  <span>{isArabic ? 'حذف' : 'Supprimer'}</span>
                 </button>
               </div>
             </div>
@@ -519,7 +520,7 @@ export default function Activites() {
 
                 {selectedActivite.materielRequis && (
                   <div className="p-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 block mb-1">{isArabic ? 'المعدات المستعملة' : 'Matériel à préparer / Logistique'}</span>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 block mb-1">{isArabic ? 'المستلزمات المطلوبة' : 'Matériel à préparer'}</span>
                     <p className="text-xs font-bold text-indigo-900 leading-relaxed">{selectedActivite.materielRequis}</p>
                   </div>
                 )}

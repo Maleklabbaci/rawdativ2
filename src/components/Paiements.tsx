@@ -38,19 +38,29 @@ const normalizeAlgerianWhatsApp = (raw?: string) => {
   return /^213[567]\d{8}$/.test(normalized) ? normalized : null;
 };
 
-const buildWhatsAppRelanceLink = (paiement: RichPaiement, enfant: Enfant | undefined, isArabic: boolean) => {
+const findWhatsAppPhone = (enfant: Enfant | undefined) => {
   if (!enfant) return null;
-  const phone = enfant.parents
+  return enfant.parents
     .map(parent => normalizeAlgerianWhatsApp(parent.telephone))
-    .find((value): value is string => Boolean(value));
-  if (!phone) return null;
+    .find((value): value is string => Boolean(value)) || null;
+};
 
+const buildWhatsAppRelanceMessage = (paiement: RichPaiement, enfant: Enfant | undefined, isArabic: boolean) => {
+  if (!enfant) return '';
   const childName = `${enfant.prenom} ${enfant.nom}`;
   const dueDate = paiement.dateEcheance || (isArabic ? 'غير محدد' : 'non précisée');
-  const message = isArabic
-    ? `السلام عليكم، نذكركم بأن فاتورة ${childName} الخاصة بـ ${paiement.moisConcerne} بمبلغ ${formatCurrency(paiement.montant)} دج ${paiement.statut === 'Retard' ? 'متأخرة وغير مسددة' : 'في انتظار التسديد'}. تاريخ الاستحقاق: ${dueDate}. شكراً لتواصلكم مع إدارة الروضة.`
+  const period = isArabic
+    ? paiement.moisConcerne.replace(/janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre/gi, month => ({ janvier: 'جانفي', février: 'فيفري', mars: 'مارس', avril: 'أفريل', mai: 'ماي', juin: 'جوان', juillet: 'جويلية', août: 'أوت', septembre: 'سبتمبر', octobre: 'أكتوبر', novembre: 'نوفمبر', décembre: 'ديسمبر' }[month.toLowerCase()] ?? month))
+    : paiement.moisConcerne;
+  return isArabic
+    ? `السلام عليكم، نذكركم بأن فاتورة ${childName} الخاصة بـ ${period} بمبلغ ${formatCurrency(paiement.montant)} ${paiement.statut === 'Retard' ? 'متأخرة وغير مسددة' : 'في انتظار التسديد'}. تاريخ الاستحقاق: ${dueDate}. شكراً لتواصلكم مع إدارة الروضة.`
     : `Bonjour,\n\nNous vous rappelons que la facture de ${childName} pour ${paiement.moisConcerne} (${formatCurrency(paiement.montant)}) est ${paiement.statut === 'Retard' ? 'en retard et reste impayée' : 'en attente de règlement'}. Échéance : ${dueDate}.\n\nMerci de prendre contact avec la direction de la crèche.\n\nCordialement,\nLa direction de Rawdha+`;
+};
 
+const buildWhatsAppRelanceLink = (paiement: RichPaiement, enfant: Enfant | undefined, isArabic: boolean) => {
+  const phone = findWhatsAppPhone(enfant);
+  const message = buildWhatsAppRelanceMessage(paiement, enfant, isArabic);
+  if (!phone || !message) return null;
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 };
 
@@ -108,10 +118,10 @@ export default function Paiements() {
   const [showFacture, setShowFacture] = useState(false);
   const [selectedFacturePaiement, setSelectedFacturePaiement] = useState<any | null>(null);
   const [copiedPaiementId, setCopiedPaiementId] = useState<string | null>(null);
+  const [whatsappPreview, setWhatsappPreview] = useState<{ phone: string; childName: string; message: string } | null>(null);
 
   const handleCopyRelance = async (paiement: RichPaiement, enfant?: Enfant) => {
-    const nom = enfant ? `${enfant.prenom} ${enfant.nom}` : 'la famille';
-    const message = `Bonjour,\\n\\nNous vous informons que la facture de ${nom} concernant ${paiement.moisConcerne} (${formatCurrency(paiement.montant)}) est ${paiement.statut === 'Retard' ? 'arrivée à échéance et reste impayée' : 'en attente de règlement'}.\\n\\nMerci de prendre contact avec la direction de la crèche pour régulariser la situation.\\n\\nCordialement,\\nLa direction de Rawdha+`;
+    const message = buildWhatsAppRelanceMessage(paiement, enfant, isArabic);
     try {
       await navigator.clipboard.writeText(message);
       setCopiedPaiementId(paiement.id);
@@ -189,6 +199,22 @@ export default function Paiements() {
   const totalPending = paiements.filter(p => p.statut === 'En attente').reduce((sum, p) => sum + p.montant, 0);
   const totalLate = paiements.filter(p => p.statut === 'Retard').reduce((sum, p) => sum + p.montant, 0);
   const recoveryRate = Math.round((totalPaid / (totalPaid + totalPending + totalLate)) * 100) || 0;
+
+  const localizePaymentStatus = (status: RichPaiement['statut']) => {
+    if (!isArabic) return status;
+    return status === 'Payé' ? 'مدفوعة' : status === 'Retard' ? 'متأخرة' : 'قيد الانتظار';
+  };
+
+  const displayPaymentPeriod = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return trimmed;
+    if (!isArabic) return `${trimmed.charAt(0).toLocaleUpperCase('fr-FR')}${trimmed.slice(1)}`;
+    const monthLabels: Record<string, string> = {
+      janvier: 'جانفي', février: 'فيفري', mars: 'مارس', avril: 'أفريل', mai: 'ماي', juin: 'جوان',
+      juillet: 'جويلية', août: 'أوت', septembre: 'سبتمبر', octobre: 'أكتوبر', novembre: 'نوفمبر', décembre: 'ديسمبر',
+    };
+    return trimmed.replace(/janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre/gi, month => monthLabels[month.toLowerCase()] ?? month);
+  };
 
   const filteredPaiements = paiements.filter(p => {
     const enfant = enfantsData.find(e => e.id === p.enfantId);
@@ -336,7 +362,7 @@ export default function Paiements() {
                           </div>
                           <div>
                             <p className="text-slate-900 font-extrabold">{enfant ? `${enfant.prenom} ${enfant.nom}` : t('children.all')}</p>
-                            <p className="text-xs text-slate-400 font-semibold">{enfant?.groupeAge || 'N/A'}</p>
+                            <p className="text-xs text-slate-400 font-semibold">{enfant?.groupeAge || (isArabic ? 'غير محدد' : 'Non renseigné')}</p>
                           </div>
                         </div>
                       </td>
@@ -345,7 +371,7 @@ export default function Paiements() {
                         <span className="flex items-center gap-1.5">
                           <Calendar className="w-4 h-4 text-slate-400" />
                           <div>
-                            <p className="text-slate-900 leading-none">{p.moisConcerne}</p>
+                            <p className="text-slate-900 leading-none">{displayPaymentPeriod(p.moisConcerne)}</p>
                             <span className="text-[10px] text-slate-400 font-normal">
                               {p.typeFacture === 'Annuel' ? (isArabic ? 'سنوي' : 'Annuel') : (isArabic ? 'شهري' : 'Mensuel')}
                             </span>
@@ -373,7 +399,7 @@ export default function Paiements() {
                         ) : (
                           <p className="text-xs text-rose-500 font-bold bg-rose-50/50 border border-rose-100 px-2 py-0.5 rounded-md inline-flex items-center gap-1">
                             <Clock className="w-3.5 h-3.5 text-rose-500" />
-                            <span>{isArabic ? 'الاستحقاق' : 'Échéance'}: {p.dateEcheance || 'Immédiat'}</span>
+                              <span>{isArabic ? 'الاستحقاق' : 'Échéance'}: {p.dateEcheance || (isArabic ? 'فوري' : 'Immédiat')}</span>
                           </p>
                         )}
                       </td>
@@ -389,7 +415,7 @@ export default function Paiements() {
                           <span className={`w-1.5 h-1.5 rounded-full ${
                             p.statut === 'Payé' ? 'bg-emerald-500' : p.statut === 'En attente' ? 'bg-amber-500' : 'bg-rose-500'
                           }`} />
-                          {p.statut}
+                          {localizePaymentStatus(p.statut)}
                         </span>
                       </td>
 
@@ -404,6 +430,7 @@ export default function Paiements() {
                             title={isArabic ? 'عرض وصل الدفع الرسمي' : 'Voir le reçu de paiement'}
                           >
                             <FileText size={16} />
+                            <span className="hidden 2xl:inline text-xs font-bold">{isArabic ? 'وصل' : 'Reçu'}</span>
                           </button>
                           
                           {/* BOUTON MODIFIER */}
@@ -413,29 +440,41 @@ export default function Paiements() {
                             title={isArabic ? 'تعديل الفاتورة' : 'Modifier la facture'}
                           >
                             <Edit size={16} />
+                            <span className="hidden 2xl:inline text-xs font-bold">{isArabic ? 'تعديل' : 'Modifier'}</span>
                           </button>
 
-                          {p.statut !== 'Payé' && (
+                              {p.statut !== 'Payé' && (
                             <>
                               {buildWhatsAppRelanceLink(p, enfant, isArabic) && (
-                                <a
-                                  href={buildWhatsAppRelanceLink(p, enfant, isArabic) || undefined}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(event) => event.stopPropagation()}
-                                  className="p-1.5 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
-                                  title={isArabic ? 'إرسال تذكير عبر واتساب' : 'Relancer via WhatsApp'}
-                                  aria-label={isArabic ? 'إرسال تذكير عبر واتساب' : 'Relancer via WhatsApp'}
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    const phone = findWhatsAppPhone(enfant);
+                                    if (phone && enfant) {
+                                      setWhatsappPreview({
+                                        phone,
+                                        childName: `${enfant.prenom} ${enfant.nom}`,
+                                        message: buildWhatsAppRelanceMessage(p, enfant, isArabic),
+                                      });
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-2 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100"
+                                  title={isArabic ? 'معاينة التذكير قبل فتح واتساب' : 'Prévisualiser avant WhatsApp'}
+                                  aria-label={isArabic ? 'معاينة التذكير قبل فتح واتساب' : 'Prévisualiser avant WhatsApp'}
                                 >
-                                  <MessageCircle size={16} />
-                                </a>
+                                  <MessageCircle size={15} />
+                                  <span className="hidden xl:inline">{isArabic ? 'معاينة' : 'Aperçu'}</span>
+                                </button>
                               )}
                               <button
-                                className={`p-1.5 rounded-lg transition cursor-pointer ${copiedPaiementId === p.id ? 'text-emerald-600 bg-emerald-50' : 'text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50'}`}
+                                type="button"
+                                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold transition cursor-pointer ${copiedPaiementId === p.id ? 'bg-emerald-50 text-emerald-600' : 'text-indigo-600 hover:bg-indigo-50'}`}
                                 onClick={() => handleCopyRelance(p, enfant)}
                                 title={isArabic ? 'نسخ رسالة التذكير' : 'Copier une relance'}
                               >
-                                <Copy size={16} />
+                                <Copy size={15} />
+                                <span className="hidden xl:inline">{isArabic ? 'نسخ' : 'Copier'}</span>
                               </button>
                             </>
                           )}
@@ -453,6 +492,7 @@ export default function Paiements() {
                             title={isArabic ? 'حذف' : 'Supprimer'}
                           >
                             <Trash2 size={16} />
+                            <span className="hidden 2xl:inline text-xs font-bold">{isArabic ? 'حذف' : 'Supprimer'}</span>
                           </button>
                         </div>
                       </td>
@@ -472,6 +512,40 @@ export default function Paiements() {
           </table>
         </div>
       </div>
+
+      {whatsappPreview && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm" onClick={() => setWhatsappPreview(null)}>
+          <motion.div
+            initial={{ scale: 0.96, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="w-full max-w-lg rounded-3xl bg-white p-5 shadow-2xl"
+            dir={isArabic ? 'rtl' : 'ltr'}
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">{isArabic ? 'مراجعة قبل واتساب' : 'Aperçu avant WhatsApp'}</p>
+                <h3 className="mt-1 text-lg font-black text-slate-900">{isArabic ? `رسالة إلى ${whatsappPreview.childName}` : `Message pour ${whatsappPreview.childName}`}</h3>
+                <p className="mt-1 text-xs font-semibold text-slate-500">{whatsappPreview.phone}</p>
+              </div>
+              <button type="button" onClick={() => setWhatsappPreview(null)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label={isArabic ? 'إغلاق' : 'Fermer'}><X className="h-5 w-5" /></button>
+            </div>
+            <p className="mt-4 whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">{whatsappPreview.message}</p>
+            <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setWhatsappPreview(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-50">{isArabic ? 'إلغاء' : 'Annuler'}</button>
+              <a
+                href={`https://wa.me/${whatsappPreview.phone}?text=${encodeURIComponent(whatsappPreview.message)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setWhatsappPreview(null)}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-black text-white hover:bg-emerald-700"
+              >
+                <MessageCircle className="h-4 w-4" />{isArabic ? 'فتح واتساب' : 'Ouvrir WhatsApp'}
+              </a>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* Modal Ajout & Edition */}
       <AnimatePresence>

@@ -728,7 +728,7 @@ export default function Enfants() {
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-200">RAWDHA+ • {isArabic ? 'قبول الأطفال' : 'Admission enfant'}</p>
               <h2 className="mt-1 break-words text-lg sm:text-xl font-black">{isArabic ? 'رمز QR داخل صفحة الأطفال' : 'Admission par QR, directement dans Enfants'}</h2>
-              <p className="mt-1 max-w-2xl text-xs leading-5 text-indigo-100/75">{isArabic ? 'رمز QR دائم يتم إنشاؤه تلقائياً لهذه الروضة. شاركه مع الأولياء لاستقبال طلبات التسجيل.' : 'Un seul QR permanent est créé automatiquement pour cette crèche. Partagez-le aux parents pour recevoir leurs demandes.'}</p>
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-indigo-100/75">{isArabic ? 'رمز QR دائم يتم إنشاؤه تلقائياً لهذه الروضة. يمكن للأولياء فتحه لعرض استمارة التسجيل فقط، ولا يمنحهم أي وصول إلى بياناتكم الداخلية.' : 'Un seul QR permanent est créé automatiquement pour cette crèche. Il ouvre uniquement le formulaire public d’admission et ne donne aucun accès à vos données internes.'}</p>
             </div>
           </div>
           <button type="button" onClick={() => setShowAdmissionQr(value => !value)} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-xs font-black text-indigo-800 shadow-lg transition hover:bg-indigo-50">
@@ -741,7 +741,7 @@ export default function Enfants() {
           <div className="mt-6 grid gap-5 border-t border-white/10 pt-5 xl:grid-cols-[1fr_auto]">
             <div>
               <div className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-sm font-bold text-emerald-100">
-                {isArabic ? 'هذا هو رمز الروضة الوحيد والدائم. لا حاجة لإنشاء رمز جديد.' : 'Ce QR est le seul QR permanent de votre crèche. Aucun nouveau code ne doit être généré.'}
+                {isArabic ? 'هذا هو رمز الروضة الوحيد والدائم. شاركوه مع الأولياء لاستقبال الطلبات، ثم راجعوا كل ملف قبل الإضافة.' : 'Ce QR est le seul QR permanent de votre crèche. Partagez-le, puis vérifiez chaque dossier avant de l’ajouter à votre gestion.'}
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-indigo-100/75">
                 <span className="rounded-full bg-white/10 px-3 py-1.5">{inscriptionLinks.filter(link => link.active).length} {isArabic ? 'روابط نشطة' : 'lien(s) actif(s)'}</span>
@@ -911,9 +911,11 @@ export default function Enfants() {
                           <button 
                             onClick={() => setSelectedEnfant(enfant)}
                             className="p-1.5 text-indigo-500 hover:bg-indigo-50 rounded-lg transition"
-                            title={isArabic ? 'عرض الملف' : 'Dossier'}
+                            title={isArabic ? 'عرض الملف' : 'Ouvrir le dossier'}
+                            aria-label={isArabic ? 'عرض ملف الطفل' : 'Ouvrir le dossier de l’enfant'}
                           >
                             <FileText size={16} />
+                            <span className="hidden 2xl:inline text-xs font-bold">{isArabic ? 'الملف' : 'Dossier'}</span>
                           </button>
                           <button 
                             onClick={() => {
@@ -948,9 +950,12 @@ export default function Enfants() {
                               });
                               setShowModal(true);
                             }}
-                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition"
+                            className="inline-flex items-center gap-1.5 rounded-lg p-1.5 text-slate-400 hover:bg-slate-50 hover:text-indigo-600 transition"
+                            title={isArabic ? 'تعديل ملف الطفل' : 'Modifier le dossier de l’enfant'}
+                            aria-label={isArabic ? 'تعديل ملف الطفل' : 'Modifier le dossier de l’enfant'}
                           >
                             <Pencil size={16} />
+                            <span className="hidden 2xl:inline text-xs font-bold">{isArabic ? 'تعديل' : 'Modifier'}</span>
                           </button>
                           <button
                             onClick={() => enfant.statut === 'Actif'
@@ -964,10 +969,16 @@ export default function Enfants() {
                             title={enfant.statut === 'Actif'
                               ? (isArabic ? 'تسجيل خروج' : 'Marquer comme sorti')
                               : (isArabic ? 'إعادة التسجيل' : 'Réintégrer')}
+                            aria-label={enfant.statut === 'Actif'
+                              ? (isArabic ? 'تسجيل خروج الطفل' : 'Marquer l’enfant comme sorti')
+                              : (isArabic ? 'إعادة تسجيل الطفل' : 'Réintégrer l’enfant')}
                           >
                             {enfant.statut === 'Actif' ? <LogOut size={16} /> : <RotateCcw size={16} />}
+                            <span className="hidden 2xl:inline text-xs font-bold">{enfant.statut === 'Actif' ? (isArabic ? 'خروج' : 'Sortie') : (isArabic ? 'إعادة' : 'Réintégrer')}</span>
                           </button>
                           <button 
+                            aria-label={isArabic ? 'حذف ملف الطفل' : 'Supprimer le dossier de l’enfant'}
+                            title={isArabic ? 'حذف ملف الطفل' : 'Supprimer le dossier de l’enfant'}
                             onClick={() => {
                               if (window.confirm(isArabic ? 'هل أنت متأكد من حذف هذا الطفل؟' : 'Êtes-vous sûr de vouloir supprimer cet enfant ?')) {
                                 deleteEnfant(enfant.id);
@@ -1043,7 +1054,7 @@ export default function Enfants() {
 
                     <div className="mt-5 bg-slate-50/50 rounded-2xl p-3 border border-slate-100/50">
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">
-                        {isArabic ? 'الـملف الإداري والتراخيص' : 'Diligence Dossier Administratif'}
+                        {isArabic ? 'الملف الإداري والتراخيص' : 'Dossier administratif et autorisations'}
                       </p>
                       <div className="grid grid-cols-4 gap-2 text-center text-[10px] font-bold text-slate-500">
                         <div className="space-y-1">
