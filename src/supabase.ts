@@ -90,6 +90,13 @@ async function withAuthRetry<T extends SupabaseResponseLike>(request: () => Prom
   return request();
 }
 
+export async function callSupabaseRpc<T = unknown>(
+  functionName: string,
+  args: Record<string, unknown>,
+): Promise<{ data: T | null; error: { status?: number; code?: string; message?: string } | null }> {
+  return withAuthRetry(() => supabase.rpc(functionName, args)) as Promise<{ data: T | null; error: { status?: number; code?: string; message?: string } | null }>;
+}
+
 function generateId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID();

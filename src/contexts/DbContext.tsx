@@ -6,6 +6,7 @@ import {
   updateCollectionDocument, 
   deleteCollectionDocument,
   setCollectionDocument,
+  callSupabaseRpc,
   supabase
 } from '../supabase';
 import { useAuth } from './AuthContext';
@@ -1147,12 +1148,12 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     const optimistic = normalizeCommunityComment({ ...commentData, id: tempId });
     setCommunityComments(prev => [...prev, optimistic]);
     try {
-      const freshId = await addCollectionDocument('community_comments', commentData);
+      const { data: freshId, error } = await callSupabaseRpc<string>('rawdha_create_community_comment', { p_data: commentData });
+      if (error || !freshId) throw error || new Error('Commentaire refusé.');
       setCommunityComments(prev => prev.map(item => item.id === tempId ? normalizeCommunityComment({ ...item, id: freshId }) : item));
       return freshId;
     } catch (err) {
       setCommunityComments(prev => prev.filter(item => item.id !== tempId));
-      notifyWriteError('ajout');
       throw err;
     }
   };
@@ -1162,10 +1163,10 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     const previous = communityComments.find(item => item.id === id);
     setCommunityComments(prev => prev.map(item => item.id === id ? normalizeCommunityComment({ ...item, ...data }) : item));
     try {
-      await updateCollectionDocument<CommunityComment>('community_comments', id, data);
+      const { data: updated, error } = await callSupabaseRpc<boolean>('rawdha_update_community_comment', { p_id: id, p_patch: data });
+      if (error || updated !== true) throw error || new Error('Commentaire non modifié.');
     } catch (err) {
       if (previous) setCommunityComments(prev => prev.map(item => item.id === id ? previous : item));
-      notifyWriteError('modification');
       throw err;
     }
   };
@@ -1175,10 +1176,10 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     const previous = communityComments.find(item => item.id === id);
     setCommunityComments(prev => prev.filter(item => item.id !== id));
     try {
-      await deleteCollectionDocument('community_comments', id);
+      const { data: deleted, error } = await callSupabaseRpc<boolean>('rawdha_delete_community_comment', { p_id: id });
+      if (error || deleted !== true) throw error || new Error('Commentaire non supprimé.');
     } catch (err) {
       if (previous) setCommunityComments(prev => [...prev, previous]);
-      notifyWriteError('suppression');
       throw err;
     }
   };
@@ -1193,11 +1194,11 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setCommunityReactions(prev => prev.filter(reaction => reaction.id !== existing.id));
       setCommunityPosts(prev => prev.map(post => post.id === postId ? { ...post, likesCount: Math.max(0, post.likesCount - 1) } : post));
       try {
-        await deleteCollectionDocument('community_reactions', existing.id);
+        const { data: deleted, error } = await callSupabaseRpc<boolean>('rawdha_delete_community_reaction', { p_post_id: postId });
+        if (error || deleted !== true) throw error || new Error('Réaction non supprimée.');
       } catch (err) {
         setCommunityReactions(previousReactions);
         setCommunityPosts(previousPosts);
-        notifyWriteError('modification');
         throw err;
       }
       return;
@@ -1212,12 +1213,12 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     setCommunityReactions(prev => [...prev, normalizeCommunityReaction({ ...reactionData, id: tempId })]);
     setCommunityPosts(prev => prev.map(post => post.id === postId ? { ...post, likesCount: post.likesCount + 1 } : post));
     try {
-      const freshId = await addCollectionDocument('community_reactions', reactionData);
+      const { data: freshId, error } = await callSupabaseRpc<string>('rawdha_create_community_reaction', { p_post_id: postId });
+      if (error || !freshId) throw error || new Error('Réaction refusée.');
       setCommunityReactions(prev => prev.map(reaction => reaction.id === tempId ? normalizeCommunityReaction({ ...reaction, id: freshId }) : reaction));
     } catch (err) {
       setCommunityReactions(previousReactions);
       setCommunityPosts(previousPosts);
-      notifyWriteError('modification');
       throw err;
     }
   };
@@ -1231,12 +1232,12 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     const optimistic = { ...cleanFeature, id: tempId } as CommunityFeature;
     setCommunityFeatures(prev => [optimistic, ...prev]);
     try {
-      const freshId = await addCollectionDocument('community_features', cleanFeature);
+      const { data: freshId, error } = await callSupabaseRpc<string>('rawdha_create_community_feature', { p_data: cleanFeature });
+      if (error || !freshId) throw error || new Error('Interaction sociale refusée.');
       setCommunityFeatures(prev => prev.map(item => item.id === tempId ? { ...optimistic, id: freshId } : item));
       return freshId;
     } catch (err) {
       setCommunityFeatures(prev => prev.filter(item => item.id !== tempId));
-      notifyWriteError('ajout');
       throw err;
     }
   };
@@ -1246,10 +1247,10 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     const previous = communityFeatures.find(item => item.id === id);
     setCommunityFeatures(prev => prev.map(item => item.id === id ? { ...item, ...data, updatedAt: new Date().toISOString() } : item));
     try {
-      await updateCollectionDocument<CommunityFeature>('community_features', id, data);
+      const { data: updated, error } = await callSupabaseRpc<boolean>('rawdha_update_community_feature', { p_id: id, p_patch: data });
+      if (error || updated !== true) throw error || new Error('Interaction sociale non modifiée.');
     } catch (err) {
       if (previous) setCommunityFeatures(prev => prev.map(item => item.id === id ? previous : item));
-      notifyWriteError('modification');
       throw err;
     }
   };
@@ -1273,10 +1274,10 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     const previous = communityFeatures.find(item => item.id === id);
     setCommunityFeatures(prev => prev.filter(item => item.id !== id));
     try {
-      await deleteCollectionDocument('community_features', id);
+      const { data: deleted, error } = await callSupabaseRpc<boolean>('rawdha_delete_community_feature', { p_id: id });
+      if (error || deleted !== true) throw error || new Error('Interaction sociale non supprimée.');
     } catch (err) {
       if (previous) setCommunityFeatures(prev => [previous, ...prev]);
-      notifyWriteError('suppression');
       throw err;
     }
   };
