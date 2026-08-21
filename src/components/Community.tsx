@@ -54,6 +54,8 @@ const categories: Array<{ value: CommunityPostCategory | 'tous'; fr: string; ar:
   { value: 'partenariat', fr: 'Partenariats', ar: 'الشراكات', color: 'bg-cyan-50 text-cyan-700' },
 ];
 
+const COMMUNITY_INTRO_STORAGE_KEY = 'rawdha-connect-intro-seen-v1';
+
 const uiCopy = {
   fr: {
     home: 'Accueil',
@@ -407,6 +409,13 @@ export default function Community() {
   const isCurrentUserCertified = isAdmin || Boolean(user?.estCertifie) || certificationChildrenCount >= 30;
   const [activeCategory, setActiveCategory] = useState<CommunityPostCategory | 'tous'>('tous');
   const [activeView, setActiveView] = useState<'feed' | 'profile' | 'reposts' | 'saved' | 'notifications' | 'messages'>('feed');
+  const [showWelcomeIntro, setShowWelcomeIntro] = useState(() => {
+    try {
+      return window.localStorage.getItem(COMMUNITY_INTRO_STORAGE_KEY) !== '1';
+    } catch {
+      return true;
+    }
+  });
   const [search, setSearch] = useState('');
   const [profileSearch, setProfileSearch] = useState('');
   const [composerMode, setComposerMode] = useState<'post' | 'album' | 'poll'>('post');
@@ -443,6 +452,17 @@ export default function Community() {
     services: user?.services?.join(', ') || '',
     classesCount: user?.classesCount ? String(user.classesCount) : '',
   });
+
+  useEffect(() => {
+    if (!showWelcomeIntro) return;
+    try {
+      window.localStorage.setItem(COMMUNITY_INTRO_STORAGE_KEY, '1');
+    } catch {
+      // Le feed reste fonctionnel si le stockage local est indisponible.
+    }
+    const timer = window.setTimeout(() => setShowWelcomeIntro(false), 4500);
+    return () => window.clearTimeout(timer);
+  }, [showWelcomeIntro]);
 
   useEffect(() => {
     if (!openMenu) return undefined;
@@ -1096,8 +1116,10 @@ export default function Community() {
           <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.22em] text-violet-300"><Sparkles className="h-4 w-4" />Rawdha Connect</div>
-              <h1 className="mt-2 max-w-2xl text-2xl font-black tracking-tight sm:text-3xl">{isAr ? 'شبكة دور الحضانة التي تتقدم معاً' : 'Le réseau des crèches qui avance ensemble'}</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{isAr ? 'شارك أفكارك، اكتشف الأنشطة وتواصل مع مدراء دور الحضانة الموثوقة.' : 'Partagez vos idées, découvrez des activités et échangez avec les Directeurs de crèches vérifiées.'}</p>
+              {showWelcomeIntro && <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="max-w-2xl">
+                <h1 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">{isAr ? 'شبكة دور الحضانة التي تتقدم معاً' : 'Le réseau des crèches qui avance ensemble'}</h1>
+                <p className="mt-2 text-sm leading-6 text-slate-300">{isAr ? 'شارك أفكارك، اكتشف الأنشطة وتواصل مع مدراء دور الحضانة الموثوقة.' : 'Partagez vos idées, découvrez des activités et échangez avec les Directeurs de crèches vérifiées.'}</p>
+              </motion.div>}
               <div className="mt-4 flex flex-wrap gap-2 text-[11px] font-bold text-slate-200"><span className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5">{communityPosts.length} {isAr ? 'منشور' : 'publications'}</span><span className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5">{profiles.length} {isAr ? 'ملف' : 'profils'}</span><span className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5">{categories.length - 1} {isAr ? 'مواضيع' : 'thèmes'}</span></div>
             </div>
             <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-col"><label className="flex min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2.5 text-slate-200 backdrop-blur-sm"><Search className="h-4 w-4 shrink-0 text-slate-300" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder={isAr ? 'ابحث في الشبكة' : 'Rechercher dans le réseau'} className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400 sm:w-56" /></label><button type="button" onClick={openComposer} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-black text-indigo-700 shadow-lg shadow-black/10 transition hover:bg-violet-50 active:scale-[0.98] sm:w-auto"><Plus className="h-4 w-4" />{isAr ? 'منشور جديد' : 'Nouvelle publication'}</button></div>
