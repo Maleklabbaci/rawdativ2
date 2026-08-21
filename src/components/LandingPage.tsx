@@ -1,7 +1,7 @@
 /**
- * Style context — Vitrine officielle Rawdha+: sobriété SaaS claire, contraste affirmé,
- * logo réel et sans art généré. Les surfaces restent simples, avec une hiérarchie lisible
- * et les accès de connexion/inscription déjà établis dans l’application.
+ * Style context — Vitrine officielle Rawdha+: lumière éditoriale, photographie humaine,
+ * contraste affirmé et animations calmes. Le hero raconte une journée de crèche sans
+ * compromettre les accès de connexion/inscription déjà établis dans l’application.
  */
 import {
   ArrowLeft,
@@ -68,6 +68,9 @@ const copy = {
     primary: 'Essai gratuit de 15 jours',
     secondary: 'Se connecter',
     assurance: ['15 jours gratuits', 'Sans engagement', 'Toutes les fonctionnalités'],
+    heroPhotoAlt: 'Éducatrice accompagnant des enfants dans une salle de crèche lumineuse',
+    activityLabel: 'Le rythme d’une journée Rawdha+',
+    activityItems: ['08:10 · Présences enregistrées', '09:30 · Activité préparée', '11:45 · Repas à confirmer', '15:30 · Message envoyé aux familles'],
     previewLabel: 'Aperçu de la plateforme',
     previewTitle: 'Tableau de bord',
     previewToday: 'Aujourd’hui',
@@ -105,6 +108,9 @@ const copy = {
     primary: 'تجربة مجانية لمدة 15 يوماً',
     secondary: 'تسجيل الدخول',
     assurance: ['15 يوماً مجاناً', 'دون التزام', 'كل الوظائف متاحة'],
+    heroPhotoAlt: 'مربية ترافق الأطفال في قاعة حضانة مضيئة',
+    activityLabel: 'إيقاع يوم مع Rawdha+',
+    activityItems: ['08:10 · تسجيل الحضور', '09:30 · تحضير النشاط', '11:45 · تأكيد الوجبة', '15:30 · إرسال رسالة للأولياء'],
     previewLabel: 'نظرة على المنصة',
     previewTitle: 'لوحة المتابعة',
     previewToday: 'اليوم',
@@ -142,6 +148,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
   const content = isArabic ? copy.ar : copy.fr;
   const currentFeatures = isArabic ? featureGroups.ar : featureGroups.fr;
   const currentDayFlow = isArabic ? dayFlow.ar : dayFlow.fr;
+  const activityItems = [...content.activityItems, ...content.activityItems];
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -161,6 +168,12 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
 
   return (
     <div dir={isArabic ? 'rtl' : 'ltr'} className="min-h-screen overflow-x-hidden bg-slate-50 font-sans text-slate-950">
+      <style>{`
+        @keyframes rawdha-activity-flow { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+        .rawdah-activity-track { animation: rawdha-activity-flow 24s linear infinite; }
+        .rawdah-activity-track:hover { animation-play-state: paused; }
+        @media (prefers-reduced-motion: reduce) { .rawdah-activity-track { animation: none; } }
+      `}</style>
       <header className={`fixed inset-x-0 top-0 z-50 border-b transition-all duration-200 ${scrolled ? 'border-slate-300 bg-white/95 shadow-sm backdrop-blur' : 'border-slate-200 bg-white/95 backdrop-blur'}`}>
         <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
           <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="flex items-center gap-2.5" aria-label="Rawdha+">
@@ -186,11 +199,12 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
       </header>
 
       <main>
-        <section id="plateforme" className="scroll-mt-20 border-b border-slate-300 bg-[#fff7f2] px-4 pb-16 pt-28 sm:px-6 sm:pb-20 sm:pt-32 lg:px-8 lg:pb-24">
-          <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[1fr_0.9fr] lg:items-center lg:gap-20">
-            <div className="max-w-2xl"><span className="inline-flex items-center gap-2 rounded-full border border-orange-300 bg-orange-50 px-3 py-2 text-[11px] font-bold text-[#b9411e]"><ShieldCheck className="h-4 w-4" />{content.badge}</span><h1 className="mt-6 text-4xl font-black leading-[1.06] tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">{content.title}</h1><p className="mt-6 max-w-xl text-base font-medium leading-7 text-slate-700 sm:text-lg">{content.text}</p><div className="mt-8 flex flex-col gap-3 sm:flex-row"><button type="button" onClick={() => onNavigate('request')} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#e85b2d] px-5 py-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-[#c94b24] active:scale-[0.97]">{content.primary}<Arrow className="h-4 w-4" /></button><button type="button" onClick={() => onNavigate('login')} className="inline-flex items-center justify-center rounded-lg border border-slate-400 bg-white px-5 py-3.5 text-sm font-bold text-slate-900 transition hover:border-slate-950 hover:bg-slate-50">{content.secondary}</button></div><div className="mt-8 flex flex-wrap gap-x-5 gap-y-2 text-xs font-bold text-slate-700">{content.assurance.map((item) => <span key={item} className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-700" />{item}</span>)}</div></div>
-            <div className="rounded-2xl border border-slate-300 bg-white p-3 shadow-[0_20px_45px_rgba(15,23,42,0.14)] sm:p-4"><div className="overflow-hidden rounded-xl border border-slate-300"><div className="flex items-center justify-between border-b border-slate-300 bg-slate-100 px-4 py-3"><div className="flex items-center gap-2"><img src="/rawdah-logo.png" alt="" className="h-7 w-7 object-contain" /><div><p className="text-xs font-black text-slate-950">RAWDHA+</p><p className="text-[10px] font-semibold text-slate-600">{content.previewLabel}</p></div></div><span className="text-[10px] font-bold text-slate-600">{content.previewToday}</span></div><div className="grid gap-3 p-4 sm:grid-cols-2"><div className="rounded-lg border border-slate-300 bg-slate-50 p-4 sm:col-span-2"><div className="flex items-center justify-between"><div><p className="text-sm font-black text-slate-950">{content.previewTitle}</p><p className="mt-1 text-xs font-medium text-slate-600">{isArabic ? 'ملخص بسيط لمتابعة العمل' : 'Un résumé simple pour suivre votre activité'}</p></div><LayoutDashboard className="h-5 w-5 stroke-[1.8] text-slate-700" /></div></div>{content.previewItems.map((item, index) => <div key={item} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3">{index === 0 ? <CalendarCheck className="h-4 w-4 shrink-0 stroke-[1.8] text-slate-700" /> : index === 1 ? <ClipboardList className="h-4 w-4 shrink-0 stroke-[1.8] text-slate-700" /> : <CreditCard className="h-4 w-4 shrink-0 stroke-[1.8] text-slate-700" />}<span className="text-xs font-bold text-slate-800">{item}</span></div>)}</div></div></div>
+        <section id="plateforme" className="scroll-mt-20 border-b border-slate-300 bg-[#f7f1ea] px-4 pb-12 pt-28 sm:px-6 sm:pb-16 sm:pt-32 lg:px-8 lg:pb-20">
+          <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.92fr_1.08fr] lg:items-center lg:gap-16">
+            <div className="max-w-2xl"><span className="inline-flex items-center gap-2 rounded-full border border-orange-300 bg-orange-50 px-3 py-2 text-[11px] font-bold text-[#b9411e]"><ShieldCheck className="h-4 w-4" />{content.badge}</span><h1 className="mt-6 text-4xl font-black leading-[1.04] tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">{content.title}</h1><p className="mt-6 max-w-xl text-base font-medium leading-7 text-slate-700 sm:text-lg">{content.text}</p><div className="mt-8 flex flex-col gap-3 sm:flex-row"><button type="button" onClick={() => onNavigate('request')} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#e85b2d] px-5 py-3.5 text-sm font-bold text-white shadow-[0_10px_18px_rgba(201,75,36,0.20)] transition hover:bg-[#c94b24] active:scale-[0.97]">{content.primary}<Arrow className="h-4 w-4" /></button><button type="button" onClick={() => onNavigate('login')} className="inline-flex items-center justify-center rounded-lg border border-slate-400 bg-white px-5 py-3.5 text-sm font-bold text-slate-900 transition hover:border-slate-950 hover:bg-slate-50">{content.secondary}</button></div><div className="mt-8 flex flex-wrap gap-x-5 gap-y-2 text-xs font-bold text-slate-700">{content.assurance.map((item) => <span key={item} className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-700" />{item}</span>)}</div></div>
+            <div className="relative min-h-[360px] overflow-hidden rounded-[28px] border border-slate-300 bg-slate-950 shadow-[0_22px_46px_rgba(15,23,42,0.20)] sm:min-h-[460px]"><img src="/manus-storage/rawdha-hero-classroom_b11ff637.jpg" alt={content.heroPhotoAlt} className="absolute inset-0 h-full w-full object-cover object-[68%_center]" /><div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/10 to-transparent" /><div className="absolute inset-x-5 bottom-5 rounded-2xl border border-white/40 bg-white/95 p-4 shadow-xl backdrop-blur sm:inset-x-6 sm:bottom-6 sm:p-5"><div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><img src="/rawdah-logo.png" alt="" className="h-8 w-8 rounded-lg object-contain" /><div><p className="text-xs font-black text-slate-950">RAWDHA+</p><p className="text-[10px] font-bold text-slate-600">{content.previewLabel}</p></div></div><span className="rounded-full bg-slate-950 px-2.5 py-1 text-[10px] font-bold text-white">{content.previewToday}</span></div><div className="mt-4 grid gap-2 sm:grid-cols-3">{content.previewItems.map((item, index) => <div key={item} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2.5">{index === 0 ? <CalendarCheck className="h-4 w-4 shrink-0 stroke-[1.8] text-[#c94b24]" /> : index === 1 ? <ClipboardList className="h-4 w-4 shrink-0 stroke-[1.8] text-[#c94b24]" /> : <CreditCard className="h-4 w-4 shrink-0 stroke-[1.8] text-[#c94b24]" />}<span className="text-[10px] font-bold leading-4 text-slate-800">{item}</span></div>)}</div></div></div>
           </div>
+          <div className="mx-auto mt-10 max-w-7xl overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm"><div className="flex items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3"><span className="h-2 w-2 animate-pulse rounded-full bg-[#e85b2d]" /><p className="text-xs font-black text-slate-900">{content.activityLabel}</p></div><div className="overflow-hidden py-3"><div className="rawdah-activity-track flex w-max items-center gap-7 whitespace-nowrap px-4">{activityItems.map((item, index) => <span key={`${item}-${index}`} className="inline-flex items-center gap-2 text-xs font-bold text-slate-700"><span className="h-1.5 w-1.5 rounded-full bg-[#e85b2d]" />{item}</span>)}</div></div></div>
         </section>
 
         <section className="border-b border-slate-300 bg-white px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-24">
