@@ -1,3 +1,4 @@
+// Style d’authentification Rawdha+ : interface claire, repères bilingues et actions de distribution explicitement non actives tant que les stores ne sont pas publiés.
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -7,7 +8,7 @@ import {
   Building,
   CheckCircle2,
   Clock3,
-  Download,
+  Apple,
   Globe2,
   KeyRound,
   Lock,
@@ -16,6 +17,7 @@ import {
   MapPin,
   MessageSquare,
   Phone,
+  Play,
   Send,
   ShieldCheck,
   BadgeCheck,
@@ -96,7 +98,11 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
     requestNote: 'Votre mot de passe est géré de façon sécurisée par Supabase et n’est jamais envoyé à l’administrateur. Après acceptation, vous pourrez vous connecter immédiatement avec vos identifiants.',
     requestButton: 'Envoyer ma demande',
     parentNote: 'L’espace parent sera ajouté séparément dans une prochaine version de Rawdha+.',
-    androidInstall: 'Installer l’application Android',
+    storesHeading: 'L’application mobile arrive bientôt',
+    storesDescription: 'Les versions Google Play et App Store seront disponibles prochainement.',
+    availableSoon: 'Prochainement',
+    googlePlay: 'Google Play',
+    appStore: 'App Store',
     requestSuccess: 'Votre demande a bien été envoyée. Après acceptation, ouvrez /login/ pour vous connecter avec le mot de passe que vous venez de définir.',
     requiredError: 'Veuillez remplir tous les champs obligatoires, y compris le mot de passe.',
     passwordLengthError: 'Le mot de passe doit contenir au moins 8 caractères.',
@@ -141,7 +147,11 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
     requestNote: 'كلمة المرور تاعك محمية بشكل آمن عبر Supabase وما تتبعثش للمسؤول. بعد قبول الطلب، تقدري تدخلي مباشرة بمعلوماتك.',
     requestButton: 'إرسال الطلب',
     parentNote: 'فضاء الأولياء راح نضيفوه بشكل منفصل في نسخة جاية من روضة+.',
-    androidInstall: 'تثبيت تطبيق أندرويد',
+    storesHeading: 'تطبيق الهاتف قريباً',
+    storesDescription: 'نسخ Google Play وApp Store ستكون متوفرة قريباً.',
+    availableSoon: 'قريباً',
+    googlePlay: 'Google Play',
+    appStore: 'App Store',
     requestSuccess: 'تم إرسال طلبك بنجاح. بعد القبول، افتحي /login/ وسجلي الدخول بكلمة المرور التي اخترتها.',
     requiredError: 'يرجى ملء جميع الخانات الإلزامية، بما فيها كلمة المرور.',
     passwordLengthError: 'لازم كلمة المرور تكون فيها 8 أحرف على الأقل.',
@@ -480,15 +490,28 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
             </a>
           </div>
 
-          <div className="flex justify-center pt-1">
-            <a
-              href="https://github.com/Maleklabbaci/rawdativ2/releases/download/android-v1.0.1/RawdhaPlus-v1.0.1-android.apk"
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 shadow-sm transition hover:border-[#e9673a] hover:bg-orange-50 hover:text-[#d94b38] focus:outline-none focus:ring-2 focus:ring-orange-200"
-            >
-              <Download className="h-4 w-4" aria-hidden="true" />
-              <span>{copy.androidInstall}</span>
-            </a>
-          </div>
+          <section className="pt-1" aria-labelledby="mobile-stores-title">
+            <div className="mb-3 text-center">
+              <h3 id="mobile-stores-title" className="text-xs font-bold text-slate-600">{copy.storesHeading}</h3>
+              <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{copy.storesDescription}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3" role="group" aria-label={copy.storesHeading}>
+              <div aria-disabled="true" className="relative min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
+                <div className="pointer-events-none flex items-center gap-2.5 opacity-55 blur-[1px] select-none" aria-hidden="true">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white text-slate-700 shadow-sm"><Play className="h-4 w-4 fill-current" /></span>
+                  <span className="min-w-0"><span className="block text-[9px] font-medium text-slate-500">Disponible sur</span><span className="block truncate text-xs font-extrabold text-slate-700">{copy.googlePlay}</span></span>
+                </div>
+                <span className="absolute right-2 top-2 rounded-full bg-white/95 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-indigo-600 shadow-sm rtl:right-auto rtl:left-2">{copy.availableSoon}</span>
+              </div>
+              <div aria-disabled="true" className="relative min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
+                <div className="pointer-events-none flex items-center gap-2.5 opacity-55 blur-[1px] select-none" aria-hidden="true">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white text-slate-700 shadow-sm"><Apple className="h-4 w-4 fill-current" /></span>
+                  <span className="min-w-0"><span className="block text-[9px] font-medium text-slate-500">Télécharger dans l’</span><span className="block truncate text-xs font-extrabold text-slate-700">{copy.appStore}</span></span>
+                </div>
+                <span className="absolute right-2 top-2 rounded-full bg-white/95 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-indigo-600 shadow-sm rtl:right-auto rtl:left-2">{copy.availableSoon}</span>
+              </div>
+            </div>
+          </section>
         </div>
       </main>
     </div>
