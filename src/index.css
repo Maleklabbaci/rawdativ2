@@ -1,10 +1,11 @@
-/* Style context — Vitrine officielle Rawdha+: sobriété SaaS avec la typographie native
-   de la plateforme; aucun habillage visuel généré n’est ajouté à l’application. */
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Style context — Vitrine Rawdha+ : français Outfit affirmé et arabe Alexandria élégant,
+   afin de garder une lecture chaleureuse, solide et stable sur toute la plateforme. */
+@import url('https://fonts.googleapis.com/css2?family=Alexandria:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Plus Jakarta Sans", "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-arabic: "Alexandria", "Noto Kufi Arabic", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
   --color-primary-50: #f5f8ff;
   --color-primary-100: #ebf1ff;
@@ -18,6 +19,62 @@ body {
   background-color: #f8fafc;
   color: #0f172a;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Rawdha+ landing typography: strong editorial French hierarchy and premium Arabic RTL. */
+.landing-typography {
+  font-family: "Outfit", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+.landing-typography h1,
+.landing-typography h2,
+.landing-typography h3,
+.landing-typography button {
+  font-family: "Outfit", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+.landing-typography h1 {
+  font-weight: 800;
+  letter-spacing: -0.055em;
+}
+
+.landing-typography h2 {
+  font-weight: 750;
+  letter-spacing: -0.04em;
+}
+
+.landing-typography h3,
+.landing-typography button {
+  font-weight: 700;
+}
+
+.landing-typography p {
+  font-weight: 500;
+}
+
+.landing-typography[dir='rtl'],
+.landing-typography[dir='rtl'] h1,
+.landing-typography[dir='rtl'] h2,
+.landing-typography[dir='rtl'] h3,
+.landing-typography[dir='rtl'] button,
+.landing-typography[dir='rtl'] p {
+  font-family: var(--font-arabic);
+  letter-spacing: 0;
+}
+
+.landing-typography[dir='rtl'] h1 {
+  font-weight: 700;
+  line-height: 1.38;
+}
+
+.landing-typography[dir='rtl'] h2 {
+  font-weight: 700;
+  line-height: 1.42;
+}
+
+.landing-typography[dir='rtl'] h3,
+.landing-typography[dir='rtl'] button {
+  font-weight: 700;
 }
 
 /* Custom Scrollbar */

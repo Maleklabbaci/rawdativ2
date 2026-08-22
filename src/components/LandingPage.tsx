@@ -68,7 +68,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
   };
 
   return (
-    <div dir={isArabic ? 'rtl' : 'ltr'} className="min-h-screen overflow-x-hidden bg-[#f3fafb] text-[#25434c]">
+    <div dir={isArabic ? 'rtl' : 'ltr'} className="landing-typography min-h-screen overflow-x-hidden bg-[#f3fafb] text-[#25434c]">
       <style>{`
         .landing-photo { overflow: hidden; }
         .landing-photo img { transition: transform 700ms cubic-bezier(0.23, 1, 0.32, 1); }
