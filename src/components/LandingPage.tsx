@@ -197,6 +197,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
         @media (prefers-reduced-motion: no-preference) {
           .rawdah-reveal { opacity: 0; transform: translate3d(0, 28px, 0) rotate(-0.6deg); transition: opacity 650ms cubic-bezier(0.23, 1, 0.32, 1), transform 650ms cubic-bezier(0.23, 1, 0.32, 1); }
           .rawdah-reveal[data-reveal="visible"] { opacity: 1; transform: translate3d(0, 0, 0) rotate(0); }
+          .rawdah-reveal .rawdah-reveal { opacity: 1; transform: none; transition: none; }
           .rawdah-delay-1 { transition-delay: 100ms; }
           .rawdah-delay-2 { transition-delay: 200ms; }
           .rawdah-delay-3 { transition-delay: 300ms; }
