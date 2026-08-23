@@ -501,6 +501,14 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
     window.addEventListener('focus', refreshWhenVisible);
     document.addEventListener('visibilitychange', refreshWhenVisible);
+    const adminAccountsChannel = user?.role === 'admin'
+      ? supabase
+        .channel('rawdha-admin-comptes-sync')
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'comptes' }, () => {
+          void refreshAdminAccounts();
+        })
+        .subscribe()
+      : null;
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible' && user?.role === 'directeur') void refreshAdmissionData();
     }, 8 * 1000);
@@ -509,6 +517,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       window.removeEventListener('focus', refreshWhenVisible);
       document.removeEventListener('visibilitychange', refreshWhenVisible);
       window.clearInterval(interval);
+      if (adminAccountsChannel) void supabase.removeChannel(adminAccountsChannel);
     };
   }, [user?.id, user?.role, user?.approvalStatus]);
 

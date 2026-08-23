@@ -886,6 +886,9 @@ export default function Comptes() {
                           <p className="text-[10px] text-slate-400 font-semibold">
                             {isFrench ? 'Contact principal' : 'جهة الاتصال الرئيسية'}
                           </p>
+                          <p className={`text-[11px] font-bold ${c.telephone ? 'text-slate-600' : 'text-amber-600'}`}>
+                            {c.telephone || (isFrench ? 'Téléphone non renseigné' : 'رقم الهاتف غير مسجل')}
+                          </p>
                         </div>
                       </td>
 
