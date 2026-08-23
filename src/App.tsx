@@ -277,7 +277,10 @@ function AppContent() {
   }, [currentPage]);
 
   useEffect(() => {
-    if (isAuthenticated || isPublicAdmission || isPublicPrivacy || isPublicLanding) return;
+    // Ne jamais remplacer une route de gestion par /login pendant que Supabase relit
+    // la session persistante de l’appareil. Sans cette garde, un redémarrage pouvait
+    // brièvement afficher la connexion alors que le refresh token était encore valide.
+    if (authLoading || isAuthenticated || isPublicAdmission || isPublicPrivacy || isPublicLanding) return;
     const normalizedPath = normalizeAuthPath(window.location.pathname);
     const queryAndHash = `${window.location.search}${window.location.hash}`;
 
@@ -293,7 +296,7 @@ function AppContent() {
     // L’accueil est réservé au téléphone ; sur ordinateur, on ouvre directement le formulaire.
     window.history.replaceState({}, '', `${isDesktopViewport ? '/login/' : '/welcome/'}${queryAndHash}`);
     setRouteVersion((version) => version + 1);
-  }, [isAuthenticated, isDesktopViewport, isPublicAdmission, isPublicPrivacy, isPublicLanding]);
+  }, [authLoading, isAuthenticated, isDesktopViewport, isPublicAdmission, isPublicPrivacy, isPublicLanding]);
 
   useEffect(() => {
     if (!isAuthenticated || isPublicAdmission || isPublicPrivacy) return;
@@ -376,8 +379,22 @@ function AppContent() {
     return <LandingPage onNavigate={(destination) => navigateToPublicPath(destination === 'request' ? '/signin/' : '/login/')} />;
   }
 
-  // Les routes publiques ne doivent jamais montrer un écran technique de restauration.
-  // L’accueil et la connexion restent immédiatement visibles, même durant la vérification silencieuse de session.
+  // Une route de gestion doit attendre la lecture du stockage persistant avant de
+  // décider qu’un appareil est déconnecté. Ainsi, après fermeture ou redémarrage,
+  // l’utilisateur reste dans Rawdha+ tant qu’il n’a pas choisi « Déconnexion ».
+  if (!isAuthenticated && authLoading && !isPublicLanding) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center gap-4">
+        <School className="w-12 h-12 text-indigo-600 animate-bounce" />
+        <p id="loading-text" className="text-sm font-bold text-slate-600 animate-pulse">
+          {language === 'ar' ? 'جاري استعادة جلستك...' : 'Restauration sécurisée de votre session...'}
+        </p>
+      </div>
+    );
+  }
+
+  // Les routes publiques restent immédiatement accessibles lorsqu’aucune session
+  // persistante n’est disponible sur l’appareil.
   if (!isAuthenticated) {
     if (isMobileWelcomeScreen) {
       return <MobileWelcome onContinue={() => navigateToPublicPath('/login/', { replace: true })} />;
