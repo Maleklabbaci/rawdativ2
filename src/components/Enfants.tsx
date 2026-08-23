@@ -198,6 +198,8 @@ export default function Enfants() {
   const [sortieMotif, setSortieMotif] = useState('Fin d\'année scolaire');
   const [selectedEnfant, setSelectedEnfant] = useState<Enfant | null>(null);
   const [editingEnfantId, setEditingEnfantId] = useState<string | null>(null);
+  const [quickUpdatingEnfantId, setQuickUpdatingEnfantId] = useState<string | null>(null);
+  const isReadOnly = user?.role === 'directeur' && user.approvalStatus === 'pending';
   
   // خاصية جديدة: تغيير طريقة العرض بين شبكة (Grid) وقائمة (List)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
@@ -314,6 +316,19 @@ export default function Enfants() {
       dateSortie: undefined,
       motifSortie: undefined,
     });
+  };
+
+  const handleQuickGroupChange = async (enfant: Enfant, groupeAge: Enfant['groupeAge']) => {
+    if (isReadOnly || quickUpdatingEnfantId || enfant.groupeAge === groupeAge) return;
+    setQuickUpdatingEnfantId(enfant.id);
+    try {
+      await updateEnfant(enfant.id, { groupeAge });
+    } catch (error) {
+      console.error('Modification rapide du groupe enfant:', error);
+      showToast(isArabic ? 'تعذر تحديث قسم الطفل.' : 'Le groupe de l’enfant n’a pas pu être mis à jour.', 'error');
+    } finally {
+      setQuickUpdatingEnfantId(null);
+    }
   };
 
   // Les pièces sont limitées à 2 Mo pour rester compatibles avec le stockage
@@ -916,13 +931,20 @@ export default function Enfants() {
                         <p className="text-[10px] text-slate-400 font-semibold">{new Date(enfant.dateNaissance).toLocaleDateString(isArabic ? 'ar' : 'fr-FR')}</p>
                       </td>
                       <td className="p-4">
-                        <span className={`px-2.5 py-1 text-[10px] font-black uppercase rounded-lg border tracking-wider ${
+                        <select
+                          value={enfant.groupeAge}
+                          disabled={isReadOnly || quickUpdatingEnfantId !== null}
+                          onChange={event => void handleQuickGroupChange(enfant, event.target.value as Enfant['groupeAge'])}
+                          aria-label={isArabic ? 'تعديل قسم الطفل' : 'Modifier le groupe de l’enfant'}
+                          className={`cursor-pointer rounded-lg border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${
                           enfant.groupeAge === 'Bébés' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' :
                           enfant.groupeAge === 'Moyens' ? 'bg-amber-50 text-amber-700 border-amber-100' :
                           'bg-rose-50 text-rose-700 border-rose-100'
                         }`}>
-                          {enfant.groupeAge}
-                        </span>
+                          <option value="Bébés">{isArabic ? 'رضع' : 'Bébés'}</option>
+                          <option value="Moyens">{isArabic ? 'متوسطين' : 'Moyens'}</option>
+                          <option value="Grands">{isArabic ? 'كبار' : 'Grands'}</option>
+                        </select>
                       </td>
                       <td className="p-4">
                         {enfant.parents.slice(0, 1).map((parent) => (
@@ -941,7 +963,6 @@ export default function Enfants() {
                             aria-label={isArabic ? 'عرض ملف الطفل' : 'Ouvrir le dossier de l’enfant'}
                           >
                             <FileText size={16} />
-                            <span className="hidden 2xl:inline text-xs font-bold">{isArabic ? 'الملف' : 'Dossier'}</span>
                           </button>
                           <button 
                             onClick={() => {
@@ -981,7 +1002,6 @@ export default function Enfants() {
                             aria-label={isArabic ? 'تعديل ملف الطفل' : 'Modifier le dossier de l’enfant'}
                           >
                             <Pencil size={16} />
-                            <span className="hidden 2xl:inline text-xs font-bold">{isArabic ? 'تعديل' : 'Modifier'}</span>
                           </button>
                           <button
                             onClick={() => enfant.statut === 'Actif'
@@ -1000,7 +1020,6 @@ export default function Enfants() {
                               : (isArabic ? 'إعادة تسجيل الطفل' : 'Réintégrer l’enfant')}
                           >
                             {enfant.statut === 'Actif' ? <LogOut size={16} /> : <RotateCcw size={16} />}
-                            <span className="hidden 2xl:inline text-xs font-bold">{enfant.statut === 'Actif' ? (isArabic ? 'خروج' : 'Sortie') : (isArabic ? 'إعادة' : 'Réintégrer')}</span>
                           </button>
                           <button 
                             aria-label={isArabic ? 'حذف ملف الطفل' : 'Supprimer le dossier de l’enfant'}
@@ -1045,13 +1064,20 @@ export default function Enfants() {
                         </div>
                       </div>
 
-                      <span className={`px-2.5 py-1 text-[10px] font-black uppercase rounded-lg border tracking-wider ${
+                      <select
+                        value={enfant.groupeAge}
+                        disabled={isReadOnly || quickUpdatingEnfantId !== null}
+                        onChange={event => void handleQuickGroupChange(enfant, event.target.value as Enfant['groupeAge'])}
+                        aria-label={isArabic ? 'تعديل قسم الطفل' : 'Modifier le groupe de l’enfant'}
+                        className={`cursor-pointer rounded-lg border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${
                         enfant.groupeAge === 'Bébés' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' :
                         enfant.groupeAge === 'Moyens' ? 'bg-amber-50 text-amber-700 border-amber-100' :
                         'bg-rose-50 text-rose-700 border-rose-100'
                       }`}>
-                        {enfant.groupeAge}
-                      </span>
+                        <option value="Bébés">{isArabic ? 'رضع' : 'Bébés'}</option>
+                        <option value="Moyens">{isArabic ? 'متوسطين' : 'Moyens'}</option>
+                        <option value="Grands">{isArabic ? 'كبار' : 'Grands'}</option>
+                      </select>
                     </div>
 
                     <div className="space-y-2 mt-4 text-xs font-semibold text-slate-500">

@@ -73,6 +73,8 @@ interface RichPaiement extends Paiement {
   typeFacture?: 'Mensuel' | 'Annuel';
 }
 
+const PAYMENT_METHODS: NonNullable<RichPaiement['moyenPaiement']>[] = ['Espèces', 'Chèque', 'Virement', 'Carte'];
+
 export default function Paiements() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
@@ -121,6 +123,8 @@ export default function Paiements() {
   const [selectedFacturePaiement, setSelectedFacturePaiement] = useState<any | null>(null);
   const [copiedPaiementId, setCopiedPaiementId] = useState<string | null>(null);
   const [whatsappPreview, setWhatsappPreview] = useState<{ phone: string; childName: string; message: string } | null>(null);
+  const [quickUpdatingPaiementId, setQuickUpdatingPaiementId] = useState<string | null>(null);
+  const isReadOnly = user?.role === 'directeur' && user.approvalStatus === 'pending';
 
   const handleCopyRelance = async (paiement: RichPaiement, enfant?: Enfant) => {
     const message = buildWhatsAppRelanceMessage(paiement, enfant, isArabic);
@@ -139,6 +143,31 @@ export default function Paiements() {
       );
     }
   };
+
+  const handleQuickPaymentChange = async (paiement: RichPaiement, selection: string) => {
+    if (isReadOnly || quickUpdatingPaiementId) return;
+    setQuickUpdatingPaiementId(paiement.id);
+    try {
+      if (selection.startsWith('Payé:')) {
+        const moyenPaiement = selection.replace('Payé:', '') as NonNullable<RichPaiement['moyenPaiement']>;
+        await updatePaiement(paiement.id, { statut: 'Payé', moyenPaiement });
+      } else {
+        await updatePaiement(paiement.id, {
+          statut: selection as RichPaiement['statut'],
+          moyenPaiement: undefined,
+        });
+      }
+    } catch (error) {
+      console.error('Modification rapide facture:', error);
+      showToast(isArabic ? 'تعذر تحديث حالة الفاتورة.' : 'Le statut de la facture n’a pas pu être mis à jour.', 'error');
+    } finally {
+      setQuickUpdatingPaiementId(null);
+    }
+  };
+
+  const paymentSelectionValue = (paiement: RichPaiement) => paiement.statut === 'Payé'
+    ? `Payé:${paiement.moyenPaiement || 'Espèces'}`
+    : paiement.statut;
 
   const [formData, setFormData] = useState({
     enfantId: enfantsData[0]?.id || '',
@@ -351,6 +380,7 @@ export default function Paiements() {
                 filteredPaiements.map((p) => {
                   const enfant = enfantsData.find(e => e.id === p.enfantId);
                   
+                  const isQuickUpdating = quickUpdatingPaiementId === p.id;
                   return (
                     <tr 
                       key={p.id} 
@@ -406,19 +436,24 @@ export default function Paiements() {
                         )}
                       </td>
 
-                      <td className="p-5">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold leading-none ${
+                      <td className="p-5" onClick={event => event.stopPropagation()}>
+                        <select
+                          value={paymentSelectionValue(p)}
+                          disabled={isReadOnly || isQuickUpdating}
+                          onChange={event => void handleQuickPaymentChange(p, event.target.value)}
+                          aria-label={isArabic ? 'تعديل حالة الفاتورة وطريقة الدفع' : 'Modifier le statut et le moyen de règlement'}
+                          className={`min-w-[156px] cursor-pointer rounded-full border px-3 py-1.5 text-xs font-bold leading-none outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${
                           p.statut === 'Payé'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                             : p.statut === 'En attente'
                             ? 'bg-amber-50 text-amber-700 border border-amber-100'
                             : 'bg-rose-50 text-rose-700 border border-rose-100'
                         }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${
-                            p.statut === 'Payé' ? 'bg-emerald-500' : p.statut === 'En attente' ? 'bg-amber-500' : 'bg-rose-500'
-                          }`} />
-                          {localizePaymentStatus(p.statut)}
-                        </span>
+                          <option value="En attente">{isArabic ? 'قيد الانتظار' : 'En attente'}</option>
+                          <option value="Retard">{isArabic ? 'متأخرة' : 'En retard'}</option>
+                          {PAYMENT_METHODS.map(method => <option key={method} value={`Payé:${method}`}>{isArabic ? `مدفوعة — ${method}` : `Payé — ${method}`}</option>)}
+                        </select>
+                        {isQuickUpdating && <p className="mt-1 text-[10px] font-bold text-slate-400">{isArabic ? 'جارٍ الحفظ…' : 'Enregistrement…'}</p>}
                       </td>
 
                       <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
@@ -430,9 +465,9 @@ export default function Paiements() {
                               setShowFacture(true);
                             }}
                             title={isArabic ? 'عرض وصل الدفع الرسمي' : 'Voir le reçu de paiement'}
+                            aria-label={isArabic ? 'عرض وصل الدفع الرسمي' : 'Voir le reçu de paiement'}
                           >
                             <FileText size={16} />
-                            <span className="hidden 2xl:inline text-xs font-bold">{isArabic ? 'وصل' : 'Reçu'}</span>
                           </button>
                           
                           {/* BOUTON MODIFIER */}
@@ -440,9 +475,9 @@ export default function Paiements() {
                             className="p-1.5 text-amber-500 hover:text-amber-750 hover:bg-amber-50 rounded-lg transition cursor-pointer" 
                             onClick={() => handleEditClick(p)}
                             title={isArabic ? 'تعديل الفاتورة' : 'Modifier la facture'}
+                            aria-label={isArabic ? 'تعديل الفاتورة' : 'Modifier la facture'}
                           >
                             <Edit size={16} />
-                            <span className="hidden 2xl:inline text-xs font-bold">{isArabic ? 'تعديل' : 'Modifier'}</span>
                           </button>
 
                               {p.statut !== 'Payé' && (
@@ -461,22 +496,21 @@ export default function Paiements() {
                                       });
                                     }
                                   }}
-                                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-2 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100"
+                                  className="inline-flex rounded-lg bg-emerald-50 p-2 text-emerald-700 transition hover:bg-emerald-100"
                                   title={isArabic ? 'معاينة التذكير قبل فتح واتساب' : 'Prévisualiser avant WhatsApp'}
                                   aria-label={isArabic ? 'معاينة التذكير قبل فتح واتساب' : 'Prévisualiser avant WhatsApp'}
                                 >
                                   <MessageCircle size={15} />
-                                  <span className="hidden xl:inline">{isArabic ? 'معاينة' : 'Aperçu'}</span>
                                 </button>
                               )}
                               <button
                                 type="button"
-                                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold transition cursor-pointer ${copiedPaiementId === p.id ? 'bg-emerald-50 text-emerald-600' : 'text-indigo-600 hover:bg-indigo-50'}`}
+                                className={`inline-flex rounded-lg p-2 transition cursor-pointer ${copiedPaiementId === p.id ? 'bg-emerald-50 text-emerald-600' : 'text-indigo-600 hover:bg-indigo-50'}`}
                                 onClick={() => handleCopyRelance(p, enfant)}
                                 title={isArabic ? 'نسخ رسالة التذكير' : 'Copier une relance'}
+                                aria-label={isArabic ? 'نسخ رسالة التذكير' : 'Copier une relance'}
                               >
                                 <Copy size={15} />
-                                <span className="hidden xl:inline">{isArabic ? 'نسخ' : 'Copier'}</span>
                               </button>
                             </>
                           )}
@@ -495,9 +529,9 @@ export default function Paiements() {
                               if (confirmed) await deletePaiement(p.id);
                             }}
                             title={isArabic ? 'حذف' : 'Supprimer'}
+                            aria-label={isArabic ? 'حذف الفاتورة' : 'Supprimer la facture'}
                           >
                             <Trash2 size={16} />
-                            <span className="hidden 2xl:inline text-xs font-bold">{isArabic ? 'حذف' : 'Supprimer'}</span>
                           </button>
                         </div>
                       </td>
