@@ -36,7 +36,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 export default function Parametres() {
   const { t, language } = useLanguage();
-  const { user, refreshCreche } = useAuth();
+  const { user, refreshCreche, updateProfile } = useAuth();
   const { confirm } = useConfirmDialog();
   const isFrench = language === 'fr';
   const isArabic = language === 'ar';
@@ -207,6 +207,15 @@ export default function Parametres() {
       } else if (user.role === 'directeur') {
         docId = `creche_${user.id}`;
         dataToSave = { id: docId, ...crecheData };
+
+        // Le téléphone renseigné dans les Paramètres est aussi le contact de la
+        // Directrice côté Super Admin. On garde les deux sources synchronisées :
+        // les anciennes fiches restent lisibles grâce au repli Admin, et les
+        // prochaines sauvegardes alimentent directement le compte.
+        const telephone = crecheData.phoneNumbers.trim();
+        if (telephone && user.telephone !== telephone) {
+          await updateProfile({ telephone });
+        }
       } else {
         docId = `parent_${user.id}`;
         dataToSave = { id: docId, ...parentData };

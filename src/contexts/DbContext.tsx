@@ -85,6 +85,27 @@ function optionalText(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
+type CrecheSettingsContact = {
+  id: string;
+  phoneNumbers?: string;
+};
+
+// Le téléphone peut avoir été enregistré avant que les comptes Directrice ne
+// reçoivent le champ `telephone`. Le Super Admin lit donc le contact du compte
+// en priorité, puis utilise sans écrire le numéro déjà présent dans les
+// Paramètres de la même crèche.
+function hydrateAccountsWithCrechePhone(
+  accounts: UserAccount[],
+  settings: CrecheSettingsContact[],
+): UserAccount[] {
+  return accounts.map((account) => {
+    if (optionalText(account.telephone)) return account;
+    const settingsPhone = settings.find((item) => item.id === `creche_${account.id}`)?.phoneNumbers;
+    const telephone = optionalText(settingsPhone);
+    return telephone ? { ...account, telephone } : account;
+  });
+}
+
 function normalizeCommunityPost(post: Partial<CommunityPost> | null | undefined, index = 0): CommunityPost {
   const candidate = (post || {}) as Record<string, unknown>;
   const authorId = typeof candidate.authorId === 'string' ? candidate.authorId : '';
@@ -385,7 +406,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
     try {
       // --- VAGUE 1 : critique pour le Dashboard, on attend ---
-      const [dbComptes, dbEnfants, dbPresences, dbPresenceJournees, dbPaiements, dbPersonnel, dbDemandesDirecteur] = await Promise.all([
+      const [dbComptes, dbEnfants, dbPresences, dbPresenceJournees, dbPaiements, dbPersonnel, dbDemandesDirecteur, dbCrecheSettings] = await Promise.all([
         user?.role === 'admin'
           ? getCollectionData<UserAccount>('comptes')
           : Promise.resolve([user] as UserAccount[]),
@@ -395,6 +416,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         getCollectionData<Paiement>('paiements'),
         getCollectionData<Personnel>('personnel'),
         user?.role === 'admin' ? getCollectionData<DemandeDirecteur>('demandes_directeur') : Promise.resolve([] as DemandeDirecteur[]),
+        user?.role === 'admin' ? getCollectionData<CrecheSettingsContact>('parametres') : Promise.resolve([] as CrecheSettingsContact[]),
       ]);
 
       // ✅ FIX: Don't create hardcoded admin - security risk!
@@ -408,7 +430,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         );
       }
 
-      setComptes(dbComptes);
+      setComptes(user?.role === 'admin' ? hydrateAccountsWithCrechePhone(dbComptes, dbCrecheSettings) : dbComptes);
       setEnfants(dbEnfants.filter(Boolean).map(normalizeEnfantData));
       setPresences(dbPresences);
       setPresenceJournees(dbPresenceJournees);
@@ -468,8 +490,11 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   const refreshAdminAccounts = async () => {
     if (user?.role !== 'admin') return;
-    const freshAccounts = await getCollectionData<UserAccount>('comptes');
-    setComptes(freshAccounts);
+    const [freshAccounts, freshCrecheSettings] = await Promise.all([
+      getCollectionData<UserAccount>('comptes'),
+      getCollectionData<CrecheSettingsContact>('parametres'),
+    ]);
+    setComptes(hydrateAccountsWithCrechePhone(freshAccounts, freshCrecheSettings));
   };
 
   useEffect(() => {
