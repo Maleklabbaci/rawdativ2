@@ -140,16 +140,13 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
       </div>
 
       <nav className={`min-h-0 flex-1 overflow-y-auto py-4 ${isCollapsed ? 'px-2' : 'px-3'}`}>
-        <div className="mb-4 rounded-2xl border border-indigo-500/20 bg-indigo-500/10 p-1.5">
-          {!isCollapsed && <p className="px-2.5 pb-1.5 pt-1 text-[9px] font-black uppercase tracking-[0.16em] text-indigo-300">{isArabic ? 'مثبت' : 'Épinglé'}</p>}
-          {renderItem({ key: 'community', label: 'community', icon: Network, color: 'text-violet-300' }, { pinned: true })}
-        </div>
         {!isCollapsed && <p className="mb-2 px-3 text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">{isArabic ? 'التسيير اليومي' : 'Gestion quotidienne'}</p>}
         <div className="space-y-1">{primaryItems.map(item => renderItem(item))}</div>
       </nav>
 
       <div className={`border-t border-slate-800 bg-slate-950/40 p-2.5 ${isCollapsed ? 'lg:px-2' : 'lg:px-3'}`}>
-        {!isCollapsed && <p className="px-3 pb-1.5 pt-1 text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">{isArabic ? 'إدارة الحساب' : 'Compte'}</p>}
+        {!isCollapsed && <p className="px-3 pb-1.5 pt-1 text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">{isArabic ? 'مثبت' : 'Épinglé'}</p>}
+        {renderItem({ key: 'community', label: 'community', icon: Network, color: 'text-violet-300' }, { pinned: true })}
         {renderItem({ key: 'parametres', label: 'settings', icon: Settings, color: 'text-slate-300' }, { pinned: true })}
       </div>
     </aside>
