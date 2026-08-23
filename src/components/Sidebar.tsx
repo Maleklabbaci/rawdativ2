@@ -126,17 +126,6 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
           </button>
           <button type="button" onClick={onClose} className="flex shrink-0 rounded-xl p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white lg:hidden" aria-label={isArabic ? 'إغلاق القائمة' : 'Fermer le menu'}><X className="h-5 w-5" /></button>
         </div>
-
-        <button type="button" onClick={() => activate('parametres')} className={`mt-4 flex w-full items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/35 p-2.5 text-left transition hover:border-indigo-500/40 hover:bg-slate-800/70 ${isCollapsed ? 'lg:justify-center' : ''}`} aria-label={isArabic ? 'فتح إعدادات الحساب' : 'Ouvrir les paramètres du compte'}>
-          <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-indigo-500/25 bg-indigo-500/20 font-bold tracking-wider text-indigo-300">
-            {user ? `${user.prenom[0] || ''}${user.nom[0] || ''}`.toUpperCase() : 'AD'}
-            <span className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-slate-900 ${user?.approvalStatus === 'pending' ? 'bg-amber-400' : 'bg-emerald-500'}`} />
-          </span>
-          <span className={`min-w-0 ${isCollapsed ? 'lg:hidden' : ''}`}>
-            <span className="flex items-center gap-1 truncate text-xs font-black text-white">{user ? `${user.prenom} ${user.nom}` : 'Admin'}{user?.role === 'admin' && <Crown className="h-3 w-3 shrink-0 text-amber-400" />}</span>
-            <span className="mt-0.5 flex items-center gap-1 truncate text-[10px] font-bold text-slate-400"><MapPin className="h-2.5 w-2.5 text-indigo-400" />{user?.approvalStatus === 'pending' ? (isArabic ? 'قراءة فقط' : 'Lecture seule') : (isArabic ? 'مدير الروضة' : 'Directeur')}</span>
-          </span>
-        </button>
       </div>
 
       <nav className={`min-h-0 flex-1 overflow-y-auto py-4 ${isCollapsed ? 'px-2' : 'px-3'}`}>
@@ -146,6 +135,16 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
 
       <div className={`border-t border-slate-800 bg-slate-950/40 p-2.5 ${isCollapsed ? 'lg:px-2' : 'lg:px-3'}`}>
         {!isCollapsed && <p className="px-3 pb-1.5 pt-1 text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">{isArabic ? 'مثبت' : 'Épinglé'}</p>}
+        <button type="button" onClick={() => activate('parametres')} className={`mb-1.5 flex w-full items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/35 p-2.5 text-left transition hover:border-indigo-500/40 hover:bg-slate-800/70 ${isCollapsed ? 'lg:justify-center' : ''}`} aria-label={isArabic ? 'فتح إعدادات الحساب' : 'Ouvrir les paramètres du compte'}>
+          <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-indigo-500/25 bg-indigo-500/20 font-bold tracking-wider text-indigo-300">
+            {user ? `${user.prenom[0] || ''}${user.nom[0] || ''}`.toUpperCase() : 'AD'}
+            <span className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-slate-900 ${user?.approvalStatus === 'pending' ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+          </span>
+          <span className={`min-w-0 ${isCollapsed ? 'lg:hidden' : ''}`}>
+            <span className="flex items-center gap-1 truncate text-xs font-black text-white">{user ? `${user.prenom} ${user.nom}` : 'Admin'}{user?.role === 'admin' && <Crown className="h-3 w-3 shrink-0 text-amber-400" />}</span>
+            <span className="mt-0.5 flex items-center gap-1 truncate text-[10px] font-bold text-slate-400"><MapPin className="h-2.5 w-2.5 text-indigo-400" />{user?.approvalStatus === 'pending' ? (isArabic ? 'قراءة فقط' : 'Lecture seule') : (isArabic ? 'مدير الروضة' : 'Directeur')}</span>
+          </span>
+        </button>
         {renderItem({ key: 'community', label: 'community', icon: Network, color: 'text-violet-300' }, { pinned: true })}
         {renderItem({ key: 'parametres', label: 'settings', icon: Settings, color: 'text-slate-300' }, { pinned: true })}
       </div>
