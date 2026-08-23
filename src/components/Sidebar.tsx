@@ -116,8 +116,11 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
       <div className={`border-b border-slate-800 transition-all duration-300 ${isCollapsed ? 'p-3' : 'p-4 lg:p-5'}`}>
         <div className={`flex items-center justify-between gap-3 ${isCollapsed ? 'lg:justify-center' : ''}`}>
           <button type="button" onClick={handleLogoClick} className="flex min-w-0 items-center gap-3 text-left" title={isArabic ? 'فتح أو طي القائمة' : 'Ouvrir ou replier le menu'} aria-label={isArabic ? 'فتح أو طي القائمة' : 'Ouvrir ou replier le menu'}>
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-950/20">
-              {creche?.logoUrl ? <img src={creche.logoUrl} alt="Logo" className="h-full w-full object-contain p-1" /> : <Baby className="h-6 w-6" />}
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-950/20 lg:bg-orange-500 lg:shadow-none">
+              <img src="/rawdah-logo.png" alt="Rawdha+" className="hidden h-[142%] max-w-none w-[142%] object-cover lg:block" />
+              <span className="flex h-full w-full items-center justify-center lg:hidden">
+                {creche?.logoUrl ? <img src={creche.logoUrl} alt="Logo de la crèche" className="h-full w-full object-contain p-1" /> : <Baby className="h-6 w-6" />}
+              </span>
             </span>
             <span className={`min-w-0 ${isCollapsed ? 'lg:hidden' : ''}`}>
               <span className="block truncate text-lg font-black tracking-tight text-white">RAWDHA+</span>
@@ -128,14 +131,16 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
         </div>
       </div>
 
-      <nav className={`min-h-0 flex-1 overflow-y-auto py-4 ${isCollapsed ? 'px-2' : 'px-3'}`}>
+      <nav className={`rawdha-sidebar-scroll min-h-0 flex-1 overflow-y-auto py-4 ${isCollapsed ? 'px-2' : 'px-3'}`}>
         {!isCollapsed && <p className="mb-2 px-3 text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">{isArabic ? 'التسيير اليومي' : 'Gestion quotidienne'}</p>}
         <div className="space-y-1">{primaryItems.map(item => renderItem(item))}</div>
       </nav>
 
-      <div className={`border-t border-slate-800 bg-slate-950/40 p-2.5 ${isCollapsed ? 'lg:px-2' : 'lg:px-3'}`}>
-        {!isCollapsed && <p className="px-3 pb-1.5 pt-1 text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">{isArabic ? 'مثبت' : 'Épinglé'}</p>}
-        <button type="button" onClick={() => activate('parametres')} className={`mb-1.5 flex w-full items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/35 p-2.5 text-left transition hover:border-indigo-500/40 hover:bg-slate-800/70 ${isCollapsed ? 'lg:justify-center' : ''}`} aria-label={isArabic ? 'فتح إعدادات الحساب' : 'Ouvrir les paramètres du compte'}>
+      <div className={`flex flex-col border-t border-slate-800 bg-slate-950/40 p-2.5 lg:bg-slate-900 ${isCollapsed ? 'lg:px-2' : 'lg:px-3'}`}>
+        {!isCollapsed && <p className="order-0 px-3 pb-1.5 pt-1 text-[9px] font-black uppercase tracking-[0.16em] text-slate-500 lg:hidden">{isArabic ? 'مثبت' : 'Épinglé'}</p>}
+        <div className="order-2 lg:order-1">{renderItem({ key: 'community', label: 'community', icon: Network, color: 'text-violet-300' }, { pinned: true })}</div>
+        <div className="order-3 lg:order-2">{renderItem({ key: 'parametres', label: 'settings', icon: Settings, color: 'text-slate-300' }, { pinned: true })}</div>
+        <button type="button" onClick={() => activate('parametres')} className={`order-1 mb-1.5 flex w-full items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/35 p-2.5 text-left transition hover:border-indigo-500/40 hover:bg-slate-800/70 lg:order-3 lg:mb-0 lg:mt-1.5 lg:border-0 lg:bg-transparent lg:px-2 lg:py-2 ${isCollapsed ? 'lg:justify-center' : ''}`} aria-label={isArabic ? 'فتح إعدادات الحساب' : 'Ouvrir les paramètres du compte'}>
           <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-indigo-500/25 bg-indigo-500/20 font-bold tracking-wider text-indigo-300">
             {user ? `${user.prenom[0] || ''}${user.nom[0] || ''}`.toUpperCase() : 'AD'}
             <span className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-slate-900 ${user?.approvalStatus === 'pending' ? 'bg-amber-400' : 'bg-emerald-500'}`} />
@@ -145,8 +150,6 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
             <span className="mt-0.5 flex items-center gap-1 truncate text-[10px] font-bold text-slate-400"><MapPin className="h-2.5 w-2.5 text-indigo-400" />{user?.approvalStatus === 'pending' ? (isArabic ? 'قراءة فقط' : 'Lecture seule') : (isArabic ? 'مدير الروضة' : 'Directeur')}</span>
           </span>
         </button>
-        {renderItem({ key: 'community', label: 'community', icon: Network, color: 'text-violet-300' }, { pinned: true })}
-        {renderItem({ key: 'parametres', label: 'settings', icon: Settings, color: 'text-slate-300' }, { pinned: true })}
       </div>
     </aside>
   );
