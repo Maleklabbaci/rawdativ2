@@ -1,6 +1,6 @@
 // Style shell Rawdha+ : modules métier isolés, navigation mobile compacte et routes explicites pour chaque outil de direction.
 import { useState, useEffect, lazy, Suspense, type ComponentType } from 'react';
-import { ArrowLeft, ArrowRight, School, LogOut, Menu, CircleHelp, Bell, MessageCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Network } from 'lucide-react';
+import { ArrowLeft, ArrowRight, School, LogOut, Menu, Bell, MessageCircle, Maximize2, Minimize2, Network } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
@@ -12,6 +12,7 @@ import MobileWelcome from './components/MobileWelcome';
 import LandingPage from './components/LandingPage';
 import Dashboard from './components/Dashboard';
 import Sidebar from './components/Sidebar';
+import SupportBubble from './components/SupportBubble';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { ToastContainer } from './components/ToastContainer';
 import { ConfirmProvider } from './contexts/ConfirmDialogContext';
@@ -624,7 +625,7 @@ if (isSubscriptionExpired && !isPendingApproval) {
         case 'notifications': return user?.role === 'directeur' ? <NotificationsDirecteur onNavigateToPaiements={() => navigateToPage('paiements')} /> : <Notifications />;
         case 'communication': return user?.role === 'directeur' ? <Communication /> : <CommunicationAdmin />;
         case 'demarrage': return <Demarrage onDone={() => { setNeedsOnboarding(false); navigateToPage('dashboard'); }} />;
-        case 'aide': return <Aide />;
+        case 'aide': return <Aide onNavigate={navigateToPage} />;
         case 'support': return <Support />;
         case 'rapports': return <Rapports />;
         case 'parametres': return <Parametres />;
@@ -673,9 +674,9 @@ if (isSubscriptionExpired && !isPendingApproval) {
                 {/* Mobile Menu Button */}
                 <button
                   id="mobile-sidebar-toggle"
-                  onClick={() => setIsSidebarOpen(true)}
+                  onClick={() => setIsSidebarOpen(value => !value)}
                   className="lg:hidden w-11 h-11 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition cursor-pointer flex-shrink-0"
-                  aria-label="Open sidebar"
+                  aria-label={isSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
                 >
                   <Menu className="w-5 h-5" />
                 </button>
@@ -722,22 +723,6 @@ if (isSubscriptionExpired && !isPendingApproval) {
                 {unreadSocialMessages > 0 && <button type="button" onClick={() => navigateToPage('community')} aria-label={language === 'ar' ? 'رسائل Rawdha Connect الجديدة' : 'Nouveaux messages Rawdha Connect'} title={language === 'ar' ? 'رسائل Rawdha Connect الجديدة' : 'Nouveaux messages Rawdha Connect'} className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-rose-100 bg-rose-50 text-rose-600 transition hover:bg-rose-100 cursor-pointer"><MessageCircle className="w-4 h-4" /><span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-rose-500 px-1 text-center text-[9px] font-black leading-4 text-white">{unreadSocialMessages > 99 ? '99+' : unreadSocialMessages}</span></button>}
 
                 <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => navigateToPage('aide')}
-                    title={language === 'ar' ? 'شرح المنصة' : 'Comment fonctionne Rawdha+ ?'}
-                    className="flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 transition hover:bg-indigo-100 cursor-pointer"
-                  >
-                    <CircleHelp className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsSidebarCollapsed(value => !value)}
-                    title={language === 'ar' ? (isSidebarCollapsed ? 'فتح القائمة' : 'طي القائمة') : (isSidebarCollapsed ? 'Ouvrir la barre' : 'Replier la barre')}
-                    className="hidden lg:flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 cursor-pointer"
-                  >
-                    {isSidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
-                  </button>
                   <button
                     type="button"
                     onClick={toggleBrowserFullscreen}
@@ -801,6 +786,7 @@ if (isSubscriptionExpired && !isPendingApproval) {
           {renderPage()}
         </main>
       </div>
+      <SupportBubble currentPage={currentPage} onNavigate={navigateToPage} />
 
     </div>
   );
