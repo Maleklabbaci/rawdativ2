@@ -63,7 +63,7 @@ function formatLastActivity(value: string | undefined, language: 'fr' | 'ar'): s
 }
 
 export default function Comptes() {
-  const { comptes, enfants, demandesDirecteur, addCompte, updateCompte, deleteCompte, approveDemandeDirecteur, deleteDemandeDirecteur, refreshAll, loading } = useDb();
+  const { comptes, enfants, demandesDirecteur, addCompte, updateDirectorSubscription, logAdminAction, deleteCompte, approveDemandeDirecteur, deleteDemandeDirecteur, refreshAll, loading } = useDb();
   const { language, isFrench } = useLanguage();
   const { user: currentUser } = useAuth();
   const { confirm } = useConfirmDialog();
@@ -238,7 +238,8 @@ export default function Comptes() {
     setDecisionError('');
     try {
       setDecisionLoading(true);
-      await approveDemandeDirecteur(demande.id);
+      const accountId = await approveDemandeDirecteur(demande.id);
+      await logAdminAction('director_approved', 'director_request', demande.id, demande.nomCreche, { accountId });
       setSelectedDemande(null);
       await refreshAll();
     } catch (err) {
@@ -264,6 +265,7 @@ export default function Comptes() {
     try {
       setDecisionLoading(true);
       await deleteDemandeDirecteur(demande.id);
+      await logAdminAction('director_request_rejected', 'director_request', demande.id, demande.nomCreche);
       setSelectedDemande(null);
       await refreshAll();
     } catch (err) {
@@ -303,7 +305,7 @@ export default function Comptes() {
     if (!confirmed) return;
 
     try {
-      await updateCompte(id, { abonnementActif: !currentStatus });
+      await updateDirectorSubscription(id, { abonnementActif: !currentStatus }, currentStatus ? 'subscription_suspended' : 'subscription_reactivated');
     } catch (err) {
       console.error('Error updating subscription status:', err);
       showToast(
@@ -327,7 +329,7 @@ export default function Comptes() {
     if (!confirmed) return;
 
     try {
-      await updateCompte(id, { dateFinAbonnement: dateValue });
+      await updateDirectorSubscription(id, { dateFinAbonnement: dateValue }, 'subscription_end_date_updated');
     } catch (err) {
       console.error('Error updating subscription end date:', err);
       showToast(

@@ -42,6 +42,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
 
   const primaryItems: NavigationItem[] = user?.role === 'admin'
     ? [
+      { key: 'admin', label: 'admin', icon: Crown, color: 'text-amber-400' },
       { key: 'comptes', label: 'comptes', icon: User, color: 'text-violet-500' },
       { key: 'communication', label: 'communication', icon: MessageCircle, color: 'text-amber-500' },
     ]
@@ -62,6 +63,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
       : [];
 
   const getTabLabel = (key: string, originalLabel: string) => {
+    if (key === 'admin') return isArabic ? 'مركز الإدارة' : 'Centre Administrateur';
     if (key === 'comptes' && user?.role === 'admin') return isArabic ? 'مدراء الروضات' : 'Directeurs de Crèches';
     if (key === 'community') return 'Rawdha Connect';
     if (key === 'communication') return user?.role === 'directeur'
@@ -147,7 +149,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
           </span>
           <span className={`min-w-0 ${isCollapsed ? 'lg:hidden' : ''}`}>
             <span className="flex items-center gap-1 truncate text-xs font-black text-white">{user ? `${user.prenom} ${user.nom}` : 'Admin'}{user?.role === 'admin' && <Crown className="h-3 w-3 shrink-0 text-amber-400" />}</span>
-            <span className="mt-0.5 flex items-center gap-1 truncate text-[10px] font-bold text-slate-400"><MapPin className="h-2.5 w-2.5 text-indigo-400" />{user?.approvalStatus === 'pending' ? (isArabic ? 'قراءة فقط' : 'Lecture seule') : (isArabic ? 'مدير الروضة' : 'Directeur')}</span>
+            <span className="mt-0.5 flex items-center gap-1 truncate text-[10px] font-bold text-slate-400"><MapPin className="h-2.5 w-2.5 text-indigo-400" />{user?.role === 'admin' ? (isArabic ? 'مدير المنصة' : 'Administrateur plateforme') : user?.approvalStatus === 'pending' ? (isArabic ? 'قراءة فقط' : 'Lecture seule') : (isArabic ? 'مدير الروضة' : 'Directeur')}</span>
           </span>
         </button>
       </div>

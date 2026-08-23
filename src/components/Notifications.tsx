@@ -23,7 +23,7 @@ export default function Notifications() {
   const { language } = useLanguage();
   const { confirm } = useConfirmDialog();
   const { showToast } = useToast();
-  const { notifications, comptes, addNotification, deleteNotification } = useDb();
+  const { notifications, comptes, addNotification, deleteNotification, logAdminAction } = useDb();
   const isFrench = language === 'fr';
 
   const [title, setTitle] = useState('');
@@ -105,6 +105,17 @@ export default function Notifications() {
           ...(ctaType === 'link' ? { ctaUrl: ctaUrl.trim() } : { ctaPage }),
         } : {}),
       });
+
+      try {
+        await logAdminAction('notification_sent', 'notification', announcementId, title.trim(), {
+          recipient: recipientId,
+          recipientsCount: recipientId === 'all_directeurs' ? directeurs.length : 1,
+          hasCallToAction: Boolean(ctaLabel.trim()),
+        });
+      } catch (auditError) {
+        // L’annonce est déjà enregistrée : on ne la retire pas si le journal est momentanément indisponible.
+        console.error('Journalisation de l’annonce impossible:', auditError);
+      }
 
       const { data: pushData, error: pushError } = await supabase.functions.invoke('send-push-notification', {
         body: {

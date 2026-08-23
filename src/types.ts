@@ -294,6 +294,35 @@ export interface UserAccount {
   enfantId?: string;
 }
 
+export type AdminAuditAction =
+  | 'director_approved'
+  | 'director_request_rejected'
+  | 'subscription_suspended'
+  | 'subscription_reactivated'
+  | 'subscription_end_date_updated'
+  | 'trial_extended'
+  | 'ticket_status_updated'
+  | 'ticket_response_saved'
+  | 'community_post_hidden'
+  | 'community_post_restored'
+  | 'community_post_pinned'
+  | 'community_post_unpinned'
+  | 'notification_sent';
+
+export type AdminAuditTargetType = 'director_account' | 'director_request' | 'ticket' | 'community_post' | 'notification';
+
+/** Entrée immuable d’une action sensible effectuée dans le centre Administrateur. */
+export interface AdminAuditLog {
+  id: string;
+  actorId: string;
+  action: AdminAuditAction;
+  targetType: AdminAuditTargetType;
+  targetId: string;
+  targetLabel?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface DiscussionMessage {
   id: string;
   senderId: string;

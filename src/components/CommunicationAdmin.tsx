@@ -38,6 +38,7 @@ export default function CommunicationAdmin() {
     deleteAvis,
     updateSignalement,
     deleteSignalement,
+    logAdminAction,
   } = useDb();
   const isFrench = language === 'fr';
   const [section, setSection] = useState<'messages' | 'avis' | 'retours'>('messages');
@@ -137,6 +138,8 @@ export default function CommunicationAdmin() {
 
   const handleStatusChange = async (id: string, statut: SignalementStatut) => {
     await updateSignalement(id, { statut });
+    const item = signalements.find(signalement => signalement.id === id);
+    await logAdminAction('ticket_status_updated', 'ticket', id, item?.titre, { statut });
   };
 
   const handleSaveResponse = async (item: Signalement) => {
@@ -145,6 +148,7 @@ export default function CommunicationAdmin() {
     setSavingResponseId(item.id);
     try {
       await updateSignalement(item.id, { reponseAdmin: response, statut: item.statut === 'nouveau' ? 'en_cours' : item.statut });
+      await logAdminAction('ticket_response_saved', 'ticket', item.id, item.titre, { statut: item.statut === 'nouveau' ? 'en_cours' : item.statut });
     } finally {
       setSavingResponseId(null);
     }

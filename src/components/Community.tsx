@@ -396,6 +396,7 @@ export default function Community() {
     addCommunityFeature,
     markCommunityFeatureRead,
     deleteCommunityFeature,
+    logAdminAction,
   } = useDb();
 
   const isAr = language === 'ar';
@@ -823,8 +824,26 @@ export default function Community() {
   const handlePin = async (post: CommunityPost) => {
     if (!isAdmin) return;
     const existing = communityFeatures.find(feature => feature.kind === 'pin' && feature.targetId === post.id);
-    if (existing) await deleteCommunityFeature(existing.id);
-    else await addCommunityFeature({ kind: 'pin', actorId: user.id, targetId: post.id, visibility: 'public', createdAt: new Date().toISOString() });
+    if (existing) {
+      await deleteCommunityFeature(existing.id);
+      await logAdminAction('community_post_unpinned', 'community_post', post.id, post.titre || post.nomCreche);
+    } else {
+      await addCommunityFeature({ kind: 'pin', actorId: user.id, targetId: post.id, visibility: 'public', createdAt: new Date().toISOString() });
+      await logAdminAction('community_post_pinned', 'community_post', post.id, post.titre || post.nomCreche);
+    }
+    setOpenMenu(null);
+  };
+
+  const handleTogglePostVisibility = async (post: CommunityPost) => {
+    if (!isAdmin) return;
+    const nextStatus = post.statut === 'masquee' ? 'publie' : 'masquee';
+    await updateCommunityPost(post.id, { statut: nextStatus });
+    await logAdminAction(
+      nextStatus === 'masquee' ? 'community_post_hidden' : 'community_post_restored',
+      'community_post',
+      post.id,
+      post.titre || post.nomCreche,
+    );
     setOpenMenu(null);
   };
 
@@ -910,7 +929,7 @@ export default function Community() {
                 <button type="button" disabled={isCommunityReadOnly} onClick={() => { runCommunityAction(() => handleToggleSave(post)); setOpenMenu(null); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-600 hover:bg-slate-50"><Bookmark className={`h-4 w-4 ${savedPostIds.has(post.id) ? 'fill-current text-indigo-600' : ''}`} />{savedPostIds.has(post.id) ? ui.saved : (isAr ? 'حفظ المنشور' : 'Enregistrer')}</button>
                 {isAdmin && <button type="button" onClick={() => runCommunityAction(() => handlePin(post))} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-600 hover:bg-slate-50"><Pin className="h-4 w-4" />{pinnedPostIds.has(post.id) ? ui.unpin : ui.pin}</button>}
                 {!isAdmin && post.authorId !== user.id && <button type="button" onClick={() => runCommunityAction(() => handleReport(post))} disabled={isCommunityReadOnly || Boolean(featureFor('report', post.id))} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"><Flag className="h-4 w-4" />{featureFor('report', post.id) ? ui.reportSent : ui.report}</button>}
-                {isAdmin && <button type="button" onClick={() => { setOpenMenu(null); runCommunityAction(() => updateCommunityPost(post.id, { statut: post.statut === 'masquee' ? 'publie' : 'masquee' })); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-600 hover:bg-slate-50"><ShieldCheck className="h-4 w-4" />{post.statut === 'masquee' ? ui.restore : ui.hide}</button>}
+                {isAdmin && <button type="button" onClick={() => runCommunityAction(() => handleTogglePostVisibility(post))} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-600 hover:bg-slate-50"><ShieldCheck className="h-4 w-4" />{post.statut === 'masquee' ? ui.restore : ui.hide}</button>}
               </div>}
             </div>
           </div>

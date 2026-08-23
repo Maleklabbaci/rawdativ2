@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Enfant, Presence, PresenceJournee, Paiement, Achat, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction, CommunityFeature, CommunityFeatureKind } from '../types';
+import { Enfant, Presence, PresenceJournee, Paiement, Achat, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction, CommunityFeature, CommunityFeatureKind, AdminAuditLog, AdminAuditAction, AdminAuditTargetType } from '../types';
 import { 
   getCollectionData, 
   addCollectionDocument, 
@@ -209,6 +209,7 @@ interface DbContextType {
   inscriptionLinks: InscriptionLink[];
   demandesAdmission: DemandeAdmission[];
   notifications: AppNotification[];
+  adminAuditLogs: AdminAuditLog[];
   loading: boolean;
   refreshAll: () => Promise<void>;
 
@@ -248,6 +249,8 @@ interface DbContextType {
   addCompte: (compte: Omit<UserAccount, 'id'>) => Promise<string>;
   updateCompte: (id: string, compte: Partial<UserAccount>) => Promise<void>;
   deleteCompte: (id: string) => Promise<void>;
+  updateDirectorSubscription: (id: string, patch: Pick<UserAccount, 'abonnementActif' | 'dateFinAbonnement'>, action: Extract<AdminAuditAction, 'subscription_suspended' | 'subscription_reactivated' | 'subscription_end_date_updated' | 'trial_extended'>) => Promise<UserAccount>;
+  logAdminAction: (action: AdminAuditAction, targetType: AdminAuditTargetType, targetId: string, targetLabel?: string, metadata?: Record<string, unknown>) => Promise<AdminAuditLog>;
   addDemandeDirecteur: (demande: Omit<DemandeDirecteur, 'id'>) => Promise<string>;
   approveDemandeDirecteur: (id: string) => Promise<string>;
   updateDemandeDirecteur: (id: string, demande: Partial<DemandeDirecteur>) => Promise<void>;
@@ -330,6 +333,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const [inscriptionLinks, setInscriptionLinks] = useState<InscriptionLink[]>([]);
   const [demandesAdmission, setDemandesAdmission] = useState<DemandeAdmission[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [adminAuditLogs, setAdminAuditLogs] = useState<AdminAuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const autoInvoiceRanRef = React.useRef(false); // évite de relancer la génération auto plusieurs fois par session
 
@@ -368,6 +372,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setInscriptionLinks([]);
       setDemandesAdmission([]);
       setNotifications([]);
+      setAdminAuditLogs([]);
       setLoading(false);
       return;
     }
@@ -425,8 +430,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         getCollectionData<InscriptionLink>('inscription_liens'),
         getCollectionData<DemandeAdmission>('demandes_admission'),
         getCollectionData<AppNotification>('notifications'),
+        user?.role === 'admin' ? getCollectionData<AdminAuditLog>('admin_audit_logs') : Promise.resolve([] as AdminAuditLog[]),
       ])
-        .then(([dbClasses, dbActivites, dbRepas, dbAchats, dbMessages, dbAvis, dbSignalements, dbCommunityPosts, dbCommunityComments, dbCommunityReactions, dbCommunityFeatures, dbInscriptionLinks, dbDemandesAdmission, dbNotifications]) => {
+        .then(([dbClasses, dbActivites, dbRepas, dbAchats, dbMessages, dbAvis, dbSignalements, dbCommunityPosts, dbCommunityComments, dbCommunityReactions, dbCommunityFeatures, dbInscriptionLinks, dbDemandesAdmission, dbNotifications, dbAdminAuditLogs]) => {
           setClasses(dbClasses);
           setActivites(dbActivites);
           setRepas(dbRepas);
@@ -441,6 +447,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
           setInscriptionLinks(dbInscriptionLinks);
           setDemandesAdmission(dbDemandesAdmission);
           setNotifications(dbNotifications);
+          setAdminAuditLogs((Array.isArray(dbAdminAuditLogs) ? dbAdminAuditLogs : []).filter(Boolean).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
         })
         .catch(err => {
           console.error('Erreur de connexion à Supabase (chargement arrière-plan):', err);
@@ -995,6 +1002,48 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       notifyWriteError('modification');
       throw err;
     }
+  };
+
+  const logAdminAction = async (
+    action: AdminAuditAction,
+    targetType: AdminAuditTargetType,
+    targetId: string,
+    targetLabel?: string,
+    metadata: Record<string, unknown> = {},
+  ) => {
+    if (user?.role !== 'admin') throw new Error('Accès administrateur requis.');
+    const { data, error } = await supabase.rpc('rawdha_admin_log_action', {
+      p_action: action,
+      p_target_type: targetType,
+      p_target_id: targetId,
+      p_target_label: targetLabel || null,
+      p_metadata: metadata,
+    });
+    if (error || !data) throw new Error(error?.message || 'Impossible d’enregistrer l’action administrateur.');
+    const entry = data as AdminAuditLog;
+    setAdminAuditLogs(previous => [entry, ...previous.filter(item => item.id !== entry.id)]);
+    return entry;
+  };
+
+  const updateDirectorSubscription = async (
+    id: string,
+    patch: Pick<UserAccount, 'abonnementActif' | 'dateFinAbonnement'>,
+    action: Extract<AdminAuditAction, 'subscription_suspended' | 'subscription_reactivated' | 'subscription_end_date_updated' | 'trial_extended'>,
+  ) => {
+    if (user?.role !== 'admin') throw new Error('Accès administrateur requis.');
+    const cleanPatch = Object.fromEntries(
+      Object.entries(patch).filter(([, value]) => value !== undefined),
+    );
+    const { data, error } = await supabase.rpc('rawdha_admin_update_director_account', {
+      p_target_id: id,
+      p_patch: cleanPatch,
+      p_action: action,
+    });
+    if (error || !data) throw new Error(error?.message || 'Impossible de modifier l’abonnement.');
+    const account = data as UserAccount;
+    setComptes(previous => previous.map(item => item.id === id ? { ...item, ...account } : item));
+    await refreshAll();
+    return account;
   };
 
   // ✅ FIX: appelle l'Edge Function "delete-account" qui supprime le VRAI utilisateur
@@ -1564,6 +1613,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       inscriptionLinks: scopedInscriptionLinks,
       demandesAdmission: scopedDemandesAdmission,
       notifications,
+      adminAuditLogs,
       loading,
       refreshAll,
       addMessage,
@@ -1595,6 +1645,8 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       deleteNotification,
       addCompte,
       updateCompte,
+      updateDirectorSubscription,
+      logAdminAction,
       deleteCompte,
     addDemandeDirecteur,
     approveDemandeDirecteur,

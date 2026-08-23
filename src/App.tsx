@@ -38,6 +38,7 @@ const PAGE_PATHS: Record<string, string> = {
   personnel: '/personnel',
   activites: '/activites',
   repas: '/repas',
+  admin: '/admin',
   comptes: '/comptes',
   notifications: '/notifications',
   communication: '/communication',
@@ -103,6 +104,7 @@ const Personnel = lazyWithRecovery(() => import('./components/Personnel'));
 const Activites = lazyWithRecovery(() => import('./components/Activites'));
 const Repas = lazyWithRecovery(() => import('./components/Repas'));
 const Parametres = lazyWithRecovery(() => import('./components/Parametres'));
+const AdminCenter = lazyWithRecovery(() => import('./components/AdminCenter'));
 const Comptes = lazyWithRecovery(() => import('./components/Comptes'));
 const Notifications = lazyWithRecovery(() => import('./components/Notifications'));
 const NotificationsDirecteur = lazyWithRecovery(() => import('./components/NotificationsDirecteur'));
@@ -308,10 +310,10 @@ function AppContent() {
 
   useEffect(() => {
     if (user?.role === 'admin') {
-      if (currentPage !== 'comptes' && currentPage !== 'parametres' && currentPage !== 'notifications' && currentPage !== 'communication' && currentPage !== 'community') {
-        navigateToPage('comptes', { replace: true });
+      if (currentPage !== 'admin' && currentPage !== 'comptes' && currentPage !== 'parametres' && currentPage !== 'notifications' && currentPage !== 'communication' && currentPage !== 'community') {
+        navigateToPage('admin', { replace: true });
       }
-    } else if (currentPage === 'comptes') {
+    } else if (currentPage === 'comptes' || currentPage === 'admin') {
       navigateToPage('dashboard', { replace: true });
     }
   }, [user?.role, currentPage]);
@@ -352,6 +354,7 @@ function AppContent() {
       personnel: 'staff',
       activites: 'activities',
       repas: 'meals',
+      admin: language === 'ar' ? 'مركز الإدارة' : 'Centre Administrateur',
       parametres: 'settings',
       comptes: 'comptes',
     };
@@ -638,6 +641,7 @@ if (isSubscriptionExpired && !isPendingApproval) {
         case 'personnel': return <Personnel />;
         case 'activites': return <Activites />;
         case 'repas': return <Repas />;
+        case 'admin': return <AdminCenter onNavigate={navigateToPage} />;
         case 'comptes': return <Comptes />;
         case 'notifications': return user?.role === 'directeur' ? <NotificationsDirecteur onNavigateToPaiements={() => navigateToPage('paiements')} /> : <Notifications />;
         case 'communication': return user?.role === 'directeur' ? <Communication /> : <CommunicationAdmin />;
