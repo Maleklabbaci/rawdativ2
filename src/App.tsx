@@ -690,12 +690,30 @@ if (isSubscriptionExpired && !isPendingApproval) {
                     )}
                   </div>
                   <div>
-                    <h1 className="min-w-0 max-w-[58vw] truncate text-sm sm:max-w-none sm:text-base md:text-lg lg:text-xl font-extrabold text-slate-950 tracking-tight flex items-center gap-1.5 leading-tight">
+                    <h1 className="min-w-0 max-w-[42vw] truncate text-sm sm:max-w-none sm:text-base md:text-lg lg:text-xl font-extrabold text-slate-950 tracking-tight flex items-center gap-1.5 leading-tight">
                       {creche?.nom}
                       <span className="px-1.5 py-0.5 text-[9px] font-bold bg-indigo-100 text-indigo-700 rounded-md uppercase tracking-wider">PRO</span>
                     </h1>
                     <p className="max-w-[58vw] truncate text-[10px] sm:max-w-none sm:text-xs text-slate-500 font-medium leading-none mt-0.5">{creche?.adresse}</p>
                   </div>
+                </div>
+                <div className="ml-auto flex shrink-0 gap-0.5 rounded-xl border border-slate-200/70 bg-slate-100/90 p-0.5 sm:hidden" aria-label={language === 'ar' ? 'اختيار اللغة' : 'Choisir la langue'}>
+                  <button
+                    type="button"
+                    onClick={() => setLanguage('fr')}
+                    aria-pressed={language === 'fr'}
+                    className={`min-h-0 rounded-lg px-2 py-1 text-[10px] font-black transition ${language === 'fr' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500'}`}
+                  >
+                    FR
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLanguage('ar')}
+                    aria-pressed={language === 'ar'}
+                    className={`min-h-0 rounded-lg px-2 py-1 text-[10px] font-black transition ${language === 'ar' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500'}`}
+                  >
+                    عربي
+                  </button>
                 </div>
               </div>
               <div className="flex min-w-0 flex-wrap items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto">
@@ -734,7 +752,7 @@ if (isSubscriptionExpired && !isPendingApproval) {
                 </div>
 
                 {/* Language Selector */}
-                <div className="flex shrink-0 gap-1 p-1 bg-slate-100/80 rounded-xl border border-slate-200/50">
+                <div className="hidden shrink-0 gap-1 rounded-xl border border-slate-200/50 bg-slate-100/80 p-1 sm:flex">
                   <button
                     onClick={() => setLanguage('fr')}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 cursor-pointer ${
