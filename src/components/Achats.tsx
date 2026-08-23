@@ -38,6 +38,10 @@ type AchatForm = {
   recurrent: boolean;
 };
 
+type AchatQuickPatch = Partial<Achat> & {
+  moyenPaiement?: AchatMoyenPaiement | null;
+};
+
 const CATEGORIES: { value: AchatCategorie; fr: string; ar: string }[] = [
   { value: 'alimentation', fr: 'Alimentation', ar: 'التغذية' },
   { value: 'hygiene', fr: 'Hygiène', ar: 'النظافة' },
@@ -100,6 +104,7 @@ export default function Achats() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Achat | null>(null);
   const [saving, setSaving] = useState(false);
+  const [quickUpdatingId, setQuickUpdatingId] = useState<string | null>(null);
   const [form, setForm] = useState<AchatForm>(emptyForm);
 
   const labelCategory = (value: AchatCategorie) => {
@@ -177,7 +182,7 @@ export default function Achats() {
       montant: amount,
       tauxTVA: vat,
       statut: form.statut,
-      moyenPaiement: form.statut === 'payé' ? form.moyenPaiement : undefined,
+      moyenPaiement: form.statut === 'payé' ? form.moyenPaiement : null,
       numeroPiece: form.numeroPiece.trim() || undefined,
       notes: form.notes.trim() || undefined,
       recurrent: form.recurrent,
@@ -186,7 +191,7 @@ export default function Achats() {
     setSaving(true);
     try {
       if (editing) {
-        await updateAchat(editing.id, payload);
+        await updateAchat(editing.id, payload as Partial<Achat>);
       } else {
         await addAchat(payload);
       }
@@ -217,6 +222,32 @@ export default function Achats() {
     } catch (error) {
       console.error('Suppression achat:', error);
     }
+  };
+
+  const handleQuickUpdate = async (achat: Achat, patch: AchatQuickPatch) => {
+    if (isReadOnly || quickUpdatingId) return;
+    setQuickUpdatingId(achat.id);
+    try {
+      await updateAchat(achat.id, patch as Partial<Achat>);
+      showToast(isArabic ? 'تم تحديث الشراء.' : 'Achat mis à jour.', 'success');
+    } catch (error) {
+      console.error('Modification rapide achat:', error);
+    } finally {
+      setQuickUpdatingId(null);
+    }
+  };
+
+  const settlementValue = (achat: Achat) => achat.statut === 'à_payer'
+    ? 'à_payer'
+    : `payé:${achat.moyenPaiement || 'especes'}`;
+
+  const handleSettlementChange = (achat: Achat, value: string) => {
+    if (value === 'à_payer') {
+      void handleQuickUpdate(achat, { statut: 'à_payer', moyenPaiement: null });
+      return;
+    }
+    const moyenPaiement = value.replace('payé:', '') as AchatMoyenPaiement;
+    void handleQuickUpdate(achat, { statut: 'payé', moyenPaiement });
   };
 
   const exportCsv = () => {
@@ -292,7 +323,10 @@ export default function Achats() {
 
       <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
         <div className="mobile-scroll-x"><table className="min-w-[900px] w-full border-collapse text-left rtl:text-right"><thead><tr className="border-b border-slate-100 bg-slate-50/70 text-[10px] font-black uppercase tracking-wider text-slate-400"><th className="p-4">{isArabic ? 'التاريخ' : 'Date'}</th><th className="p-4">{isArabic ? 'الشراء' : 'Achat'}</th><th className="p-4">{isArabic ? 'الفئة' : 'Catégorie'}</th><th className="p-4">{isArabic ? 'المبلغ' : 'Montant'}</th><th className="p-4">{isArabic ? 'الدفع' : 'Règlement'}</th><th className="p-4">{isArabic ? 'المرجع' : 'Référence'}</th><th className="p-4 text-center">{isArabic ? 'إجراءات' : 'Actions'}</th></tr></thead><tbody className="divide-y divide-slate-100 text-sm font-medium text-slate-700">
-          {filteredAchats.map(achat => <tr key={achat.id} className="transition hover:bg-slate-50/70"><td className="whitespace-nowrap p-4 text-xs font-bold text-slate-500">{formatDate(achat.dateAchat)}</td><td className="p-4"><div className="flex items-center gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-fuchsia-50 text-fuchsia-600"><Store className="h-4 w-4" /></span><div><p className="max-w-[210px] truncate font-extrabold text-slate-900">{achat.libelle}</p><p className="max-w-[210px] truncate text-xs text-slate-400">{achat.fournisseur || (isArabic ? 'بدون مورد' : 'Sans fournisseur')}</p></div></div></td><td className="p-4"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">{labelCategory(achat.categorie)}</span>{achat.recurrent && <span className="ml-1 text-[10px] font-black text-fuchsia-600 rtl:ml-0 rtl:mr-1">{isArabic ? 'متكرر' : 'Récurrent'}</span>}</td><td className="whitespace-nowrap p-4 font-black text-slate-950">{formatCurrency(achat.montant)}{achat.tauxTVA !== undefined && <p className="text-[10px] font-bold text-slate-400">TVA {achat.tauxTVA}%</p>}</td><td className="p-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${achat.statut === 'payé' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{labelStatus(achat.statut)}</span><p className="mt-1 text-[10px] font-bold text-slate-400">{achat.statut === 'payé' ? labelPaymentMethod(achat.moyenPaiement) : '—'}</p></td><td className="max-w-[140px] truncate p-4 text-xs font-bold text-slate-500">{achat.numeroPiece || '—'}</td><td className="p-4"><div className="flex items-center justify-center gap-1"><button type="button" disabled={isReadOnly} onClick={() => openEdit(achat)} className="rounded-lg p-2 text-indigo-500 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40" aria-label={isArabic ? 'تعديل' : 'Modifier'}><Edit3 className="h-4 w-4" /></button><button type="button" disabled={isReadOnly} onClick={() => void handleDelete(achat)} className="rounded-lg p-2 text-rose-500 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40" aria-label={isArabic ? 'حذف' : 'Supprimer'}><Trash2 className="h-4 w-4" /></button></div></td></tr>)}
+          {filteredAchats.map(achat => {
+            const isQuickUpdating = quickUpdatingId === achat.id;
+            return <tr key={achat.id} className="transition hover:bg-slate-50/70"><td className="whitespace-nowrap p-4 text-xs font-bold text-slate-500">{formatDate(achat.dateAchat)}</td><td className="p-4"><div className="flex items-center gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-fuchsia-50 text-fuchsia-600"><Store className="h-4 w-4" /></span><div><p className="max-w-[210px] truncate font-extrabold text-slate-900">{achat.libelle}</p><p className="max-w-[210px] truncate text-xs text-slate-400">{achat.fournisseur || (isArabic ? 'بدون مورد' : 'Sans fournisseur')}</p></div></div></td><td className="p-4"><div className="flex items-center gap-1.5"><select value={achat.categorie} disabled={isReadOnly || isQuickUpdating} onChange={event => void handleQuickUpdate(achat, { categorie: event.target.value as AchatCategorie })} aria-label={isArabic ? 'تعديل فئة الشراء' : 'Modifier la catégorie de l’achat'} className="max-w-[150px] cursor-pointer rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700 outline-none transition hover:border-fuchsia-300 focus:border-fuchsia-500 disabled:cursor-not-allowed disabled:opacity-60">{CATEGORIES.map(category => <option key={category.value} value={category.value}>{isArabic ? category.ar : category.fr}</option>)}</select>{achat.recurrent && <span className="text-[10px] font-black text-fuchsia-600">{isArabic ? 'متكرر' : 'Récurrent'}</span>}</div></td><td className="whitespace-nowrap p-4 font-black text-slate-950">{formatCurrency(achat.montant)}{achat.tauxTVA !== undefined && <p className="text-[10px] font-bold text-slate-400">TVA {achat.tauxTVA}%</p>}</td><td className="p-4"><select value={settlementValue(achat)} disabled={isReadOnly || isQuickUpdating} onChange={event => handleSettlementChange(achat, event.target.value)} aria-label={isArabic ? 'تعديل حالة الدفع وطريقته' : 'Modifier le règlement'} className={`min-w-[142px] cursor-pointer rounded-xl border px-2.5 py-2 text-xs font-bold outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${achat.statut === 'payé' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300 focus:border-emerald-500' : 'border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300 focus:border-amber-500'}`}><option value="à_payer">{isArabic ? 'للدفع' : 'À payer'}</option>{PAYMENT_METHODS.map(method => <option key={method.value} value={`payé:${method.value}`}>{isArabic ? `مدفوع — ${method.ar}` : `Payé — ${method.fr}`}</option>)}</select>{isQuickUpdating && <p className="mt-1 text-[10px] font-bold text-slate-400">{isArabic ? 'جارٍ الحفظ…' : 'Enregistrement…'}</p>}</td><td className="max-w-[140px] truncate p-4 text-xs font-bold text-slate-500">{achat.numeroPiece || '—'}</td><td className="p-4"><div className="flex items-center justify-center gap-1"><button type="button" disabled={isReadOnly || isQuickUpdating} onClick={() => openEdit(achat)} className="rounded-lg p-2 text-indigo-500 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40" aria-label={isArabic ? 'تعديل' : 'Modifier'}><Edit3 className="h-4 w-4" /></button><button type="button" disabled={isReadOnly || isQuickUpdating} onClick={() => void handleDelete(achat)} className="rounded-lg p-2 text-rose-500 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40" aria-label={isArabic ? 'حذف' : 'Supprimer'}><Trash2 className="h-4 w-4" /></button></div></td></tr>;
+          })}
           {!filteredAchats.length && <tr><td colSpan={7} className="p-12 text-center"><Package className="mx-auto h-10 w-10 text-slate-200" /><p className="mt-3 font-extrabold text-slate-500">{isArabic ? 'لا توجد مشتريات لهذه المعايير' : 'Aucun achat pour ces critères'}</p><p className="mt-1 text-xs text-slate-400">{isArabic ? 'سجلي أول شراء أو عدلي الفلاتر.' : 'Enregistrez un premier achat ou modifiez les filtres.'}</p></td></tr>}
         </tbody></table></div>
       </section>
