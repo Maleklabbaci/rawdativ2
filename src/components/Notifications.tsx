@@ -1,498 +1,176 @@
-import { useState } from 'react';
+/** Style Rawdha+ Communications: poste de commande clair, ciblage lisible, prévisualisation fidèle, aucune diffusion automatique non confirmée. */
+import { useMemo, useState } from 'react';
+import { BellRing, CheckCheck, CircleAlert, Clock3, ExternalLink, Eye, Link2, Megaphone, MonitorSmartphone, Send, Sparkles, Target, Trash2, Users } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
 import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { useToast } from '../contexts/ToastContext';
 import { supabase } from '../supabase';
-import { Megaphone, Send, Trash2, Users, CheckCheck, Palette, Eye } from 'lucide-react';
+import type { AppNotification, UserAccount } from '../types';
 
-const PRESET_COLORS = [
-  { bg: '#4f46e5', text: '#ffffff', btn: '#ffffff' }, // Indigo (défaut)
-  { bg: '#e11d48', text: '#ffffff', btn: '#ffffff' }, // Rouge (urgent)
-  { bg: '#059669', text: '#ffffff', btn: '#ffffff' }, // Vert (bonne nouvelle)
-  { bg: '#d97706', text: '#ffffff', btn: '#ffffff' }, // Orange (avertissement)
-  { bg: '#0f172a', text: '#ffffff', btn: '#818cf8' }, // Noir/slate (premium)
-  { bg: '#ffffff', text: '#0f172a', btn: '#4f46e5' }, // Blanc épuré
+type Audience = 'all' | 'trial' | 'expiring' | 'inactive' | 'suspended' | 'individual';
+
+const themes = [
+  { id: 'indigo', label: 'Indigo', bg: '#4338ca', text: '#ffffff', button: '#ffffff' },
+  { id: 'emerald', label: 'Émeraude', bg: '#047857', text: '#ffffff', button: '#ffffff' },
+  { id: 'amber', label: 'Ambre', bg: '#b45309', text: '#ffffff', button: '#ffffff' },
+  { id: 'slate', label: 'Ardoise', bg: '#0f172a', text: '#ffffff', button: '#c7d2fe' },
+  { id: 'paper', label: 'Papier', bg: '#ffffff', text: '#0f172a', button: '#4338ca' },
 ];
 
-const PRESET_ICONS = ['📢', '🎉', '⚠️', '✅', '💡', '🔧', '🎁', '📅'];
+const symbols = ['●', '!', '✓', 'i', '+'];
+
+const dateDaysFromNow = (value?: string) => {
+  if (!value) return null;
+  const target = new Date(`${value}T12:00:00`).getTime();
+  if (Number.isNaN(target)) return null;
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  return Math.ceil((target - start.getTime()) / 86_400_000);
+};
+
+const isInactive = (value?: string) => !value || Date.now() - new Date(value).getTime() > 14 * 86_400_000;
 
 export default function Notifications() {
   const { user } = useAuth();
   const { language } = useLanguage();
   const { confirm } = useConfirmDialog();
   const { showToast } = useToast();
-  const { notifications, comptes, addNotification, deleteNotification, logAdminAction } = useDb();
-  const isFrench = language === 'fr';
+  const { notifications, comptes, publishAdminNotification, deleteNotification, logAdminAction } = useDb();
+  const isFrench = language !== 'ar';
+  const t = (fr: string, ar: string) => isFrench ? fr : ar;
 
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
-  const [bgColor, setBgColor] = useState('#4f46e5');
-  const [textColor, setTextColor] = useState('#ffffff');
-  const [buttonColor, setButtonColor] = useState('#ffffff');
-  const [icon, setIcon] = useState('📢');
-  const [sending, setSending] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [pushStatus, setPushStatus] = useState<{ tone: 'success' | 'warning'; message: string } | null>(null);
-
-  // ✅ Destinataire : tous les directeurs, ou un seul en particulier
-  const [recipientId, setRecipientId] = useState('all_directeurs');
-
-  // ✅ Bouton d'action optionnel dans le popup
+  const [themeId, setThemeId] = useState('indigo');
+  const [symbol, setSymbol] = useState('●');
+  const [audience, setAudience] = useState<Audience>('all');
+  const [individualId, setIndividualId] = useState('');
   const [ctaLabel, setCtaLabel] = useState('');
-  const [ctaType, setCtaType] = useState<'link' | 'page'>('link');
+  const [ctaType, setCtaType] = useState<'link' | 'page'>('page');
   const [ctaUrl, setCtaUrl] = useState('');
   const [ctaPage, setCtaPage] = useState('paiements');
+  const [priorityPopup, setPriorityPopup] = useState(false);
+  const [repeatCount, setRepeatCount] = useState(0);
+  const [repeatInterval, setRepeatInterval] = useState(60);
+  const [sending, setSending] = useState(false);
+  const [deliveryStatus, setDeliveryStatus] = useState<{ tone: 'success' | 'warning'; text: string } | null>(null);
 
-  const directeurs = comptes.filter(c => c.role === 'directeur');
+  const directeurs = useMemo(() => comptes.filter(account => account.role === 'directeur' && account.approvalStatus !== 'pending'), [comptes]);
+  const audienceDirectors = useMemo(() => {
+    if (audience === 'trial') return directeurs.filter(account => account.commercialStage === 'essai');
+    if (audience === 'expiring') return directeurs.filter(account => account.abonnementActif && (dateDaysFromNow(account.dateFinAbonnement) ?? 999) <= 7);
+    if (audience === 'inactive') return directeurs.filter(account => isInactive(account.lastActivityAt));
+    if (audience === 'suspended') return directeurs.filter(account => !account.abonnementActif);
+    if (audience === 'individual') return directeurs.filter(account => account.id === individualId);
+    return directeurs;
+  }, [audience, directeurs, individualId]);
+  const currentTheme = themes.find(theme => theme.id === themeId) || themes[0];
+  const mesAnnonces = useMemo(() => [...notifications].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [notifications]);
+  const unreadTotal = useMemo(() => mesAnnonces.reduce((sum, item) => sum + Math.max(0, audienceForNotification(item, directeurs).length - (item.readBy || []).length), 0), [mesAnnonces, directeurs]);
 
-  const mesAnnonces = [...notifications]
-    .filter(n => n.recipientRole === 'all_directeurs' || directeurs.some(d => d.id === n.recipientRole))
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const audienceOptions: Array<{ id: Audience; label: string; description: string }> = [
+    { id: 'all', label: t('Toutes les Directrices', 'كل المديرات'), description: t('Communication plateforme générale', 'تواصل عام للمنصة') },
+    { id: 'trial', label: t('Essais actifs', 'تجارب نشطة'), description: t('Comptes en phase d’essai', 'حسابات في فترة التجربة') },
+    { id: 'expiring', label: t('Échéances proches', 'اشتراكات قريبة'), description: t('Abonnement sous 7 jours', 'اشتراك خلال 7 أيام') },
+    { id: 'inactive', label: t('Crèches inactives', 'روضات غير نشطة'), description: t('Aucune activité depuis 14 jours', 'لا نشاط منذ 14 يوماً') },
+    { id: 'suspended', label: t('Comptes suspendus', 'حسابات معلقة'), description: t('Accès à réactiver ou suivre', 'وصول يحتاج تفعيل أو متابعة') },
+    { id: 'individual', label: t('Une Directrice', 'مديرة واحدة'), description: t('Communication individuelle', 'تواصل فردي') },
+  ];
 
-  const applyPreset = (preset: typeof PRESET_COLORS[0]) => {
-    setBgColor(preset.bg);
-    setTextColor(preset.text);
-    setButtonColor(preset.btn);
-  };
+  const audienceLabel = audienceOptions.find(option => option.id === audience)?.label || t('Audience ciblée', 'جمهور مستهدف');
+  const selectedAudienceValid = audienceDirectors.length > 0;
+  const selectedAudienceIds = audienceDirectors.map(account => account.id);
 
-  const handleSend = async () => {
-    if (!title.trim() || !message.trim()) return;
-
-    if (ctaLabel.trim() && ctaType === 'link' && ctaUrl.trim() && !/^https?:\/\//i.test(ctaUrl.trim())) {
-      showToast(
-        isFrench
-          ? 'Le lien du bouton doit commencer par https:// ou http://.'
-          : 'يجب أن يبدأ رابط الزر بـ https:// أو http://.',
-        'error',
-      );
+  const publish = async () => {
+    if (sending || !title.trim() || !message.trim()) return;
+    if (!selectedAudienceValid) {
+      showToast(t('Aucune Directrice ne correspond à cette audience.', 'لا توجد مديرة مطابقة لهذا الجمهور.'), 'error');
       return;
     }
-
-    const recipientLabel = recipientId === 'all_directeurs'
-      ? (isFrench ? `tous les directeurs (${directeurs.length})` : `جميع المديرين (${directeurs.length})`)
-      : (directeurs.find(d => d.id === recipientId)
-        ? `${directeurs.find(d => d.id === recipientId)?.prenom} ${directeurs.find(d => d.id === recipientId)?.nom}`
-        : (isFrench ? 'le directeur sélectionné' : 'المدير المحدد'));
-    const confirmed = await confirm({
-      title: isFrench ? 'Confirmer la publication' : 'تأكيد النشر',
-      message: isFrench
-        ? `Envoyer cette annonce à ${recipientLabel} ? Cette action publiera immédiatement le message.`
-        : `هل تريد إرسال هذا الإعلان إلى ${recipientLabel}؟ سيُنشر الإعلان فوراً.`,
-      confirmLabel: isFrench ? 'Publier l’annonce' : 'نشر الإعلان',
+    if (ctaLabel.trim() && ctaType === 'link' && (!/^https?:\/\//i.test(ctaUrl.trim()))) {
+      showToast(t('Le lien d’action doit commencer par https:// ou http://.', 'يجب أن يبدأ رابط الإجراء بـ https:// أو http://.'), 'error');
+      return;
+    }
+    const accepted = await confirm({
+      title: priorityPopup ? t('Publier une communication prioritaire ?', 'نشر تواصل ذي أولوية؟') : t('Publier cette communication ?', 'نشر هذا التواصل؟'),
+      message: t(
+        `« ${title.trim()} » sera publiée immédiatement auprès de ${audienceDirectors.length} Directrice(s) : ${audienceLabel}.`,
+        `سيُنشر « ${title.trim()} » فوراً لدى ${audienceDirectors.length} مديرة: ${audienceLabel}.`,
+      ),
+      confirmLabel: t('Publier maintenant', 'النشر الآن'),
     });
-    if (!confirmed) return;
+    if (!accepted) return;
 
     setSending(true);
-    setPushStatus(null);
+    setDeliveryStatus(null);
     try {
-      const announcementId = await addNotification({
+      const notification = await publishAdminNotification({
         title: title.trim(),
         message: message.trim(),
-        recipientRole: recipientId,
-        senderName: user?.prenom ? `${user.prenom} ${user.nom}` : 'Admin',
-        createdAt: new Date().toISOString(),
-        readBy: [],
-        bgColor,
-        textColor,
-        buttonColor,
-        icon,
-        showAsPopup: false,
-        ...(ctaLabel.trim() ? {
-          ctaLabel: ctaLabel.trim(),
-          ctaType,
-          ...(ctaType === 'link' ? { ctaUrl: ctaUrl.trim() } : { ctaPage }),
-        } : {}),
-      });
+        bgColor: currentTheme.bg,
+        textColor: currentTheme.text,
+        buttonColor: currentTheme.button,
+        icon: symbol,
+        showAsPopup: priorityPopup,
+        repeatCount: priorityPopup ? repeatCount : 0,
+        repeatIntervalSeconds: priorityPopup ? repeatInterval : undefined,
+        audienceLabel,
+        ...(ctaLabel.trim() ? { ctaLabel: ctaLabel.trim(), ctaType, ...(ctaType === 'link' ? { ctaUrl: ctaUrl.trim() } : { ctaPage }) } : {}),
+      }, selectedAudienceIds.length === directeurs.length ? undefined : selectedAudienceIds);
 
-      try {
-        await logAdminAction('notification_sent', 'notification', announcementId, title.trim(), {
-          recipient: recipientId,
-          recipientsCount: recipientId === 'all_directeurs' ? directeurs.length : 1,
-          hasCallToAction: Boolean(ctaLabel.trim()),
+      const pushTarget = selectedAudienceIds.length === directeurs.length ? 'all_directeurs' : selectedAudienceIds.length === 1 ? selectedAudienceIds[0] : null;
+      if (pushTarget) {
+        const { data, error } = await supabase.functions.invoke('send-push-notification', {
+          body: { target: pushTarget, title: title.trim(), message: message.trim(), notificationId: notification.id, page: ctaLabel.trim() && ctaType === 'page' ? ctaPage : 'notifications', url: ctaLabel.trim() && ctaType === 'link' ? ctaUrl.trim() : '' },
         });
-      } catch (auditError) {
-        // L’annonce est déjà enregistrée : on ne la retire pas si le journal est momentanément indisponible.
-        console.error('Journalisation de l’annonce impossible:', auditError);
-      }
-
-      const { data: pushData, error: pushError } = await supabase.functions.invoke('send-push-notification', {
-        body: {
-          target: recipientId,
-          title: title.trim(),
-          message: message.trim(),
-          notificationId: announcementId,
-          page: ctaLabel.trim() && ctaType === 'page' ? ctaPage : 'notifications',
-          url: ctaLabel.trim() && ctaType === 'link' ? ctaUrl.trim() : '',
-        },
-      });
-
-      if (pushError) {
-        console.error('Erreur envoi push:', pushError);
-        setPushStatus({
-          tone: 'warning',
-          message: isFrench
-            ? 'Annonce interne enregistrée. La notification Android n’a pas pu être envoyée.'
-            : 'تم حفظ الإعلان داخل المنصة، لكن تعذر إرسال إشعار أندرويد.',
-        });
-      } else if (!pushData?.attempted) {
-        setPushStatus({
-          tone: 'warning',
-          message: isFrench
-            ? 'Annonce enregistrée. Aucun téléphone Android autorisé n’est encore connecté.'
-            : 'تم حفظ الإعلان. لا يوجد هاتف أندرويد مسجّل ومسموح له بالإشعارات بعد.',
-        });
+        setDeliveryStatus(error || !data?.attempted
+          ? { tone: 'warning', text: t('Communication enregistrée. La notification Android n’a pas été envoyée sur cet envoi.', 'تم حفظ التواصل. لم يُرسل إشعار أندرويد لهذا الإرسال.') }
+          : { tone: data.failed ? 'warning' : 'success', text: t(`Communication publiée. Android : ${data.delivered}/${data.attempted} appareil(s) livré(s).`, `تم نشر التواصل. أندرويد: تم التسليم إلى ${data.delivered} من ${data.attempted} جهاز.`) });
       } else {
-        setPushStatus({
-          tone: pushData.failed ? 'warning' : 'success',
-          message: isFrench
-            ? `Notification Android envoyée : ${pushData.delivered}/${pushData.attempted} appareil(s) livré(s).`
-            : `تم إرسال إشعار أندرويد إلى ${pushData.delivered} من أصل ${pushData.attempted} جهاز.`,
-        });
+        setDeliveryStatus({ tone: 'success', text: t('Communication segmentée publiée dans Rawdha+. Les envois Android restent disponibles pour une audience globale ou individuelle.', 'تم نشر التواصل الموجّه داخل Rawdha+. تبقى إشعارات أندرويد متاحة للجمهور العام أو للفرد فقط.') });
       }
-
-      setTitle('');
-      setMessage('');
-      setCtaLabel('');
-      setCtaUrl('');
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 2500);
-    } catch (err) {
-      console.error('Erreur envoi notification:', err);
-      showToast(
-        isFrench ? 'Échec de l’enregistrement de l’annonce.' : 'فشل حفظ الإعلان.',
-        'error',
-      );
+      setTitle(''); setMessage(''); setCtaLabel(''); setCtaUrl(''); setPriorityPopup(false); setRepeatCount(0);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : t('Impossible de publier la communication.', 'تعذر نشر التواصل.'), 'error');
     } finally {
       setSending(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    const confirmed = await confirm({
-      title: isFrench ? 'Confirmer la suppression' : 'تأكيد الحذف',
-      message: isFrench ? 'Supprimer cette annonce ?' : 'حذف هذا الإعلان؟',
-      confirmLabel: isFrench ? 'Supprimer l’annonce' : 'حذف الإعلان',
-      variant: 'danger',
-    });
-    if (confirmed) await deleteNotification(id);
+  const remove = async (notification: AppNotification) => {
+    const accepted = await confirm({ title: t('Retirer cette communication ?', 'حذف هذا التواصل؟'), message: t('Elle ne sera plus visible dans Rawdha+. Cette suppression est irréversible.', 'لن يعود هذا التواصل مرئياً في Rawdha+. لا يمكن التراجع عن الحذف.'), confirmLabel: t('Retirer', 'حذف'), variant: 'danger' });
+    if (!accepted) return;
+    try {
+      await deleteNotification(notification.id);
+      await logAdminAction('notification_deleted' as never, 'notification', notification.id, notification.title);
+      showToast(t('Communication retirée.', 'تم حذف التواصل.'), 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : t('Impossible de retirer la communication.', 'تعذر حذف التواصل.'), 'error');
+    }
   };
 
-  return (
-    <div className="space-y-6 font-sans">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-black text-slate-900 flex items-center gap-2.5">
-          <Megaphone className="w-7 h-7 text-indigo-600" />
-          {isFrench ? 'Notifications' : 'الإشعارات'}
-        </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          {isFrench
-            ? `Envoie une annonce à tous les directeurs de crèches (${directeurs.length} destinataire${directeurs.length > 1 ? 's' : ''}).`
-            : `أرسل إعلاناً إلى جميع مديري الروضات (${directeurs.length} مستلم).`}
-        </p>
-      </div>
+  if (user?.role !== 'admin') return null;
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* --- Formulaire de composition + personnalisation --- */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 sm:p-6 space-y-5">
-          <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
-              {isFrench ? 'Titre' : 'العنوان'}
-            </label>
-            <input
-              type="text"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              placeholder={isFrench ? 'Ex : Maintenance prévue ce soir' : 'مثال: صيانة مقررة هذا المساء'}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
-            />
-          </div>
+  return <div className="min-w-0 space-y-6" dir={isFrench ? 'ltr' : 'rtl'}>
+    <header className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7"><div className="absolute inset-y-0 right-0 w-2/5 bg-gradient-to-bl from-indigo-100/70 via-violet-50 to-transparent rtl:left-0 rtl:right-auto" /><div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-indigo-600"><Megaphone className="h-4 w-4" />{t('Communication plateforme', 'تواصل المنصة')}</p><h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">{t('Centre de communication', 'مركز التواصل')}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">{t('Créez des annonces ciblées, prioritaires ou individuelles avec une trace claire de leur lecture.', 'أنشئوا إعلانات موجهة أو ذات أولوية أو فردية مع متابعة واضحة للقراءة.')}</p></div><div className="grid grid-cols-2 gap-2"><div className="rounded-2xl border border-indigo-100 bg-white/90 px-4 py-3 shadow-sm"><p className="text-[10px] font-black uppercase tracking-wide text-slate-400">{t('Directrices ciblables', 'مديرات مستهدفات')}</p><p className="mt-1 text-xl font-black text-slate-900">{directeurs.length}</p></div><div className="rounded-2xl border border-amber-100 bg-white/90 px-4 py-3 shadow-sm"><p className="text-[10px] font-black uppercase tracking-wide text-slate-400">{t('Lectures en attente', 'قراءات قيد الانتظار')}</p><p className="mt-1 text-xl font-black text-amber-700">{unreadTotal}</p></div></div></div></header>
 
-          <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
-              {isFrench ? 'Message' : 'الرسالة'}
-            </label>
-            <textarea
-              value={message}
-              onChange={e => setMessage(e.target.value)}
-              rows={3}
-              placeholder={isFrench ? 'Détaille ton annonce ici...' : 'اكتب تفاصيل الإعلان هنا...'}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-medium text-slate-800 resize-none"
-            />
-          </div>
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(21rem,.8fr)]"><section className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm sm:p-6"><div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-black text-slate-950">{t('Nouvelle communication', 'تواصل جديد')}</h2><p className="mt-1 text-xs leading-5 text-slate-500">{t('La publication reste une décision manuelle, confirmée avant diffusion.', 'يبقى النشر قراراً يدوياً مع تأكيد قبل التوزيع.')}</p></div><Target className="h-5 w-5 text-indigo-600" /></div>
+      <div className="mt-5"><p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{t('Audience', 'الجمهور')}</p><div className="mt-2 grid gap-2 sm:grid-cols-2">{audienceOptions.map(option => <button key={option.id} type="button" onClick={() => setAudience(option.id)} className={`rounded-2xl border p-3 text-start transition ${audience === option.id ? 'border-indigo-500 bg-indigo-50 shadow-sm' : 'border-slate-100 hover:border-indigo-200 hover:bg-slate-50'}`}><span className="block text-xs font-black text-slate-900">{option.label}</span><span className="mt-1 block text-[11px] text-slate-500">{option.description}</span></button>)}</div>{audience === 'individual' && <label className="mt-3 block text-xs font-black text-slate-600">{t('Directrice', 'المديرة')}<select value={individualId} onChange={event => setIndividualId(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold outline-none focus:border-indigo-500"><option value="">{t('Sélectionner une Directrice', 'اختيار مديرة')}</option>{directeurs.map(account => <option key={account.id} value={account.id}>{account.nomCreche || `${account.prenom} ${account.nom}`}</option>)}</select></label>}<div className={`mt-3 flex items-center justify-between rounded-xl px-3 py-2.5 ${selectedAudienceValid ? 'bg-indigo-50 text-indigo-800' : 'bg-rose-50 text-rose-700'}`}><span className="text-xs font-black">{audienceLabel}</span><span className="rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-black">{audienceDirectors.length} {t('destinataire(s)', 'مستلم')}</span></div></div>
+      <div className="mt-5 grid gap-3"><label className="text-xs font-black text-slate-600">{t('Titre', 'العنوان')}<input value={title} onChange={event => setTitle(event.target.value.slice(0, 140))} placeholder={t('Ex. Mise à jour importante de Rawdha+', 'مثال: تحديث مهم في Rawdha+')} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold outline-none focus:border-indigo-500" /></label><label className="text-xs font-black text-slate-600">{t('Message', 'الرسالة')}<textarea value={message} onChange={event => setMessage(event.target.value.slice(0, 3000))} rows={5} placeholder={t('Rédigez une information claire, utile et actionnable...', 'اكتبوا معلومة واضحة ومفيدة وقابلة للتنفيذ...')} className="mt-1.5 w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm leading-6 outline-none focus:border-indigo-500" /></label></div>
+      <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-indigo-600" /><h3 className="text-xs font-black text-slate-800">{t('Présentation et priorité', 'التقديم والأولوية')}</h3></div><div className="mt-3 flex flex-wrap gap-2">{themes.map(theme => <button key={theme.id} type="button" onClick={() => setThemeId(theme.id)} aria-label={theme.label} className={`h-9 w-9 rounded-full border-2 transition ${themeId === theme.id ? 'border-slate-950 scale-110' : 'border-white shadow-sm'}`} style={{ background: theme.bg }} />)}<div className="ms-2 flex items-center gap-1.5 border-s border-slate-200 ps-3">{symbols.map(value => <button key={value} type="button" onClick={() => setSymbol(value)} className={`grid h-9 w-9 place-items-center rounded-lg text-base font-black transition ${symbol === value ? 'bg-indigo-600 text-white' : 'bg-white text-slate-700 shadow-sm'}`}>{value}</button>)}</div></div><label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-indigo-100 bg-white p-3"><input type="checkbox" checked={priorityPopup} onChange={event => setPriorityPopup(event.target.checked)} className="mt-0.5 h-4 w-4 accent-indigo-600" /><span><span className="block text-xs font-black text-slate-900">{t('Afficher en annonce prioritaire', 'عرض كإعلان ذي أولوية')}</span><span className="mt-0.5 block text-[11px] leading-5 text-slate-500">{t('La Directrice verra une carte prioritaire à l’ouverture. Utilisez cette option seulement pour une information importante.', 'سترى المديرة بطاقة ذات أولوية عند الفتح. استخدموا هذا الخيار للمعلومات المهمة فقط.')}</span></span></label>{priorityPopup && <div className="mt-3 grid grid-cols-2 gap-3"><label className="text-xs font-black text-slate-600">{t('Rappels supplémentaires', 'تكرارات إضافية')}<input type="number" min="0" max="3" value={repeatCount} onChange={event => setRepeatCount(Math.max(0, Math.min(3, Number(event.target.value) || 0)))} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold outline-none focus:border-indigo-500" /></label><label className="text-xs font-black text-slate-600">{t('Intervalle (secondes)', 'الفاصل (ثوانٍ)')}<input type="number" min="30" max="3600" value={repeatInterval} onChange={event => setRepeatInterval(Math.max(30, Math.min(3600, Number(event.target.value) || 60)))} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold outline-none focus:border-indigo-500" /></label></div>}</div>
+      <div className="mt-5 rounded-2xl border border-slate-100 p-4"><div className="flex items-center gap-2"><Link2 className="h-4 w-4 text-indigo-600" /><h3 className="text-xs font-black text-slate-800">{t('Action optionnelle', 'إجراء اختياري')}</h3></div><input value={ctaLabel} onChange={event => setCtaLabel(event.target.value.slice(0, 50))} placeholder={t('Ex. Voir mes factures', 'مثال: عرض فواتيري')} className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-500" />{ctaLabel.trim() && <div className="mt-3 grid gap-3 sm:grid-cols-2"><select value={ctaType} onChange={event => setCtaType(event.target.value as 'link' | 'page')} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold outline-none focus:border-indigo-500"><option value="page">{t('Page Rawdha+', 'صفحة Rawdha+')}</option><option value="link">{t('Lien externe', 'رابط خارجي')}</option></select>{ctaType === 'link' ? <input value={ctaUrl} onChange={event => setCtaUrl(event.target.value)} placeholder="https://..." className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-500" /> : <select value={ctaPage} onChange={event => setCtaPage(event.target.value)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold outline-none focus:border-indigo-500"><option value="paiements">{t('Paiements', 'المدفوعات')}</option><option value="achats">{t('Achats', 'المشتريات')}</option><option value="enfants">{t('Enfants', 'الأطفال')}</option><option value="parametres">{t('Paramètres', 'الإعدادات')}</option></select>}</div>}</div>
+      <button type="button" disabled={sending || !title.trim() || !message.trim() || !selectedAudienceValid} onClick={() => void publish()} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3.5 text-sm font-black text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"><Send className="h-4 w-4" />{sending ? t('Publication...', 'جارٍ النشر...') : t(`Publier pour ${audienceDirectors.length} Directrice(s)`, `النشر إلى ${audienceDirectors.length} مديرة`)}</button>{deliveryStatus && <p className={`mt-3 flex items-start gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold ${deliveryStatus.tone === 'success' ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}><CheckCheck className="mt-0.5 h-4 w-4 shrink-0" />{deliveryStatus.text}</p>}</section>
 
-          {/* --- Personnalisation visuelle --- */}
-          <details open className="rounded-xl border border-slate-100 px-4 pb-4 pt-1">
-            <summary className="flex cursor-pointer list-none items-center gap-1.5 py-3 text-[11px] font-bold uppercase text-slate-500">
-              <Palette className="w-3.5 h-3.5 text-indigo-500" />
-              {isFrench ? 'Personnalisation de l’annonce' : 'تخصيص الإعلان'}
-            </summary>
-            <div>
-            <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase mb-3 mt-1">
-              <Palette className="w-3.5 h-3.5 text-indigo-500" />
-              {isFrench ? 'Style du popup' : 'تصميم النافذة'}
-            </label>
+      <aside className="space-y-5"><section className="sticky top-4 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm"><div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4"><Eye className="h-4 w-4 text-indigo-600" /><h2 className="text-xs font-black uppercase tracking-[0.14em] text-slate-600">{t('Aperçu Directrice', 'معاينة المديرة')}</h2></div><div className="bg-slate-100 p-5 sm:p-7"><div className="mx-auto max-w-sm rounded-3xl p-5 text-center shadow-2xl" style={{ backgroundColor: currentTheme.bg, color: currentTheme.text }}><div className="mx-auto grid h-11 w-11 place-items-center rounded-2xl bg-white/15 text-xl font-black">{symbol}</div><p className="mt-4 text-[10px] font-black uppercase tracking-[0.16em] opacity-75">{priorityPopup ? t('Information prioritaire', 'معلومة ذات أولوية') : t('Annonce Rawdha+', 'إعلان Rawdha+')}</p><h3 className="mt-2 text-lg font-black">{title || t('Titre de votre communication', 'عنوان تواصلكم')}</h3><p className="mt-3 whitespace-pre-line text-sm leading-6 opacity-90">{message || t('Votre message apparaîtra ici de façon claire et lisible.', 'ستظهر رسالتكم هنا بشكل واضح وسهل القراءة.')}</p>{ctaLabel.trim() && <button className="mt-5 w-full rounded-xl py-3 text-sm font-black" style={{ backgroundColor: currentTheme.button, color: currentTheme.bg }}>{ctaLabel}</button>}<button className="mt-3 w-full rounded-xl bg-white/15 py-3 text-sm font-black">{t('Compris', 'فهمت')}</button></div></div><div className="flex items-center gap-2 px-5 py-4 text-[11px] leading-5 text-slate-500"><MonitorSmartphone className="h-4 w-4 shrink-0 text-indigo-500" />{t('Les annonces segmentées restent visibles uniquement pour les Directrices ciblées.', 'تظل الإعلانات الموجّهة مرئية فقط للمديرات المستهدفات.')}</div></section></aside></div>
 
-            {/* Palettes prédéfinies */}
-            <div className="flex flex-wrap gap-2 mb-4">
-              {PRESET_COLORS.map((p, i) => (
-                <button
-                  key={i}
-                  onClick={() => applyPreset(p)}
-                  className="w-9 h-9 rounded-full border-2 border-white shadow-sm ring-1 ring-slate-200 cursor-pointer hover:scale-110 transition"
-                  style={{ backgroundColor: p.bg }}
-                  title={isFrench ? 'Appliquer ce thème' : 'تطبيق هذا النمط'}
-                />
-              ))}
-            </div>
+    <section className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm"><div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-black text-slate-950">{t('Historique des communications', 'سجل التواصل')}</h2><p className="mt-1 text-xs text-slate-500">{t('Audience, lecture et actions restent visibles pour le pilotage.', 'يبقى الجمهور والقراءة والإجراءات ظاهرة للمتابعة.')}</p></div><span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-600">{mesAnnonces.length} {t('publication(s)', 'منشور')}</span></div>{mesAnnonces.length === 0 ? <div className="px-5 py-16 text-center"><BellRing className="mx-auto h-10 w-10 text-slate-200" /><p className="mt-3 text-sm font-bold text-slate-400">{t('Aucune communication publiée pour le moment.', 'لا يوجد تواصل منشور حتى الآن.')}</p></div> : <div className="divide-y divide-slate-100">{mesAnnonces.map(notification => { const targets = audienceForNotification(notification, directeurs); const readCount = targets.filter(account => notification.readBy?.includes(account.id)).length; return <article key={notification.id} className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-start sm:justify-between"><div className="flex min-w-0 gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-base font-black" style={{ backgroundColor: notification.bgColor || '#4338ca', color: notification.textColor || '#fff' }}>{notification.icon || '●'}</span><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-black text-slate-900">{notification.title}</h3>{notification.showAsPopup && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">{t('Prioritaire', 'أولوية')}</span>}</div><p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{notification.message}</p><div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-400"><span className="inline-flex items-center gap-1"><Target className="h-3 w-3" />{notification.audienceLabel || (notification.recipientRole === 'all_directeurs' ? t('Toutes les Directrices', 'كل المديرات') : t('Audience ciblée', 'جمهور مستهدف'))} · {targets.length}</span><span className="inline-flex items-center gap-1"><Users className="h-3 w-3" />{readCount}/{targets.length} {t('lu', 'قرأت')}</span><span className="inline-flex items-center gap-1"><Clock3 className="h-3 w-3" />{new Date(notification.createdAt).toLocaleString(isFrench ? 'fr-FR' : 'ar-DZ')}</span></div></div></div><div className="flex shrink-0 items-center gap-2"><button type="button" onClick={() => void remove(notification)} className="rounded-xl p-2 text-rose-500 transition hover:bg-rose-50" title={t('Retirer la communication', 'حذف التواصل')}><Trash2 className="h-4 w-4" /></button></div></article>; })}</div>}</section>
+  </div>;
+}
 
-            {/* Contrôles fins : couleurs exactes */}
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">
-                  {isFrench ? 'Fond' : 'الخلفية'}
-                </label>
-                <input
-                  type="color"
-                  value={bgColor}
-                  onChange={e => setBgColor(e.target.value)}
-                  className="w-full h-9 rounded-lg border border-slate-200 cursor-pointer"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">
-                  {isFrench ? 'Texte' : 'النص'}
-                </label>
-                <input
-                  type="color"
-                  value={textColor}
-                  onChange={e => setTextColor(e.target.value)}
-                  className="w-full h-9 rounded-lg border border-slate-200 cursor-pointer"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">
-                  {isFrench ? 'Bouton' : 'الزر'}
-                </label>
-                <input
-                  type="color"
-                  value={buttonColor}
-                  onChange={e => setButtonColor(e.target.value)}
-                  className="w-full h-9 rounded-lg border border-slate-200 cursor-pointer"
-                />
-              </div>
-            </div>
-
-            {/* Icône */}
-            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">
-              {isFrench ? 'Icône' : 'الأيقونة'}
-            </label>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {PRESET_ICONS.map(ic => (
-                <button
-                  key={ic}
-                  onClick={() => setIcon(ic)}
-                  className={`w-10 h-10 rounded-xl text-lg flex items-center justify-center border-2 cursor-pointer transition ${
-                    icon === ic ? 'border-indigo-500 bg-indigo-50' : 'border-slate-100 hover:border-slate-200'
-                  }`}
-                >
-                  {ic}
-                </button>
-              ))}
-              <input
-                type="text"
-                value={icon}
-                onChange={e => setIcon(e.target.value.slice(0, 4))}
-                className="w-16 h-10 text-center text-lg rounded-xl border-2 border-slate-100 outline-none focus:border-indigo-500"
-                placeholder="✨"
-              />
-            </div>
-
-            <p className="text-xs leading-5 text-slate-500">
-              {isFrench
-                ? 'Les annonces sont publiées dans la page Notifications des directeurs.'
-                : 'تظهر الإعلانات في صفحة الإشعارات الخاصة بالمديرين.'}
-            </p>
-            </div>
-          </details>
-
-          {/* ✅ Destinataire */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-              {isFrench ? 'Destinataire' : 'المستلم'}
-            </label>
-            <select
-              value={recipientId}
-              onChange={e => setRecipientId(e.target.value)}
-              className="w-full px-3 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition text-sm"
-            >
-              <option value="all_directeurs">
-                {isFrench ? `Tous les directeurs (${directeurs.length})` : `جميع المديرين (${directeurs.length})`}
-              </option>
-              {directeurs.map(d => (
-                <option key={d.id} value={d.id}>
-                  {d.prenom} {d.nom} — {d.nomCreche || d.email}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Bouton d'action optionnel dans la notification */}
-          <div className="border border-slate-100 rounded-xl p-4 space-y-3">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-              {isFrench ? "Bouton d'action (optionnel)" : 'زر إجراء (اختياري)'}
-            </label>
-            <input
-              type="text"
-              value={ctaLabel}
-              onChange={e => setCtaLabel(e.target.value)}
-              placeholder={isFrench ? 'Ex: Payer maintenant, Voir mes factures...' : 'مثال: ادفع الآن'}
-              className="w-full px-3 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition text-sm"
-            />
-            {ctaLabel.trim() && (
-              <>
-                <div className="flex gap-3">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer">
-                    <input type="radio" checked={ctaType === 'link'} onChange={() => setCtaType('link')} className="accent-indigo-600" />
-                    {isFrench ? 'Lien externe (WhatsApp, site...)' : 'رابط خارجي'}
-                  </label>
-                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer">
-                    <input type="radio" checked={ctaType === 'page'} onChange={() => setCtaType('page')} className="accent-indigo-600" />
-                    {isFrench ? 'Page de l\'app' : 'صفحة في التطبيق'}
-                  </label>
-                </div>
-                {ctaType === 'link' ? (
-                  <input
-                    type="text"
-                    value={ctaUrl}
-                    onChange={e => setCtaUrl(e.target.value)}
-                    placeholder="https://wa.me/213..."
-                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition text-sm"
-                  />
-                ) : (
-                  <select
-                    value={ctaPage}
-                    onChange={e => setCtaPage(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition text-sm"
-                  >
-                    <option value="paiements">{isFrench ? 'Paiements' : 'المدفوعات'}</option>
-                    <option value="enfants">{isFrench ? 'Enfants' : 'الأطفال'}</option>
-                    <option value="parametres">{isFrench ? 'Paramètres' : 'الإعدادات'}</option>
-                  </select>
-                )}
-              </>
-            )}
-          </div>
-
-
-          <button
-            onClick={handleSend}
-            disabled={sending || !title.trim() || !message.trim()}
-            className="w-full px-5 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 cursor-pointer transition"
-          >
-            <Send className="w-4 h-4" />
-            {sending ? (isFrench ? 'Envoi...' : 'جارٍ الإرسال...') : (isFrench ? 'Envoyer' : 'إرسال')}
-          </button>
-          {success && (
-            <p className="text-xs font-semibold text-emerald-600 flex items-center gap-1.5">
-              <CheckCheck className="w-4 h-4" /> {isFrench ? 'Annonce enregistrée !' : 'تم حفظ الإعلان!'}
-            </p>
-          )}
-          {pushStatus && (
-            <p className={`text-xs font-semibold flex items-center gap-1.5 ${pushStatus.tone === 'success' ? 'text-emerald-600' : 'text-amber-700'}`}>
-              <CheckCheck className="w-4 h-4" /> {pushStatus.message}
-            </p>
-          )}
-        </div>
-
-        {/* --- Aperçu en direct --- */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 sm:p-6">
-          <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase mb-4">
-            <Eye className="w-3.5 h-3.5 text-indigo-500" />
-            {isFrench ? 'Aperçu — exactement ce que le directeur verra' : 'معاينة — بالضبط كما سيراها المدير'}
-          </label>
-          <div className="bg-slate-100 rounded-2xl p-8 flex items-center justify-center min-h-[280px]">
-            <div
-              className="w-full max-w-xs rounded-2xl shadow-2xl p-6 text-center"
-              style={{ backgroundColor: bgColor, color: textColor }}
-            >
-              <div className="text-4xl mb-3">{icon || '📢'}</div>
-              <h3 className="font-black text-lg mb-2 break-words">{title || (isFrench ? 'Titre de ton annonce' : 'عنوان الإعلان')}</h3>
-              <p className="text-sm opacity-90 leading-relaxed break-words">
-                {message || (isFrench ? 'Le message de ton annonce apparaîtra ici...' : 'ستظهر رسالتك هنا...')}
-              </p>
-              <button
-                className="mt-5 w-full py-2.5 rounded-xl font-bold text-sm cursor-default"
-                style={{ backgroundColor: 'rgba(255,255,255,0.15)', color: buttonColor }}
-              >
-                {isFrench ? 'Compris' : 'حسناً'}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Historique des annonces envoyées */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="px-5 sm:px-6 py-4 border-b border-slate-100">
-          <h2 className="text-sm font-black text-slate-800 uppercase tracking-wide">
-            {isFrench ? 'Historique des annonces' : 'سجل الإعلانات'}
-          </h2>
-        </div>
-        {mesAnnonces.length === 0 ? (
-          <p className="text-sm text-slate-400 text-center py-10">
-            {isFrench ? 'Aucune annonce envoyée pour le moment.' : 'لا توجد إعلانات مرسلة بعد.'}
-          </p>
-        ) : (
-          <div className="divide-y divide-slate-50">
-            {mesAnnonces.map(n => {
-              const isTargeted = n.recipientRole !== 'all_directeurs';
-              const targetDir = isTargeted ? directeurs.find(d => d.id === n.recipientRole) : null;
-              const readCount = isTargeted
-                ? (n.readBy?.includes(n.recipientRole) ? 1 : 0)
-                : directeurs.filter(d => n.readBy?.includes(d.id)).length;
-              const totalCount = isTargeted ? 1 : directeurs.length;
-              return (
-                <div key={n.id} className="px-5 sm:px-6 py-4 flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div
-                      className="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0"
-                      style={{ backgroundColor: n.bgColor || '#4f46e5' }}
-                    >
-                      {n.icon || '📢'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-slate-800">{n.title}</p>
-                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">{n.message}</p>
-                      <div className="flex items-center gap-3 mt-2">
-                        <span className="text-[10px] text-slate-400">
-                          {new Date(n.createdAt).toLocaleDateString(isFrench ? 'fr-FR' : 'ar-DZ', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                        <span className="text-[10px] font-bold text-indigo-500 flex items-center gap-1">
-                          <Users className="w-3 h-3" />
-                          {readCount}/{totalCount} {isFrench ? 'lue(s)' : 'قرأها'}
-                        </span>
-                        {isTargeted && (
-                          <span className="text-[10px] font-bold text-slate-400">
-                            → {targetDir ? `${targetDir.prenom} ${targetDir.nom}` : n.recipientRole}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleDelete(n.id)}
-                    className="text-rose-400 hover:text-rose-600 hover:bg-rose-50 p-2 rounded-lg transition cursor-pointer flex-shrink-0"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+function audienceForNotification(notification: AppNotification, directors: UserAccount[]) {
+  if (notification.recipientRole === 'all_directeurs') return directors;
+  if (notification.recipientIds?.length) return directors.filter(account => notification.recipientIds?.includes(account.id));
+  return directors.filter(account => account.id === notification.recipientRole);
 }

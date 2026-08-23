@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Enfant, Presence, PresenceJournee, Paiement, Achat, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction, CommunityFeature, CommunityFeatureKind, AdminAuditLog, AdminAuditAction, AdminAuditTargetType } from '../types';
+import { Enfant, Presence, PresenceJournee, Paiement, Achat, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction, CommunityFeature, CommunityFeatureKind, AdminAuditLog, AdminAuditAction, AdminAuditTargetType, AdminFollowup, AdminFollowupChannel, AdminFollowupStatus, CommercialStage } from '../types';
 import { 
   getCollectionData, 
   addCollectionDocument, 
@@ -210,6 +210,7 @@ interface DbContextType {
   demandesAdmission: DemandeAdmission[];
   notifications: AppNotification[];
   adminAuditLogs: AdminAuditLog[];
+  adminFollowups: AdminFollowup[];
   loading: boolean;
   refreshAll: () => Promise<void>;
 
@@ -250,6 +251,9 @@ interface DbContextType {
   updateCompte: (id: string, compte: Partial<UserAccount>) => Promise<void>;
   deleteCompte: (id: string) => Promise<void>;
   updateDirectorSubscription: (id: string, patch: Pick<UserAccount, 'abonnementActif' | 'dateFinAbonnement'>, action: Extract<AdminAuditAction, 'subscription_suspended' | 'subscription_reactivated' | 'subscription_end_date_updated' | 'trial_extended'>) => Promise<UserAccount>;
+  updateDirectorOperations: (id: string, patch: Partial<Pick<UserAccount, 'commercialStage' | 'commercialOwnerId' | 'nextFollowUpAt' | 'lastFollowUpAt' | 'commercialNote'>>, action: 'commercial_stage_updated' | 'commercial_owner_updated' | 'commercial_note_updated' | 'followup_scheduled' | 'followup_recorded') => Promise<UserAccount>;
+  createAdminFollowup: (targetId: string, channel: AdminFollowupChannel, note?: string, dueAt?: string, status?: AdminFollowupStatus) => Promise<AdminFollowup>;
+  publishAdminNotification: (payload: Omit<AppNotification, 'id' | 'recipientRole' | 'recipientIds' | 'senderName' | 'createdAt' | 'readBy'>, recipientIds?: string[]) => Promise<AppNotification>;
   logAdminAction: (action: AdminAuditAction, targetType: AdminAuditTargetType, targetId: string, targetLabel?: string, metadata?: Record<string, unknown>) => Promise<AdminAuditLog>;
   addDemandeDirecteur: (demande: Omit<DemandeDirecteur, 'id'>) => Promise<string>;
   approveDemandeDirecteur: (id: string) => Promise<string>;
@@ -334,6 +338,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const [demandesAdmission, setDemandesAdmission] = useState<DemandeAdmission[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [adminAuditLogs, setAdminAuditLogs] = useState<AdminAuditLog[]>([]);
+  const [adminFollowups, setAdminFollowups] = useState<AdminFollowup[]>([]);
   const [loading, setLoading] = useState(true);
   const autoInvoiceRanRef = React.useRef(false); // évite de relancer la génération auto plusieurs fois par session
 
@@ -373,6 +378,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setDemandesAdmission([]);
       setNotifications([]);
       setAdminAuditLogs([]);
+      setAdminFollowups([]);
       setLoading(false);
       return;
     }
@@ -431,8 +437,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         getCollectionData<DemandeAdmission>('demandes_admission'),
         getCollectionData<AppNotification>('notifications'),
         user?.role === 'admin' ? getCollectionData<AdminAuditLog>('admin_audit_logs') : Promise.resolve([] as AdminAuditLog[]),
+        user?.role === 'admin' ? getCollectionData<AdminFollowup>('admin_followups') : Promise.resolve([] as AdminFollowup[]),
       ])
-        .then(([dbClasses, dbActivites, dbRepas, dbAchats, dbMessages, dbAvis, dbSignalements, dbCommunityPosts, dbCommunityComments, dbCommunityReactions, dbCommunityFeatures, dbInscriptionLinks, dbDemandesAdmission, dbNotifications, dbAdminAuditLogs]) => {
+        .then(([dbClasses, dbActivites, dbRepas, dbAchats, dbMessages, dbAvis, dbSignalements, dbCommunityPosts, dbCommunityComments, dbCommunityReactions, dbCommunityFeatures, dbInscriptionLinks, dbDemandesAdmission, dbNotifications, dbAdminAuditLogs, dbAdminFollowups]) => {
           setClasses(dbClasses);
           setActivites(dbActivites);
           setRepas(dbRepas);
@@ -448,6 +455,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
           setDemandesAdmission(dbDemandesAdmission);
           setNotifications(dbNotifications);
           setAdminAuditLogs((Array.isArray(dbAdminAuditLogs) ? dbAdminAuditLogs : []).filter(Boolean).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+          setAdminFollowups((Array.isArray(dbAdminFollowups) ? dbAdminFollowups : []).filter(Boolean).sort((a, b) => (a.dueAt || a.createdAt).localeCompare(b.dueAt || b.createdAt)));
         })
         .catch(err => {
           console.error('Erreur de connexion à Supabase (chargement arrière-plan):', err);
@@ -1046,6 +1054,63 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     return account;
   };
 
+  const updateDirectorOperations = async (
+    id: string,
+    patch: Partial<Pick<UserAccount, 'commercialStage' | 'commercialOwnerId' | 'nextFollowUpAt' | 'lastFollowUpAt' | 'commercialNote'>>,
+    action: 'commercial_stage_updated' | 'commercial_owner_updated' | 'commercial_note_updated' | 'followup_scheduled' | 'followup_recorded',
+  ) => {
+    if (user?.role !== 'admin') throw new Error('Accès administrateur requis.');
+    const cleanPatch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+    const { data, error } = await supabase.rpc('rawdha_admin_update_director_operations', {
+      p_target_id: id,
+      p_patch: cleanPatch,
+      p_action: action,
+    });
+    if (error || !data) throw new Error(error?.message || 'Impossible de mettre à jour le suivi commercial.');
+    const account = data as UserAccount;
+    setComptes(previous => previous.map(item => item.id === id ? { ...item, ...account } : item));
+    await refreshAll();
+    return account;
+  };
+
+  const createAdminFollowup = async (
+    targetId: string,
+    channel: AdminFollowupChannel,
+    note?: string,
+    dueAt?: string,
+    status: AdminFollowupStatus = 'planned',
+  ) => {
+    if (user?.role !== 'admin') throw new Error('Accès administrateur requis.');
+    const { data, error } = await supabase.rpc('rawdha_admin_create_followup', {
+      p_target_id: targetId,
+      p_channel: channel,
+      p_note: note?.trim() || null,
+      p_due_at: dueAt || null,
+      p_status: status,
+    });
+    if (error || !data) throw new Error(error?.message || 'Impossible d’enregistrer la relance.');
+    const followup = data as AdminFollowup;
+    setAdminFollowups(previous => [followup, ...previous.filter(item => item.id !== followup.id)]);
+    await refreshAll();
+    return followup;
+  };
+
+  const publishAdminNotification = async (
+    payload: Omit<AppNotification, 'id' | 'recipientRole' | 'recipientIds' | 'senderName' | 'createdAt' | 'readBy'>,
+    recipientIds?: string[],
+  ) => {
+    if (user?.role !== 'admin') throw new Error('Accès administrateur requis.');
+    const { data, error } = await supabase.rpc('rawdha_admin_publish_notification', {
+      p_payload: payload,
+      p_recipient_ids: recipientIds && recipientIds.length ? recipientIds : null,
+    });
+    if (error || !data) throw new Error(error?.message || 'Impossible de publier l’annonce.');
+    const notification = data as AppNotification;
+    setNotifications(previous => [notification, ...previous.filter(item => item.id !== notification.id)]);
+    await refreshAll();
+    return notification;
+  };
+
   // ✅ FIX: appelle l'Edge Function "delete-account" qui supprime le VRAI utilisateur
   // Supabase Auth + la ligne profil. L'ancienne version ne supprimait que la ligne
   // "comptes", donc l'utilisateur Auth restait actif et le compte semblait "revenir".
@@ -1511,8 +1576,12 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     const updatedReadBy = [...(target.readBy || []), userId];
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, readBy: updatedReadBy } : n));
     try {
-      await updateCollectionDocument<AppNotification>('notifications', id, { readBy: updatedReadBy });
+      const { data, error } = await supabase.rpc('rawdha_mark_notification_read', { p_notification_id: id });
+      if (error || !data) throw new Error(error?.message || 'Impossible de marquer l’annonce comme lue.');
+      const updated = data as AppNotification;
+      setNotifications(prev => prev.map(item => item.id === id ? { ...item, ...updated } : item));
     } catch (err) {
+      setNotifications(prev => prev.map(n => n.id === id ? target : n));
       console.error('Erreur marquage notification comme lue:', err);
     }
   };
@@ -1614,6 +1683,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       demandesAdmission: scopedDemandesAdmission,
       notifications,
       adminAuditLogs,
+      adminFollowups,
       loading,
       refreshAll,
       addMessage,
@@ -1646,6 +1716,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       addCompte,
       updateCompte,
       updateDirectorSubscription,
+      updateDirectorOperations,
+      createAdminFollowup,
+      publishAdminNotification,
       logAdminAction,
       deleteCompte,
     addDemandeDirecteur,

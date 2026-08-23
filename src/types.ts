@@ -133,6 +133,10 @@ export interface AppNotification {
   message: string;
   // 'all_directeurs' = diffusée à tous les directeurs, sinon l'id exact d'un compte
   recipientRole: string;
+  /** Liste figée des Directrices ciblées lorsque l’audience est segmentée. */
+  recipientIds?: string[];
+  /** Libellé professionnel de l’audience au moment de la publication. */
+  audienceLabel?: string;
   senderName?: string;
   createdAt: string;
   readBy: string[];
@@ -291,7 +295,36 @@ export interface UserAccount {
   horaires?: string;
   services?: string[];
   classesCount?: number;
+  /** Métadonnées de pilotage réservées aux Administrateurs. */
+  commercialStage?: CommercialStage;
+  commercialOwnerId?: string;
+  nextFollowUpAt?: string;
+  lastFollowUpAt?: string;
+  commercialNote?: string;
+  /** Profil interne préparatoire, sans effet sur les règles RLS tant qu’il n’est pas délégué explicitement. */
+  internalAdminRole?: AdminInternalRole;
   enfantId?: string;
+}
+
+export type CommercialStage = 'nouveau' | 'essai' | 'relance' | 'interesse' | 'abonne' | 'suspendu';
+/** Profil organisationnel futur d’un Administrateur ; il ne remplace pas le rôle de sécurité `admin`. */
+export type AdminInternalRole = 'super_admin' | 'support' | 'commercial';
+
+export type AdminFollowupChannel = 'whatsapp_manual' | 'appel_manuel' | 'notification_interne' | 'email' | 'autre';
+export type AdminFollowupStatus = 'planned' | 'done' | 'cancelled';
+
+/** Relance interne créée par un Administrateur ; elle ne déclenche aucun envoi automatique. */
+export interface AdminFollowup {
+  id: string;
+  targetAccountId: string;
+  targetLabel: string;
+  channel: AdminFollowupChannel;
+  note?: string;
+  dueAt?: string;
+  status: AdminFollowupStatus;
+  createdBy: string;
+  createdAt: string;
+  completedAt?: string;
 }
 
 export type AdminAuditAction =
@@ -303,13 +336,23 @@ export type AdminAuditAction =
   | 'trial_extended'
   | 'ticket_status_updated'
   | 'ticket_response_saved'
+  | 'ticket_assigned'
+  | 'ticket_priority_updated'
+  | 'ticket_due_date_updated'
   | 'community_post_hidden'
   | 'community_post_restored'
   | 'community_post_pinned'
   | 'community_post_unpinned'
   | 'notification_sent';
 
-export type AdminAuditTargetType = 'director_account' | 'director_request' | 'ticket' | 'community_post' | 'notification';
+export type AdminOperationalAction =
+  | 'commercial_stage_updated'
+  | 'commercial_owner_updated'
+  | 'commercial_note_updated'
+  | 'followup_scheduled'
+  | 'followup_recorded';
+
+export type AdminAuditTargetType = 'director_account' | 'director_request' | 'ticket' | 'community_post' | 'notification' | 'followup';
 
 /** Entrée immuable d’une action sensible effectuée dans le centre Administrateur. */
 export interface AdminAuditLog {
@@ -447,6 +490,7 @@ export interface CommunityFeature {
 
 export type SignalementType = 'bug' | 'probleme' | 'suggestion' | 'amelioration';
 export type SignalementStatut = 'nouveau' | 'en_cours' | 'resolu' | 'rejete';
+export type SignalementPriorite = 'basse' | 'normale' | 'haute' | 'urgente';
 
 export interface Signalement {
   id: string;
@@ -459,4 +503,9 @@ export interface Signalement {
   statut: SignalementStatut;
   date: string;
   reponseAdmin?: string;
+  priorite?: SignalementPriorite;
+  assigneeId?: string;
+  assigneeName?: string;
+  dueAt?: string;
+  tags?: string[];
 }

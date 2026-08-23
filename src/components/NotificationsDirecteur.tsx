@@ -11,7 +11,7 @@ export default function NotificationsDirecteur({ onNavigateToPaiements }: { onNa
   const isFrench = language !== 'ar';
 
   const announcements = useMemo(() => notifications
-    .filter(notification => notification.recipientRole === 'all_directeurs' || notification.recipientRole === user?.id)
+    .filter(notification => notification.recipientRole === 'all_directeurs' || notification.recipientRole === user?.id || notification.recipientIds?.includes(user?.id || ''))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [notifications, user?.id]);
   const pending = useMemo(() => paiements
     .filter(payment => payment.statut !== 'Payé')

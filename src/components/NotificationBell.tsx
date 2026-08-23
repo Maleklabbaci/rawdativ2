@@ -20,7 +20,7 @@ export default function NotificationBell({ onNavigateToPaiements }: { onNavigate
 
   // Annonces destinées à ce directeur (diffusion générale ou ciblée sur lui)
   const mesAnnonces = notifications
-    .filter(n => n.recipientRole === 'all_directeurs' || n.recipientRole === user?.id)
+    .filter(n => n.recipientRole === 'all_directeurs' || n.recipientRole === user?.id || n.recipientIds?.includes(user?.id || ''))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const annoncesNonLues = mesAnnonces.filter(n => !n.readBy?.includes(user?.id || ''));

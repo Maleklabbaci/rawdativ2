@@ -25,7 +25,7 @@ export default function NotificationPopup({ onNavigate }: { onNavigate?: (page: 
 
   const popupsAVoir = notifications
     .filter(n =>
-      (n.recipientRole === 'all_directeurs' || n.recipientRole === user?.id) &&
+      (n.recipientRole === 'all_directeurs' || n.recipientRole === user?.id || n.recipientIds?.includes(user?.id || '')) &&
       n.showAsPopup !== false &&
       !n.readBy?.includes(user?.id || '') &&
       !dismissedThisSession.includes(n.id) &&
