@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Enfant, Presence, PresenceJournee, Paiement, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction, CommunityFeature, CommunityFeatureKind } from '../types';
+import { Enfant, Presence, PresenceJournee, Paiement, Achat, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction, CommunityFeature, CommunityFeatureKind } from '../types';
 import { 
   getCollectionData, 
   addCollectionDocument, 
@@ -193,6 +193,7 @@ interface DbContextType {
   presences: Presence[];
   presenceJournees: PresenceJournee[];
   paiements: Paiement[];
+  achats: Achat[];
   personnel: Personnel[];
   activites: Activite[];
   repas: Repas[];
@@ -269,6 +270,10 @@ interface DbContextType {
   updatePaiement: (id: string, paiement: Partial<Paiement>) => Promise<void>;
   deletePaiement: (id: string) => Promise<void>;
 
+  addAchat: (achat: Omit<Achat, 'id' | 'crecheId' | 'createdBy' | 'createdAt' | 'updatedAt'>) => Promise<string>;
+  updateAchat: (id: string, achat: Partial<Achat>) => Promise<void>;
+  deleteAchat: (id: string) => Promise<void>;
+
   addPersonnel: (staff: Omit<Personnel, 'id'>) => Promise<string>;
   updatePersonnel: (id: string, staff: Partial<Personnel>) => Promise<void>;
   deletePersonnel: (id: string) => Promise<void>;
@@ -309,6 +314,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const [presences, setPresences] = useState<Presence[]>([]);
   const [presenceJournees, setPresenceJournees] = useState<PresenceJournee[]>([]);
   const [paiements, setPaiements] = useState<Paiement[]>([]);
+  const [achats, setAchats] = useState<Achat[]>([]);
   const [personnel, setPersonnel] = useState<Personnel[]>([]);
   const [activites, setActivites] = useState<Activite[]>([]);
   const [repas, setRepas] = useState<Repas[]>([]);
@@ -347,6 +353,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setPresences([]);
       setPresenceJournees([]);
       setPaiements([]);
+      setAchats([]);
       setPersonnel([]);
       setActivites([]);
       setRepas([]);
@@ -407,6 +414,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         getCollectionData<Classe>('classes'),
         getCollectionData<Activite>('activites'),
         getCollectionData<Repas>('repas'),
+        getCollectionData<Achat>('achats'),
         getCollectionData<DiscussionMessage>('discussion_messages'),
         getCollectionData<Avis>('avis'),
         getCollectionData<Signalement>('signalements'),
@@ -418,10 +426,11 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         getCollectionData<DemandeAdmission>('demandes_admission'),
         getCollectionData<AppNotification>('notifications'),
       ])
-        .then(([dbClasses, dbActivites, dbRepas, dbMessages, dbAvis, dbSignalements, dbCommunityPosts, dbCommunityComments, dbCommunityReactions, dbCommunityFeatures, dbInscriptionLinks, dbDemandesAdmission, dbNotifications]) => {
+        .then(([dbClasses, dbActivites, dbRepas, dbAchats, dbMessages, dbAvis, dbSignalements, dbCommunityPosts, dbCommunityComments, dbCommunityReactions, dbCommunityFeatures, dbInscriptionLinks, dbDemandesAdmission, dbNotifications]) => {
           setClasses(dbClasses);
           setActivites(dbActivites);
           setRepas(dbRepas);
+          setAchats(dbAchats);
           setMessages(dbMessages);
           setAvis(dbAvis);
           setSignalements(dbSignalements);
@@ -501,6 +510,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const scopedPresences = user?.role === 'directeur' ? presences.filter(p => validEnfantIds.has(p.enfantId)) : presences;
   const scopedPresenceJournees = user?.role === 'directeur' ? presenceJournees.filter(j => j.crecheId === user.id) : presenceJournees;
   const scopedPaiements = user?.role === 'directeur' ? paiements.filter(p => validEnfantIds.has(p.enfantId)) : paiements;
+  const scopedAchats = user?.role === 'directeur' ? achats.filter(achat => achat.crecheId === user.id) : achats;
 
   // ✅ FIX: avant, TOUS les comptes (tous les directeurs : nom, email, statut abonnement...) étaient
   // chargés en mémoire dans le navigateur de CHAQUE utilisateur connecté, même un simple directeur,
@@ -781,6 +791,64 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try { await deleteCollectionDocument('paiements', id); } catch (err) {
       if (previous) setPaiements(prev => [...prev, previous]);
       notifyWriteError('suppression');
+    }
+  };
+
+  // --- ACHATS ---
+  // Les mutations passent exclusivement par RPC : la base impose la crèche et l'auteur
+  // depuis la session, même si un navigateur tente d’envoyer un autre crecheId.
+  const addAchat = async (achat: Omit<Achat, 'id' | 'crecheId' | 'createdBy' | 'createdAt' | 'updatedAt'>) => {
+    assertWriteAccess();
+    if (!user?.id) throw new Error('Session requise');
+    const now = new Date().toISOString();
+    const tempId = `achat_${Date.now()}`;
+    const optimistic = {
+      ...achat,
+      id: tempId,
+      crecheId: user.id,
+      createdBy: user.id,
+      createdAt: now,
+      updatedAt: now,
+    } as Achat;
+    setAchats(prev => [optimistic, ...prev]);
+    try {
+      const { data: freshId, error } = await callSupabaseRpc<string>('rawdha_create_achat', { p_data: achat });
+      if (error || !freshId) throw error || new Error('Achat refusé.');
+      setAchats(prev => prev.map(item => item.id === tempId ? { ...optimistic, id: freshId } : item));
+      return freshId;
+    } catch (err) {
+      setAchats(prev => prev.filter(item => item.id !== tempId));
+      notifyWriteError('ajout');
+      throw err;
+    }
+  };
+
+  const updateAchat = async (id: string, data: Partial<Achat>) => {
+    assertWriteAccess();
+    const previous = achats.find(item => item.id === id);
+    if (!previous) throw new Error('Achat introuvable.');
+    setAchats(prev => prev.map(item => item.id === id ? { ...item, ...data, updatedAt: new Date().toISOString() } : item));
+    try {
+      const { data: updated, error } = await callSupabaseRpc<boolean>('rawdha_update_achat', { p_id: id, p_patch: data });
+      if (error || updated !== true) throw error || new Error('Achat non modifié.');
+    } catch (err) {
+      setAchats(prev => prev.map(item => item.id === id ? previous : item));
+      notifyWriteError('modification');
+      throw err;
+    }
+  };
+
+  const deleteAchat = async (id: string) => {
+    assertWriteAccess();
+    const previous = achats.find(item => item.id === id);
+    setAchats(prev => prev.filter(item => item.id !== id));
+    try {
+      const { data: deleted, error } = await callSupabaseRpc<boolean>('rawdha_delete_achat', { p_id: id });
+      if (error || deleted !== true) throw error || new Error('Achat non supprimé.');
+    } catch (err) {
+      if (previous) setAchats(prev => [previous, ...prev]);
+      notifyWriteError('suppression');
+      throw err;
     }
   };
 
@@ -1480,6 +1548,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       presences: scopedPresences,
       presenceJournees: scopedPresenceJournees,
       paiements: scopedPaiements,
+      achats: scopedAchats,
       personnel: scopedPersonnel,
       activites: scopedActivites,
       repas: scopedRepas,
@@ -1544,6 +1613,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       addPaiement,
       updatePaiement,
       deletePaiement,
+      addAchat,
+      updateAchat,
+      deleteAchat,
       addPersonnel,
       updatePersonnel,
       deletePersonnel,

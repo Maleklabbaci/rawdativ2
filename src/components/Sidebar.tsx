@@ -1,3 +1,4 @@
+// Style navigation Rawdha+ : accès dense mais lisible aux modules opérationnels, avec un repère financier distinct pour les Achats.
 import { useAuth } from '../contexts/AuthContext';
 import { useDb } from '../contexts/DbContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -7,6 +8,7 @@ import {
   School, 
   CalendarCheck, 
   CreditCard, 
+  ShoppingCart,
   UserCheck, 
   Sparkles, 
   Utensils, 
@@ -53,6 +55,7 @@ export default function Sidebar({ currentPage, onPageChange, isOpen, onClose, is
       { key: 'classes', label: 'classes', icon: School, color: 'text-amber-500' },
       { key: 'presences', label: 'attendance', icon: CalendarCheck, color: 'text-emerald-500' },
       { key: 'paiements', label: 'invoices', icon: CreditCard, color: 'text-cyan-500' },
+      { key: 'achats', label: 'purchases', icon: ShoppingCart, color: 'text-fuchsia-400' },
       { key: 'rapports', label: 'reports', icon: BarChart3, color: 'text-indigo-400' },
       { key: 'personnel', label: 'staff', icon: UserCheck, color: 'text-teal-500' },
       { key: 'activites', label: 'activities', icon: Sparkles, color: 'text-purple-500' },

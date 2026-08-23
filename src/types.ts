@@ -99,6 +99,30 @@ export interface Paiement {
   autoGenere?: boolean;
 }
 
+export type AchatCategorie = 'alimentation' | 'hygiene' | 'fournitures' | 'materiel' | 'services' | 'loyer_charges' | 'maintenance' | 'transport' | 'autre';
+export type AchatStatut = 'payé' | 'à_payer';
+export type AchatMoyenPaiement = 'especes' | 'virement' | 'cheque' | 'carte' | 'autre';
+
+/** Dépense interne d’une crèche, isolée en base par `crecheId`. */
+export interface Achat {
+  id: string;
+  crecheId: string;
+  createdBy: string;
+  dateAchat: string;
+  fournisseur?: string;
+  categorie: AchatCategorie;
+  libelle: string;
+  montant: number;
+  tauxTVA?: number;
+  statut: AchatStatut;
+  moyenPaiement?: AchatMoyenPaiement;
+  numeroPiece?: string;
+  notes?: string;
+  recurrent: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ✅ Notification envoyée par l'admin à un ou tous les directeurs (annonce), ou
 // notification système (rappel de paiement). "readBy" liste les ids des comptes
 // qui l'ont déjà vue/fermée. Les champs de style permettent à l'admin de

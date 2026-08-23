@@ -1,4 +1,4 @@
-
+// Style shell Rawdha+ : modules métier isolés, navigation mobile compacte et routes explicites pour chaque outil de direction.
 import { useState, useEffect, lazy, Suspense, type ComponentType } from 'react';
 import { ArrowLeft, ArrowRight, School, LogOut, Menu, CircleHelp, Bell, MessageCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Network } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -33,6 +33,7 @@ const PAGE_PATHS: Record<string, string> = {
   classes: '/classes',
   presences: '/presences',
   paiements: '/factures',
+  achats: '/achats',
   personnel: '/personnel',
   activites: '/activites',
   repas: '/repas',
@@ -96,6 +97,7 @@ const Enfants = lazyWithRecovery(() => import('./components/Enfants'));
 const Classes = lazyWithRecovery(() => import('./components/Classes'));
 const Presences = lazyWithRecovery(() => import('./components/Presences'));
 const Paiements = lazyWithRecovery(() => import('./components/Paiements'));
+const Achats = lazyWithRecovery(() => import('./components/Achats'));
 const Personnel = lazyWithRecovery(() => import('./components/Personnel'));
 const Activites = lazyWithRecovery(() => import('./components/Activites'));
 const Repas = lazyWithRecovery(() => import('./components/Repas'));
@@ -341,6 +343,7 @@ function AppContent() {
       classes: 'classes',
       presences: 'attendance',
       paiements: 'invoices',
+      achats: 'purchases',
       rapports: 'reports',
       personnel: 'staff',
       activites: 'activities',
@@ -613,6 +616,7 @@ if (isSubscriptionExpired && !isPendingApproval) {
         case 'classes': return <Classes />;
         case 'presences': return <Presences />;
         case 'paiements': return <Paiements />;
+        case 'achats': return <Achats />;
         case 'personnel': return <Personnel />;
         case 'activites': return <Activites />;
         case 'repas': return <Repas />;
