@@ -206,6 +206,98 @@ export default function Enfants() {
   // agrément.
   const capaciteAutorisee = creche?.capaciteAutorisee ?? 0;
 
+  /**
+   * Registre matricule imprimable : le décret impose la tenue d'un registre des
+   * enfants admis, présenté lors des contrôles de la Direction de l'Action
+   * Sociale. On génère un document autonome plutôt qu'un PDF binaire, pour que
+   * l'impression papier et l'enregistrement PDF soient tous deux possibles.
+   */
+  const imprimerRegistreMatricule = () => {
+    const aujourdhui = new Date().toLocaleDateString(isArabic ? 'ar' : 'fr-FR', {
+      day: '2-digit', month: 'long', year: 'numeric',
+    });
+    const lignes = [...enfants]
+      .sort((a, b) => (a.matricule ?? 99999) - (b.matricule ?? 99999))
+      .map(enfant => {
+        const docs = getDocumentsRequis(enfant);
+        const documents = [
+          docs.certificatMedical ? 'Cert. médical' : '—',
+          docs.carnetVaccination ? 'Vaccins' : '—',
+          docs.extraitNaissance ? 'Naissance' : '—',
+          docs.contratAccueil ? 'Contrat' : '—',
+          docs.justificatifDomicile ? 'Domicile' : '—',
+          docs.photoIdentite ? 'Photo' : '—',
+        ].join(' · ');
+        const autorisations = (enfant.personnesAutorisees || []).filter(p => p.active !== false).length;
+        return `<tr>
+          <td class="num">${typeof enfant.matricule === 'number' ? `N° ${String(enfant.matricule).padStart(4, '0')}` : '—'}</td>
+          <td><strong>${enfant.nom.toUpperCase()}</strong> ${enfant.prenom}</td>
+          <td>${enfant.dateNaissance ? new Date(enfant.dateNaissance).toLocaleDateString('fr-FR') : '—'}</td>
+          <td>${enfant.section || enfant.groupeAge}</td>
+          <td>${enfant.dateInscription ? new Date(enfant.dateInscription).toLocaleDateString('fr-FR') : '—'}</td>
+          <td class="small">${documents}</td>
+          <td class="center">${autorisations}</td>
+          <td class="center">${enfant.statut === 'Actif' ? 'Actif' : 'Sorti'}</td>
+        </tr>`;
+      })
+      .join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8" />
+<title>Registre matricule — ${creche?.nom || 'Rawdha+'}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; margin: 28px; color: #0f172a; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #4f46e5; padding-bottom: 14px; margin-bottom: 20px; }
+  h1 { font-size: 19px; margin: 0 0 4px; letter-spacing: -0.2px; }
+  .meta { font-size: 11px; color: #64748b; line-height: 1.6; }
+  .badge { background: #eef2ff; color: #4338ca; font-size: 10px; font-weight: 800; padding: 4px 9px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+  th { background: #f1f5f9; text-align: left; padding: 8px 6px; border: 1px solid #cbd5e1; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; color: #475569; }
+  td { padding: 7px 6px; border: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  td.num { font-weight: 800; color: #4338ca; white-space: nowrap; }
+  td.center { text-align: center; }
+  td.small { font-size: 9.5px; color: #475569; }
+  footer { margin-top: 22px; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; }
+  @media print { body { margin: 12mm; } }
+</style></head>
+<body>
+  <header>
+    <div>
+      <h1>Registre matricule des enfants admis</h1>
+      <div class="meta">
+        <strong>${creche?.nom || 'Rawdha+'}</strong>${creche?.adresse ? ` — ${creche.adresse}` : ''}<br />
+        Édité le ${aujourdhui} — ${enfants.length} enfant(s) au registre
+      </div>
+    </div>
+    <span class="badge">Contrôle DAS</span>
+  </header>
+  <table>
+    <thead><tr>
+      <th>Matricule</th><th>Nom et prénom</th><th>Naissance</th><th>Section</th>
+      <th>Admission</th><th>Pièces au dossier</th><th>Autoris.</th><th>Statut</th>
+    </tr></thead>
+    <tbody>${lignes}</tbody>
+  </table>
+  <footer>
+    <span>Document généré par Rawdha+ — registre à présenter lors des contrôles de la Direction de l'Action Sociale.</span>
+    <span>${enfants.length} enregistrement(s)</span>
+  </footer>
+</body></html>`;
+
+    const printWindow = window.open('', '_blank', 'height=900,width=1000');
+    if (!printWindow) return;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.onload = () => {
+      setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+      }, 250);
+    };
+  };
+
   const handleDeleteEnfant = async (enfant: Enfant) => {
     const confirmed = await confirm({
       title: isArabic ? 'تأكيد حذف ملف الطفل' : 'Confirmer la suppression du dossier',
@@ -794,11 +886,23 @@ export default function Enfants() {
             {filteredEnfants.length} {t('children.enrolled')}
           </p>
         </div>
-        <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 sm:w-auto">
-          <FileSpreadsheet size={16} />
-          <span>{importingCsv ? (isArabic ? 'جاري الاستيراد...' : 'Import...') : (isArabic ? 'استيراد CSV' : 'Importer CSV')}</span>
-          <input type="file" accept=".csv,text/csv" className="hidden" disabled={importingCsv} onChange={event => { const file = event.target.files?.[0]; void handleCsvImport(file); event.currentTarget.value = ''; }} />
-        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Registre imprimable à présenter lors des contrôles de la DAS. */}
+          <button
+            type="button"
+            onClick={imprimerRegistreMatricule}
+            className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
+          >
+            <Download size={16} />
+            <span>{isArabic ? 'سجل التسجيل (طباعة)' : 'Registre matricule'}</span>
+          </button>
+
+          <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100">
+            <FileSpreadsheet size={16} />
+            <span>{importingCsv ? (isArabic ? 'جاري الاستيراد...' : 'Import...') : (isArabic ? 'استيراد CSV' : 'Importer CSV')}</span>
+            <input type="file" accept=".csv,text/csv" className="hidden" disabled={importingCsv} onChange={event => { const file = event.target.files?.[0]; void handleCsvImport(file); event.currentTarget.value = ''; }} />
+          </label>
+        </div>
         <button 
           onClick={() => {
             setEditingEnfantId(null);

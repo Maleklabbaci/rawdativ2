@@ -56,7 +56,7 @@ export default function PresencesPage() {
     savePresenceJournee
   } = useDb();
   
-  const { user } = useAuth();
+  const { user, creche } = useAuth();
   const isDirecteur = user?.role === 'directeur';
   
   // Filtrer les enfants de la crèche courante
@@ -147,6 +147,134 @@ export default function PresencesPage() {
     }
     setSelectedEnfantForPresenceDetails(enfantId);
     setShowPresenceDetailsModal(true);
+  };
+
+  /**
+   * Registre d'appel imprimable du jour : il matérialise le pointage légal des
+   * arrivées et des départs, avec l'identification de la personne qui dépose et
+   * de celle qui récupère l'enfant, et un contrôle visible de l'autorisation.
+   * Les colonnes de signature restent vierges pour la signature manuscrite
+   * exigée lors des contrôles.
+   */
+  const imprimerRegistreAppel = () => {
+    const dateLisible = new Date(`${selectedDate}T12:00:00`).toLocaleDateString('fr-FR', {
+      weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+    });
+
+    const lignes = [...enfantsData]
+      .sort((a, b) => `${a.nom}`.localeCompare(`${b.nom}`))
+      .map(enfant => {
+        const pointage = presences.find(p => p.enfantId === enfant.id && p.date === selectedDate);
+        const present = pointage?.statut === 'Présent';
+        const autorisations = (enfant.personnesAutorisees || []).filter(p => p.active !== false);
+        const retraitOk = pointage?.recuperationAutorisee;
+        const badgeRetrait = retraitOk === true
+          ? '<span class="ok">Autorisée</span>'
+          : retraitOk === false
+            ? '<span class="ko">NON autorisée</span>'
+            : '<span class="neutre">—</span>';
+
+        return `<tr${retraitOk === false ? ' class="alerte"' : ''}>
+          <td class="num">${typeof enfant.matricule === 'number' ? `N° ${String(enfant.matricule).padStart(4, '0')}` : '—'}</td>
+          <td><strong>${enfant.nom.toUpperCase()}</strong> ${enfant.prenom}</td>
+          <td class="center">${present ? (pointage?.heureArrivee || '—') : '—'}</td>
+          <td>${present ? (pointage?.deposePar || '—') : '—'}</td>
+          <td class="center">${present ? (pointage?.heureDepart || '—') : '—'}</td>
+          <td>${present ? (pointage?.personneRecuperation || '—') : '—'}</td>
+          <td class="center">${present ? badgeRetrait : '<span class="neutre">—</span>'}</td>
+          <td class="center small">${present ? autorisations.length : '—'}</td>
+          <td class="center small">${present ? (pointage?.temperature || '—') : '—'}</td>
+          <td class="small">${!present && pointage ? (pointage.statut + (pointage.motifAbsence ? ` : ${pointage.motifAbsence}` : '')) : (present ? '' : 'Non pointé')}</td>
+          <td class="sign"></td>
+          <td class="sign"></td>
+        </tr>`;
+      })
+      .join('');
+
+    const presents = presences.filter(p => p.date === selectedDate && p.statut === 'Présent').length;
+    const absents = presences.filter(p => p.date === selectedDate && p.statut !== 'Présent').length;
+    const retraitsNonAutorises = presences.filter(
+      p => p.date === selectedDate && p.recuperationAutorisee === false,
+    ).length;
+
+    const html = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8" />
+<title>Registre d'appel — ${dateLisible}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; margin: 24px; color: #0f172a; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0f766e; padding-bottom: 12px; margin-bottom: 16px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .meta { font-size: 11px; color: #64748b; line-height: 1.6; }
+  .badge { background: #ccfbf1; color: #0f766e; font-size: 10px; font-weight: 800; padding: 4px 9px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .synthese { display: flex; gap: 18px; font-size: 11px; margin-bottom: 12px; }
+  .synthese b { font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+  th { background: #f1f5f9; text-align: left; padding: 7px 5px; border: 1px solid #cbd5e1; font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.3px; color: #475569; }
+  td { padding: 6px 5px; border: 1px solid #e2e8f0; vertical-align: middle; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  tr.alerte td { background: #fef2f2; }
+  td.num { font-weight: 800; color: #0f766e; white-space: nowrap; }
+  td.center { text-align: center; }
+  td.small { font-size: 9px; color: #475569; }
+  td.sign { width: 74px; background: #fff; }
+  .ok { color: #047857; font-weight: 800; }
+  .ko { color: #b91c1c; font-weight: 800; }
+  .neutre { color: #94a3b8; }
+  footer { margin-top: 18px; padding-top: 10px; border-top: 1px solid #e2e8f0; font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; }
+  .visa { margin-top: 26px; display: flex; justify-content: flex-end; gap: 60px; font-size: 10px; color: #475569; }
+  .visa div { border-top: 1px solid #94a3b8; padding-top: 5px; width: 190px; text-align: center; }
+  @media print { body { margin: 8mm; } }
+</style></head>
+<body>
+  <header>
+    <div>
+      <h1>Registre d'appel quotidien</h1>
+      <div class="meta">
+        <strong>${creche?.nom || 'Rawdha+'}</strong>${creche?.adresse ? ` — ${creche.adresse}` : ''}<br />
+        Journée du ${dateLisible}
+      </div>
+    </div>
+    <span class="badge">Registre légal</span>
+  </header>
+
+  <div class="synthese">
+    <span>Présents : <b>${presents}</b></span>
+    <span>Absents : <b>${absents}</b></span>
+    <span>Enfants au registre : <b>${enfantsData.length}</b></span>
+    ${retraitsNonAutorises > 0 ? `<span style="color:#b91c1c">Retraits non autorisés : <b>${retraitsNonAutorises}</b></span>` : ''}
+  </div>
+
+  <table>
+    <thead><tr>
+      <th>Matricule</th><th>Enfant</th><th>Arrivée</th><th>Déposé par</th>
+      <th>Départ</th><th>Récupéré par</th><th>Autoris.</th><th>Pers.</th>
+      <th>Temp.</th><th>Absence / observation</th><th>Signature dépôt</th><th>Signature retrait</th>
+    </tr></thead>
+    <tbody>${lignes}</tbody>
+  </table>
+
+  <div class="visa">
+    <div>Visa de la direction</div>
+    <div>Visa de l'inspection (DAS)</div>
+  </div>
+
+  <footer>
+    <span>Document généré par Rawdha+ — à conserver pour présentation lors des contrôles.</span>
+    <span>Imprimé le ${new Date().toLocaleDateString('fr-FR')}</span>
+  </footer>
+</body></html>`;
+
+    const printWindow = window.open('', '_blank', 'height=900,width=1200');
+    if (!printWindow) return;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.onload = () => {
+      setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+      }, 250);
+    };
   };
 
   // Soumission des détails de présence avec validation minimale des données métier.
@@ -394,6 +522,16 @@ export default function PresencesPage() {
               className="outline-none text-sm font-bold text-slate-800 cursor-pointer"
             />
           </div>
+
+          {/* Registre d'appel imprimable, à présenter lors des contrôles. */}
+          <button
+            type="button"
+            onClick={imprimerRegistreAppel}
+            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-3 text-xs font-black text-slate-700 shadow-xs transition hover:bg-slate-50"
+          >
+            <ClipboardList className="h-4 w-4 text-indigo-600" />
+            {isArabic ? 'سجل الحضور (طباعة)' : "Registre d'appel"}
+          </button>
           <div className={`px-3 py-2 rounded-xl text-xs font-black border ${
             isDayValidated
               ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
