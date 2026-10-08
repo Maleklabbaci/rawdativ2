@@ -141,6 +141,62 @@ export interface PresenceJournee {
   valideePar?: string;
 }
 
+// --- Dossier médical & suivi de santé ---------------------------------------
+
+export type SanteEvenementType =
+  | 'medicament'
+  | 'incident'
+  | 'soin'
+  | 'visite_medicale'
+  | 'visite_psychologique'
+  | 'rappel_medical';
+
+export type SanteGravite = 'legere' | 'moyenne' | 'grave';
+
+/**
+ * Écriture du registre de santé d'un enfant. Un événement est immuable dans
+ * l'esprit du décret : on corrige en le modifiant plutôt qu'en le supprimant,
+ * afin de conserver une trace exploitable lors d'un contrôle.
+ */
+export interface SanteEvenement {
+  id: string;
+  enfantId: string;
+  type: SanteEvenementType;
+  /** Jour de l'événement, format YYYY-MM-DD. */
+  date: string;
+  /** Heure de l'événement, format HH:MM. */
+  heure?: string;
+
+  // --- Administration d'un médicament ---
+  medicament?: string;
+  dose?: string;
+  /** true = administration couverte par une ordonnance déposée au dossier. */
+  ordonnance?: boolean;
+  administrePar?: string;
+
+  // --- Incident et soins ---
+  description?: string;
+  gravite?: SanteGravite;
+  /** Lieu de l'incident (cour, salle d'activité, réfectoire…). */
+  localisation?: string;
+  soinsDonnes?: string;
+  /** true = les parents ont été prévenus ; la date est conservée séparément. */
+  parentsAverti?: boolean;
+  parentsAvertiLe?: string;
+
+  // --- Visite d'un professionnel ou rappel ---
+  praticien?: string;
+  professionnelType?: 'medecin' | 'psychologue' | 'infirmier' | 'autre';
+  conclusion?: string;
+  /** Date à laquelle Rawdha+ doit rappeler l'échéance (YYYY-MM-DD). */
+  prochainRappel?: string;
+
+  // --- Traçabilité ---
+  createdBy: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface Paiement {
   id: string;
   enfantId: string;

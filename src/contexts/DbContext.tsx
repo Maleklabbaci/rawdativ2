@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Enfant, PersonneAutorisee, Presence, PresenceJournee, Paiement, Achat, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction, CommunityFeature, CommunityFeatureKind, AdminAuditLog, AdminAuditAction, AdminAuditTargetType, AdminFollowup, AdminFollowupChannel, AdminFollowupStatus, CommercialStage } from '../types';
+import { Enfant, PersonneAutorisee, SanteEvenement, Presence, PresenceJournee, Paiement, Achat, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction, CommunityFeature, CommunityFeatureKind, AdminAuditLog, AdminAuditAction, AdminAuditTargetType, AdminFollowup, AdminFollowupChannel, AdminFollowupStatus, CommercialStage } from '../types';
 import { 
   getCollectionData, 
   addCollectionDocument, 
@@ -252,6 +252,7 @@ interface DbContextType {
   classes: Classe[];
   presences: Presence[];
   presenceJournees: PresenceJournee[];
+  santeEvenements: SanteEvenement[];
   paiements: Paiement[];
   achats: Achat[];
   personnel: Personnel[];
@@ -331,6 +332,9 @@ interface DbContextType {
   addPresence: (presence: Omit<Presence, 'id'>) => Promise<string>;
   updatePresence: (id: string, presence: Partial<Presence>) => Promise<void>;
   deletePresence: (id: string) => Promise<void>;
+  addSanteEvenement: (evenement: Omit<SanteEvenement, 'id'>) => Promise<string>;
+  updateSanteEvenement: (id: string, evenement: Partial<SanteEvenement>) => Promise<void>;
+  deleteSanteEvenement: (id: string) => Promise<void>;
   savePresenceJournee: (journee: Omit<PresenceJournee, 'id'> & { id?: string }) => Promise<string>;
 
   addPaiement: (paiement: Omit<Paiement, 'id'>) => Promise<string>;
@@ -380,6 +384,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const [classes, setClasses] = useState<Classe[]>([]);
   const [presences, setPresences] = useState<Presence[]>([]);
   const [presenceJournees, setPresenceJournees] = useState<PresenceJournee[]>([]);
+  const [santeEvenements, setSanteEvenements] = useState<SanteEvenement[]>([]);
   const [paiements, setPaiements] = useState<Paiement[]>([]);
   const [achats, setAchats] = useState<Achat[]>([]);
   const [personnel, setPersonnel] = useState<Personnel[]>([]);
@@ -421,6 +426,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setClasses([]);
       setPresences([]);
       setPresenceJournees([]);
+      setSanteEvenements([]);
       setPaiements([]);
       setAchats([]);
       setPersonnel([]);
@@ -499,8 +505,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         getCollectionData<AppNotification>('notifications'),
         user?.role === 'admin' ? getCollectionData<AdminAuditLog>('admin_audit_logs') : Promise.resolve([] as AdminAuditLog[]),
         user?.role === 'admin' ? getCollectionData<AdminFollowup>('admin_followups') : Promise.resolve([] as AdminFollowup[]),
+        getCollectionData<SanteEvenement>('sante_evenements'),
       ])
-        .then(([dbClasses, dbActivites, dbRepas, dbAchats, dbMessages, dbAvis, dbSignalements, dbCommunityPosts, dbCommunityComments, dbCommunityReactions, dbCommunityFeatures, dbInscriptionLinks, dbDemandesAdmission, dbNotifications, dbAdminAuditLogs, dbAdminFollowups]) => {
+        .then(([dbClasses, dbActivites, dbRepas, dbAchats, dbMessages, dbAvis, dbSignalements, dbCommunityPosts, dbCommunityComments, dbCommunityReactions, dbCommunityFeatures, dbInscriptionLinks, dbDemandesAdmission, dbNotifications, dbAdminAuditLogs, dbAdminFollowups, dbSanteEvenements]) => {
           setClasses(dbClasses);
           setActivites(dbActivites);
           setRepas(dbRepas);
@@ -517,6 +524,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
           setNotifications(dbNotifications);
           setAdminAuditLogs((Array.isArray(dbAdminAuditLogs) ? dbAdminAuditLogs : []).filter(Boolean).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
           setAdminFollowups((Array.isArray(dbAdminFollowups) ? dbAdminFollowups : []).filter(Boolean).sort((a, b) => (a.dueAt || a.createdAt).localeCompare(b.dueAt || b.createdAt)));
+          setSanteEvenements(Array.isArray(dbSanteEvenements) ? dbSanteEvenements : []);
         })
         .catch(err => {
           console.error('Erreur de connexion à Supabase (chargement arrière-plan):', err);
@@ -598,6 +606,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const scopedPresences = user?.role === 'directeur' ? presences.filter(p => validEnfantIds.has(p.enfantId)) : presences;
   const scopedPresenceJournees = user?.role === 'directeur' ? presenceJournees.filter(j => j.crecheId === user.id) : presenceJournees;
   const scopedPaiements = user?.role === 'directeur' ? paiements.filter(p => validEnfantIds.has(p.enfantId)) : paiements;
+  const scopedSanteEvenements = user?.role === 'directeur' ? santeEvenements.filter(e => validEnfantIds.has(e.enfantId)) : santeEvenements;
   const scopedAchats = user?.role === 'directeur' ? achats.filter(achat => achat.crecheId === user.id) : achats;
 
   // ✅ FIX: avant, TOUS les comptes (tous les directeurs : nom, email, statut abonnement...) étaient
@@ -841,6 +850,48 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     setPresences(prev => prev.filter(item => item.id !== id));
     try { await deleteCollectionDocument('presences', id); } catch (err) {
       if (previous) setPresences(prev => [...prev, previous]);
+      notifyWriteError('suppression');
+    }
+  };
+
+  // --- Registre de santé (médicaments, incidents, visites) -----------------
+  // Ces écritures constituent le registre légal de suivi : elles sont créées et
+  // modifiées mais jamais silencieusement perdues. Une suppression est réservée
+  // à une correction d'erreur de saisie et reste tracée côté interface.
+  const addSanteEvenement = async (evenement: Omit<SanteEvenement, 'id'>) => {
+    assertWriteAccess();
+    const tempId = (evenement as any).id || 'sante_' + Date.now();
+    const cleanEvenement = { ...evenement, id: tempId } as SanteEvenement;
+    setSanteEvenements(prev => [...prev.filter(item => item.id !== tempId), cleanEvenement]);
+    try {
+      const freshId = await addCollectionDocument('sante_evenements', cleanEvenement);
+      setSanteEvenements(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      return freshId;
+    } catch (err) {
+      setSanteEvenements(prev => prev.filter(item => item.id !== tempId));
+      notifyWriteError('ajout');
+      return tempId;
+    }
+  };
+
+  const updateSanteEvenement = async (id: string, data: Partial<SanteEvenement>) => {
+    assertWriteAccess();
+    const previous = santeEvenements.find(item => item.id === id);
+    setSanteEvenements(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    try {
+      await updateCollectionDocument<SanteEvenement>('sante_evenements', id, data);
+    } catch (err) {
+      if (previous) setSanteEvenements(prev => prev.map(item => item.id === id ? previous : item));
+      notifyWriteError('modification');
+    }
+  };
+
+  const deleteSanteEvenement = async (id: string) => {
+    assertWriteAccess();
+    const previous = santeEvenements.find(item => item.id === id);
+    setSanteEvenements(prev => prev.filter(item => item.id !== id));
+    try { await deleteCollectionDocument('sante_evenements', id); } catch (err) {
+      if (previous) setSanteEvenements(prev => [...prev, previous]);
       notifyWriteError('suppression');
     }
   };
@@ -1755,6 +1806,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       enfants: scopedEnfants,
       classes: scopedClasses,
       presences: scopedPresences,
+      santeEvenements: scopedSanteEvenements,
       presenceJournees: scopedPresenceJournees,
       paiements: scopedPaiements,
       achats: scopedAchats,
@@ -1825,6 +1877,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       addPresence,
       updatePresence,
       deletePresence,
+      addSanteEvenement,
+      updateSanteEvenement,
+      deleteSanteEvenement,
       savePresenceJournee,
       addPaiement,
       updatePaiement,
