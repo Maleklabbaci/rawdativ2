@@ -14,7 +14,10 @@ import {
   MapPin,
   Heart,
   HelpCircle,
-  Clock
+  Clock,
+  GraduationCap,
+  ShieldCheck,
+  ShieldAlert
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
@@ -36,7 +39,7 @@ export default function Personnel() {
   const isArabic = language === 'ar';
   const { confirm } = useConfirmDialog();
 
-  const { personnel: allDbPersonnel, classes: allDbClasses, addPersonnel, deletePersonnel } = useDb();
+  const { personnel: allDbPersonnel, classes: allDbClasses, enfants: allDbEnfants, addPersonnel, deletePersonnel } = useDb();
   const { user } = useAuth();
   const isDirecteur = user?.role === 'directeur';
   const dbPersonnel = isDirecteur ? allDbPersonnel.filter((p: any) => p.crecheId === user!.id) : allDbPersonnel;
@@ -70,6 +73,13 @@ export default function Personnel() {
     groupeSanguin: 'O+',
     assuranceActive: false, // ✅ assurance de l'employé(e)
     numeroAssurance: '', // ✅ numéro de police / référence CNAS
+    // --- Dossier RH exigé lors des contrôles ---
+    diplomesTexte: '', // diplômes séparés par des virgules (converti en liste à l'enregistrement)
+    referencesDiplomes: '', // numéro / organisme délivreur
+    certificatMedicalAptitude: false,
+    casierJudiciaire: false,
+    // Compte dans le ratio légal d'encadrement (éducatrices, aides, direction).
+    roleEncadrement: true,
   });
 
   const handleAjouter = () => {
@@ -78,8 +88,15 @@ export default function Personnel() {
     // Auto populate email if blank
     const calculatedEmail = formData.email || `${formData.prenom.toLowerCase()}.${formData.nom.toLowerCase()}@rawdha.dz`;
 
+    const { diplomesTexte, ...rest } = formData;
     addPersonnel({
-      ...formData,
+      ...rest,
+      // Le formulaire saisit les diplômes en texte libre séparé par des virgules ;
+      // on stocke une vraie liste pour pouvoir les compter et les filtrer.
+      diplomes: diplomesTexte
+        .split(',')
+        .map(diplome => diplome.trim())
+        .filter(Boolean),
       email: calculatedEmail,
       crecheId: isDirecteur ? user!.id : undefined
     } as any);
@@ -97,6 +114,11 @@ export default function Personnel() {
       groupeSanguin: 'O+',
       assuranceActive: false,
       numeroAssurance: '',
+      diplomesTexte: '',
+      referencesDiplomes: '',
+      certificatMedicalAptitude: false,
+      casierJudiciaire: false,
+      roleEncadrement: true,
     });
   };
 
@@ -111,6 +133,29 @@ export default function Personnel() {
 
   const activeCount = personnel.filter(p => p.statut === 'Actif').length;
   const inactiveCount = personnel.filter(p => p.statut !== 'Actif').length;
+
+  // --- Ratio légal d'encadrement ------------------------------------------
+  // Le décret impose un nombre minimum d'adultes présents par enfant. Les fiches
+  // créées avant cette version ne portent pas encore `roleEncadrement` : on les
+  // compte par défaut pour ne pas afficher un ratio artificiellement dégradé.
+  const encadrantsActifs = personnel.filter(
+    p => p.statut === 'Actif' && (p as { roleEncadrement?: boolean }).roleEncadrement !== false,
+  ).length;
+  const enfantsActifs = allDbEnfants.filter(e => e.statut === 'Actif').length;
+  const enfantsParEncadrant = encadrantsActifs > 0
+    ? Math.round((enfantsActifs / encadrantsActifs) * 10) / 10
+    : null;
+  // Seuil d'alerte indicatif : au-delà, la crèche doit vérifier son agrément.
+  const SEUIL_RATIO = 8;
+  const ratioDepasse = enfantsParEncadrant !== null && enfantsParEncadrant > SEUIL_RATIO;
+
+  // Pièces RH manquantes, pour le suivi de conformité.
+  const dossiersRhIncomplets = personnel.filter(p => {
+    const fiche = p as { diplomes?: string[]; certificatMedicalAptitude?: boolean; casierJudiciaire?: boolean };
+    return (fiche.diplomes || []).length === 0
+      || !fiche.certificatMedicalAptitude
+      || !fiche.casierJudiciaire;
+  }).length;
 
   return (
     <div className="space-y-8 font-sans">
@@ -146,9 +191,59 @@ export default function Personnel() {
           </div>
           <div>
             <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest">
-              {isArabic ? 'رعاية صحية وتغطية' : 'Taux d\'Encadrement'}
+              {isArabic ? 'نسبة التأطير' : "Taux d'Encadrement"}
             </p>
-            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">1 : 5 {isArabic ? 'أطفال' : 'enfants'}</p>
+            <p className={`text-xl sm:text-2xl font-black mt-0.5 ${
+              ratioDepasse ? 'text-rose-600' : enfantsParEncadrant === null ? 'text-slate-400' : 'text-emerald-600'
+            }`}>
+              {enfantsParEncadrant === null
+                ? (isArabic ? '— غير محسوب' : '— non calculable')
+                : `${enfantsParEncadrant} ${isArabic ? 'طفل/مؤطر' : 'enfants/encadrant'}`}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Ratio légal d'encadrement et complétude des dossiers RH */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className={`rounded-2xl border p-4 sm:p-5 flex items-start gap-3 ${
+          ratioDepasse ? 'border-rose-200 bg-rose-50/50' : 'border-slate-200 bg-white'
+        }`}>
+          {ratioDepasse
+            ? <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            : <UserCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />}
+          <div>
+            <p className="text-xs font-black text-slate-800">
+              {isArabic ? 'نسبة التأطير القانونية' : "Ratio d'encadrement"}
+            </p>
+            <p className="mt-1 text-[11px] font-semibold leading-5 text-slate-500">
+              {enfantsActifs} {isArabic ? 'طفل نشط' : 'enfants actifs'} / {encadrantsActifs} {isArabic ? 'مؤطر' : 'encadrants'}
+              {ratioDepasse && (isArabic
+                ? ` — تجاوزت الحد الإرشادي (${SEUIL_RATIO}). تحققوا من شروط اعتمادكم.`
+                : ` — au-delà du seuil indicatif de ${SEUIL_RATIO}. Vérifiez les conditions de votre agrément.`)}
+            </p>
+          </div>
+        </div>
+
+        <div className={`rounded-2xl border p-4 sm:p-5 flex items-start gap-3 ${
+          dossiersRhIncomplets > 0 ? 'border-amber-200 bg-amber-50/50' : 'border-slate-200 bg-white'
+        }`}>
+          {dossiersRhIncomplets > 0
+            ? <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            : <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />}
+          <div>
+            <p className="text-xs font-black text-slate-800">
+              {isArabic ? 'ملفات الموظفين الإدارية' : 'Dossiers RH'}
+            </p>
+            <p className="mt-1 text-[11px] font-semibold leading-5 text-slate-500">
+              {dossiersRhIncomplets > 0
+                ? (isArabic
+                    ? `${dossiersRhIncomplets} ملف ينقصه شهادة أو صحيفة سوابق.`
+                    : `${dossiersRhIncomplets} fiche(s) sans diplôme, certificat d'aptitude ou casier judiciaire.`)
+                : (isArabic
+                    ? 'جميع الملفات مكتملة.'
+                    : 'Tous les dossiers sont complets.')}
+            </p>
           </div>
         </div>
       </div>
@@ -255,6 +350,33 @@ export default function Personnel() {
                     {p.assuranceActive && (
                       <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded font-black border border-emerald-100/30" title={p.numeroAssurance || ''}>
                         {isArabic ? 'مؤمَّن' : 'Assuré(e)'}
+                      </span>
+                    )}
+                    {/* Indicateurs du dossier RH : lecture immédiate en cas de contrôle. */}
+                    {((p as { diplomes?: string[] }).diplomes || []).length > 0 && (
+                      <span
+                        className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded font-black border border-indigo-100/30"
+                        title={((p as { diplomes?: string[] }).diplomes || []).join(', ')}
+                      >
+                        {((p as { diplomes?: string[] }).diplomes || []).length} {isArabic ? 'شهادة' : 'dipl.'}
+                      </span>
+                    )}
+                    {(p as { certificatMedicalAptitude?: boolean }).certificatMedicalAptitude ? (
+                      <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded font-black border border-emerald-100/30" title={isArabic ? 'شهادة طبية للأهلية' : "Certificat médical d'aptitude"}>
+                        {isArabic ? 'أهلية ✓' : 'Aptitude ✓'}
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded font-black border border-amber-100/30" title={isArabic ? 'شهادة الأهلية الطبية غير محفوظة' : "Certificat médical d'aptitude manquant"}>
+                        {isArabic ? 'أهلية ✗' : 'Aptitude ✗'}
+                      </span>
+                    )}
+                    {(p as { casierJudiciaire?: boolean }).casierJudiciaire ? (
+                      <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded font-black border border-emerald-100/30" title={isArabic ? 'صحيفة السوابق محفوظة' : 'Casier judiciaire déposé'}>
+                        {isArabic ? 'سوابق ✓' : 'Casier ✓'}
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded font-black border border-amber-100/30" title={isArabic ? 'صحيفة السوابق غير محفوظة' : 'Casier judiciaire manquant'}>
+                        {isArabic ? 'سوابق ✗' : 'Casier ✗'}
                       </span>
                     )}
                     <span className="px-1.5 py-0.5 bg-rose-50 text-rose-600 rounded font-black border border-rose-100/30">
@@ -491,6 +613,89 @@ export default function Personnel() {
                       onChange={e => setFormData({...formData, numeroAssurance: e.target.value})}
                     />
                   </div>
+                </div>
+
+                {/* Dossier RH : pièces exigées lors des contrôles. */}
+                <div className="pt-4 mt-2 border-t border-slate-100 space-y-4">
+                  <h4 className="text-xs font-black text-indigo-600 uppercase tracking-widest flex items-center gap-1.5">
+                    <GraduationCap className="w-4 h-4" />
+                    {isArabic ? 'الملف الإداري للموظف' : 'Dossier RH — diplômes et pièces'}
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                        {isArabic ? 'الشهادات والمؤهلات' : 'Diplômes et qualifications'}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder={isArabic ? 'مثال: مربية معتمدة، شهادة إسعاف' : 'Ex. Éducatrice agréée, PSC1'}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
+                        value={formData.diplomesTexte}
+                        onChange={e => setFormData({...formData, diplomesTexte: e.target.value})}
+                      />
+                      <p className="mt-1.5 text-[10px] text-slate-400">
+                        {isArabic ? 'افصل بينها بفاصلة.' : 'Séparez plusieurs diplômes par une virgule.'}
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                        {isArabic ? 'مرجع الشهادات' : 'Références des diplômes'}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder={isArabic ? 'الرقم / الجهة المانحة' : 'N° et organisme délivreur'}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
+                        value={formData.referencesDiplomes}
+                        onChange={e => setFormData({...formData, referencesDiplomes: e.target.value})}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 h-4 w-4 accent-indigo-600"
+                        checked={formData.certificatMedicalAptitude}
+                        onChange={e => setFormData({...formData, certificatMedicalAptitude: e.target.checked})}
+                      />
+                      <span className="text-[11px] font-semibold leading-5 text-slate-600">
+                        {isArabic
+                          ? 'شهادة طبية للأهلية المهنية محفوظة'
+                          : "Certificat médical d'aptitude professionnelle déposé"}
+                      </span>
+                    </label>
+
+                    <label className="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 h-4 w-4 accent-indigo-600"
+                        checked={formData.casierJudiciaire}
+                        onChange={e => setFormData({...formData, casierJudiciaire: e.target.checked})}
+                      />
+                      <span className="text-[11px] font-semibold leading-5 text-slate-600">
+                        {isArabic
+                          ? 'صحيفة السوابق العدلية (البطاقة رقم 3) محفوظة'
+                          : "Extrait de casier judiciaire (bulletin n°3) déposé"}
+                      </span>
+                    </label>
+                  </div>
+
+                  <label className="flex items-start gap-2.5 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 accent-indigo-600"
+                      checked={formData.roleEncadrement}
+                      onChange={e => setFormData({...formData, roleEncadrement: e.target.checked})}
+                    />
+                    <span className="text-[11px] font-semibold leading-5 text-slate-600">
+                      {isArabic
+                        ? 'يُحسب هذا الموظف في نسبة التأطير (مربية، مساعدة، إدارة).'
+                        : "Ce membre compte dans le ratio d'encadrement (éducatrice, aide, direction)."}
+                    </span>
+                  </label>
                 </div>
 
               </div>
