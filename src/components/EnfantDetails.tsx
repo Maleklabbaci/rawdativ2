@@ -13,11 +13,14 @@ import {
   Clock,
   Briefcase,
   CreditCard,
-  ClipboardList
+  ClipboardList,
+  Plus
 } from 'lucide-react';
 import { useState } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
+import { SanteEvenementType, SanteGravite } from '../types';
 import { useDb } from '../contexts/DbContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatCurrency } from '../utils/format';
@@ -34,21 +37,150 @@ const formatPhoneForWhatsapp = (phone: string) => {
 export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onClose: () => void }) {
   const { language, t } = useLanguage();
   const isArabic = language === 'ar';
-  const { creche } = useAuth();
+  const { user, creche } = useAuth();
+  const { showToast } = useToast();
   
-  const { presences: dbPresences, paiements: dbPaiements } = useDb();
-  
+  const {
+    presences: dbPresences,
+    paiements: dbPaiements,
+    santeEvenements: dbSanteEvenements,
+    addSanteEvenement,
+    deleteSanteEvenement,
+  } = useDb();
+
   const childPresences = dbPresences.filter(p => p.enfantId === enfant.id);
   const childPaiements = dbPaiements.filter(p => p.enfantId === enfant.id);
+
+  // Registre de santé : le plus récent en premier, comme un carnet de suivi.
+  const childSante = dbSanteEvenements
+    .filter(e => e.enfantId === enfant.id)
+    .sort((a, b) => `${b.date}${b.heure || ''}`.localeCompare(`${a.date}${a.heure || ''}`));
+
+  // --- Formulaire du registre de santé -------------------------------------
+  // Un seul formulaire couvre les six natures d'écriture ; seuls les champs
+  // utiles au type choisi sont affichés puis enregistrés.
+  const [showSanteForm, setShowSanteForm] = useState(false);
+  const [santeForm, setSanteForm] = useState({
+    type: 'medicament' as SanteEvenementType,
+    date: new Date().toISOString().split('T')[0],
+    heure: '',
+    medicament: '',
+    dose: '',
+    ordonnance: false,
+    administrePar: '',
+    description: '',
+    gravite: 'legere' as SanteGravite,
+    localisation: '',
+    soinsDonnes: '',
+    parentsAverti: false,
+    praticien: '',
+    professionnelType: 'medecin' as 'medecin' | 'psychologue' | 'infirmier' | 'autre',
+    conclusion: '',
+    prochainRappel: '',
+  });
+
+  const reinitialiserSanteForm = () => {
+    setSanteForm({
+      type: 'medicament',
+      date: new Date().toISOString().split('T')[0],
+      heure: '',
+      medicament: '',
+      dose: '',
+      ordonnance: false,
+      administrePar: '',
+      description: '',
+      gravite: 'legere',
+      localisation: '',
+      soinsDonnes: '',
+      parentsAverti: false,
+      praticien: '',
+      professionnelType: 'medecin',
+      conclusion: '',
+      prochainRappel: '',
+    });
+  };
+
+  const submitSanteEvenement = async () => {
+    // Chaque nature d'écriture a son champ indispensable : on refuse une entrée
+    // vide, car le registre doit rester exploitable lors d'un contrôle.
+    const champObligatoireManquant =
+      santeForm.type === 'medicament' ? !santeForm.medicament.trim()
+        : santeForm.type === 'incident' || santeForm.type === 'soin' ? !santeForm.description.trim()
+          : !santeForm.praticien.trim();
+
+    if (!santeForm.date || champObligatoireManquant) {
+      showToast(
+        isArabic
+          ? 'يرجى تعبئة الحقول الإلزامية قبل الحفظ.'
+          : 'Renseignez le champ obligatoire avant d’enregistrer l’entrée.',
+        'error',
+      );
+      return;
+    }
+
+    const base = {
+      enfantId: enfant.id,
+      type: santeForm.type,
+      date: santeForm.date,
+      heure: santeForm.heure || undefined,
+      createdBy: user?.id || 'inconnu',
+      createdAt: new Date().toISOString(),
+    };
+
+    const contenu = santeForm.type === 'medicament'
+      ? {
+          medicament: santeForm.medicament.trim(),
+          dose: santeForm.dose.trim() || undefined,
+          ordonnance: santeForm.ordonnance,
+          administrePar: santeForm.administrePar.trim() || undefined,
+        }
+      : santeForm.type === 'incident' || santeForm.type === 'soin'
+        ? {
+            description: santeForm.description.trim(),
+            gravite: santeForm.gravite,
+            localisation: santeForm.localisation.trim() || undefined,
+            soinsDonnes: santeForm.soinsDonnes.trim() || undefined,
+            parentsAverti: santeForm.parentsAverti,
+            parentsAvertiLe: santeForm.parentsAverti ? new Date().toISOString() : undefined,
+          }
+        : {
+            praticien: santeForm.praticien.trim(),
+            professionnelType: santeForm.professionnelType,
+            conclusion: santeForm.conclusion.trim() || undefined,
+            prochainRappel: santeForm.prochainRappel || undefined,
+          };
+
+    await addSanteEvenement({ ...base, ...contenu });
+    showToast(
+      isArabic ? 'تم تسجيل المعلومة في السجل الصحي.' : 'Entrée enregistrée dans le registre de santé.',
+      'success',
+    );
+    reinitialiserSanteForm();
+    setShowSanteForm(false);
+  };
+
+  const LIBELLES_SANTE: Record<SanteEvenementType, { fr: string; ar: string; classes: string }> = {
+    medicament: { fr: 'Médicament', ar: 'دواء', classes: 'bg-indigo-50 text-indigo-700 border-indigo-100' },
+    incident: { fr: 'Incident', ar: 'حادث', classes: 'bg-rose-50 text-rose-700 border-rose-100' },
+    soin: { fr: 'Soin', ar: 'علاج', classes: 'bg-amber-50 text-amber-700 border-amber-100' },
+    visite_medicale: { fr: 'Visite médecin', ar: 'زيارة طبيب', classes: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
+    visite_psychologique: { fr: 'Visite psychologue', ar: 'زيارة نفساني', classes: 'bg-violet-50 text-violet-700 border-violet-100' },
+    rappel_medical: { fr: 'Rappel médical', ar: 'تذكير طبي', classes: 'bg-slate-100 text-slate-700 border-slate-200' },
+  };
   
-  const [activeTab, setActiveTab] = useState<'info' | 'presences' | 'paiements'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'sante' | 'presences' | 'paiements'>('info');
   const documentsRequis = {
     certificatMedical: false,
     carnetVaccination: false,
     justificatifDomicile: false,
     photoIdentite: false,
+    contratAccueil: false,
+    extraitNaissance: false,
     ...(enfant.documentsRequis || {}),
   };
+
+  // Personnes habilitées à récupérer l'enfant, désignées par le tuteur légal.
+  const personnesAutorisees = (enfant.personnesAutorisees || []).filter(p => p.active !== false);
 
   const birthDate = new Date(enfant.dateNaissance).toLocaleDateString(isArabic ? 'ar' : 'fr-FR', {
     day: 'numeric',
@@ -139,6 +271,23 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
           </button>
           
           <button
+            onClick={() => setActiveTab('sante')}
+            className={`min-w-[13rem] flex-1 py-4 text-xs sm:text-sm font-black flex items-center justify-center gap-2 border-b-2 transition cursor-pointer ${
+              activeTab === 'sante'
+                ? 'border-rose-600 text-rose-600 bg-white'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Activity className="w-4 h-4" />
+            <span>{isArabic ? 'السجل الصحي' : 'Suivi santé'}</span>
+            {childSante.length > 0 && (
+              <span className="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded-full text-[10px]">
+                {childSante.length}
+              </span>
+            )}
+          </button>
+
+          <button
             onClick={() => setActiveTab('presences')}
             className={`min-w-[13rem] flex-1 py-4 text-xs sm:text-sm font-black flex items-center justify-center gap-2 border-b-2 transition cursor-pointer ${
               activeTab === 'presences'
@@ -188,7 +337,18 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isArabic ? 'الفئة العمرية' : 'Section'}</span>
                     <p className="text-sm font-black text-slate-800 mt-1 flex items-center gap-1.5">
                       <School className="w-4 h-4 text-indigo-500" />
-                      {enfant.groupeAge}
+                      {enfant.section || enfant.groupeAge}
+                    </p>
+                  </div>
+
+                  {/* Numéro d'ordre du registre matricule, contrôlé par la DAS. */}
+                  <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isArabic ? 'رقم السجل' : 'Matricule'}</span>
+                    <p className="text-sm font-black text-slate-800 mt-1 flex items-center gap-1.5">
+                      <ClipboardList className="w-4 h-4 text-indigo-500" />
+                      {typeof enfant.matricule === 'number'
+                        ? `N° ${String(enfant.matricule).padStart(4, '0')}`
+                        : <span className="text-[11px] font-semibold text-amber-600">{isArabic ? 'غير مُرقَّم' : 'Non attribué'}</span>}
                     </p>
                   </div>
 
@@ -199,7 +359,7 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                     </p>
                   </div>
 
-                  <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl col-span-2">
+                  <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isArabic ? 'تاريخ التسجيل بالروضة' : 'Date d\'Admission'}</span>
                     <p className="text-sm font-bold text-slate-800 mt-1 flex items-center gap-1.5">
                       <Clock className="w-4 h-4 text-slate-400" />
@@ -274,6 +434,8 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                       {[
                         { label: "Certificat d'Aptitude Médicale", icon: FileCheck, status: documentsRequis.certificatMedical },
                         { label: "Carnet de Vaccination Pédiatrique", icon: FileCheck, status: documentsRequis.carnetVaccination },
+                        { label: "Extrait de Naissance", icon: FileCheck, status: documentsRequis.extraitNaissance },
+                        { label: "Contrat d'Accueil Signé", icon: FileCheck, status: documentsRequis.contratAccueil },
                         { label: "Justificatif d'Adresse Parentale", icon: FileCheck, status: documentsRequis.justificatifDomicile },
                         { label: "Fiches Photos d'Identité Admis", icon: FileCheck, status: documentsRequis.photoIdentite },
                       ].map((doc, idx) => (
@@ -290,6 +452,68 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                       ))}
                     </div>
                   </div>
+                </div>
+
+                {/* Personnes habilitées à récupérer l'enfant : le décret impose que
+                    seules les personnes désignées par écrit par le tuteur puissent
+                    repartir avec l'enfant. */}
+                <div className="p-5 bg-emerald-50/20 border border-emerald-100/50 rounded-2xl space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-xs font-black text-emerald-700 uppercase tracking-widest flex items-center gap-2">
+                      <User className="w-4 h-4 text-emerald-600" />
+                      {isArabic ? 'الأشخاص المرخَّص لهم باستلام الطفل' : 'Autorisations de sortie'}
+                    </h3>
+                    <span className={`px-2 py-0.5 rounded font-black text-[9px] uppercase tracking-wider border ${
+                      enfant.autorisationSortieSignee
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                    }`}>
+                      {enfant.autorisationSortieSignee
+                        ? (isArabic ? 'ترخيص موقَّع محفوظ' : 'Autorisation signée déposée')
+                        : (isArabic ? 'الترخيص غير محفوظ' : 'Autorisation non déposée')}
+                    </span>
+                  </div>
+
+                  {personnesAutorisees.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-emerald-200 bg-white p-3 text-[11px] font-semibold text-slate-500">
+                      {isArabic
+                        ? 'لا يوجد أي شخص مسجَّل: لا يمكن تسليم الطفل إلا لوالديه.'
+                        : "Aucune personne déclarée : l'enfant ne pourra être remis qu'à ses parents."}
+                    </p>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {personnesAutorisees.map((personne) => (
+                        <div key={personne.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 bg-white p-3">
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-slate-800 truncate">
+                              {personne.prenom ? `${personne.prenom} ` : ''}{personne.nom}
+                              <span className="ml-2 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700">{personne.lien}</span>
+                            </p>
+                            <div className="mt-1 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-500">
+                              {personne.telephone && (
+                                <span className="inline-flex items-center gap-1"><Phone className="w-3 h-3" />{personne.telephone}</span>
+                              )}
+                              {personne.pieceIdentite && (
+                                <span className="inline-flex items-center gap-1">
+                                  <ClipboardList className="w-3 h-3" />
+                                  {isArabic ? 'هوية:' : 'Pièce :'} {personne.pieceIdentite}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <a
+                            href={`https://wa.me/${personne.telephone.replace(/\D/g, '')}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-700 transition hover:bg-emerald-100"
+                          >
+                            <Phone className="w-3 h-3" />
+                            {isArabic ? 'اتصال' : 'Appeler'}
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="border-t border-slate-150 pt-5">
@@ -359,6 +583,333 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                     ))}
                   </div>
                 </div>
+              </motion.div>
+            )}
+
+            {activeTab === 'sante' && (
+              <motion.div
+                key="sante-tab"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-5"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest flex items-center gap-2">
+                      <Activity className="w-4 h-4 text-rose-500" />
+                      {isArabic ? 'السجل الصحي اليومي والدوري' : 'Registre de suivi santé'}
+                    </h3>
+                    <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                      {isArabic
+                        ? 'الأدوية، الحوادث والعلاجات، زيارات الطبيب والنفساني.'
+                        : 'Médicaments administrés, incidents et soins, visites du médecin et du psychologue.'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowSanteForm(v => !v)}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-black text-white shadow-sm transition hover:bg-rose-700"
+                  >
+                    {showSanteForm ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+                    {showSanteForm
+                      ? (isArabic ? 'إلغاء' : 'Annuler')
+                      : (isArabic ? 'إضافة تسجيل' : 'Nouvelle entrée')}
+                  </button>
+                </div>
+
+                {showSanteForm && (
+                  <div className="space-y-3.5 rounded-2xl border border-rose-100 bg-rose-50/40 p-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div>
+                        <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                          {isArabic ? 'نوع التسجيل' : "Nature de l'entrée"}
+                        </label>
+                        <select
+                          value={santeForm.type}
+                          onChange={e => setSanteForm({ ...santeForm, type: e.target.value as SanteEvenementType })}
+                          className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-800 outline-none focus:border-rose-500"
+                        >
+                          {(Object.keys(LIBELLES_SANTE) as SanteEvenementType[]).map(cle => (
+                            <option key={cle} value={cle}>
+                              {isArabic ? LIBELLES_SANTE[cle].ar : LIBELLES_SANTE[cle].fr}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                          {isArabic ? 'التاريخ *' : 'Date *'}
+                        </label>
+                        <input
+                          type="date"
+                          value={santeForm.date}
+                          onChange={e => setSanteForm({ ...santeForm, date: e.target.value })}
+                          className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-800 outline-none focus:border-rose-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                          {isArabic ? 'الساعة' : 'Heure'}
+                        </label>
+                        <input
+                          type="time"
+                          value={santeForm.heure}
+                          onChange={e => setSanteForm({ ...santeForm, heure: e.target.value })}
+                          className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-800 outline-none focus:border-rose-500"
+                        />
+                      </div>
+                    </div>
+
+                    {santeForm.type === 'medicament' && (
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                            {isArabic ? 'الدواء *' : 'Médicament *'}
+                          </label>
+                          <input
+                            type="text"
+                            value={santeForm.medicament}
+                            onChange={e => setSanteForm({ ...santeForm, medicament: e.target.value })}
+                            placeholder={isArabic ? 'اسم الدواء' : 'Ex. Paracétamol'}
+                            className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-800 outline-none focus:border-rose-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                            {isArabic ? 'الجرعة' : 'Dose'}
+                          </label>
+                          <input
+                            type="text"
+                            value={santeForm.dose}
+                            onChange={e => setSanteForm({ ...santeForm, dose: e.target.value })}
+                            placeholder={isArabic ? 'مثال: 5 مل' : 'Ex. 5 ml'}
+                            className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-800 outline-none focus:border-rose-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                            {isArabic ? 'من طرف' : 'Administré par'}
+                          </label>
+                          <input
+                            type="text"
+                            value={santeForm.administrePar}
+                            onChange={e => setSanteForm({ ...santeForm, administrePar: e.target.value })}
+                            className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-800 outline-none focus:border-rose-500"
+                          />
+                        </div>
+                        <label className="flex items-end gap-2 pb-2.5">
+                          <input
+                            type="checkbox"
+                            checked={santeForm.ordonnance}
+                            onChange={e => setSanteForm({ ...santeForm, ordonnance: e.target.checked })}
+                            className="h-4 w-4 accent-rose-600"
+                          />
+                          <span className="text-[11px] font-semibold text-slate-600">
+                            {isArabic ? 'بوصفة طبية محفوظة' : 'Ordonnance déposée au dossier'}
+                          </span>
+                        </label>
+                      </div>
+                    )}
+
+                    {(santeForm.type === 'incident' || santeForm.type === 'soin') && (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                            {isArabic ? 'وصف الحادث أو العلاج *' : "Description de l'incident ou du soin *"}
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={santeForm.description}
+                            onChange={e => setSanteForm({ ...santeForm, description: e.target.value })}
+                            className="w-full resize-none rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-800 outline-none focus:border-rose-500"
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                          <div>
+                            <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                              {isArabic ? 'الخطورة' : 'Gravité'}
+                            </label>
+                            <select
+                              value={santeForm.gravite}
+                              onChange={e => setSanteForm({ ...santeForm, gravite: e.target.value as SanteGravite })}
+                              className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-800 outline-none focus:border-rose-500"
+                            >
+                              <option value="legere">{isArabic ? 'بسيطة' : 'Légère'}</option>
+                              <option value="moyenne">{isArabic ? 'متوسطة' : 'Moyenne'}</option>
+                              <option value="grave">{isArabic ? 'خطيرة' : 'Grave'}</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                              {isArabic ? 'المكان' : 'Lieu'}
+                            </label>
+                            <input
+                              type="text"
+                              value={santeForm.localisation}
+                              onChange={e => setSanteForm({ ...santeForm, localisation: e.target.value })}
+                              placeholder={isArabic ? 'الساحة، القسم…' : 'Cour, salle…'}
+                              className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-800 outline-none focus:border-rose-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                              {isArabic ? 'الإسعافات المقدمة' : 'Soins donnés'}
+                            </label>
+                            <input
+                              type="text"
+                              value={santeForm.soinsDonnes}
+                              onChange={e => setSanteForm({ ...santeForm, soinsDonnes: e.target.value })}
+                              className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-800 outline-none focus:border-rose-500"
+                            />
+                          </div>
+                        </div>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={santeForm.parentsAverti}
+                            onChange={e => setSanteForm({ ...santeForm, parentsAverti: e.target.checked })}
+                            className="h-4 w-4 accent-rose-600"
+                          />
+                          <span className="text-[11px] font-semibold text-slate-600">
+                            {isArabic ? 'تم إعلام الأولياء' : 'Les parents ont été prévenus'}
+                          </span>
+                        </label>
+                      </div>
+                    )}
+
+                    {(santeForm.type === 'visite_medicale' || santeForm.type === 'visite_psychologique' || santeForm.type === 'rappel_medical') && (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                          <div>
+                            <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                              {isArabic ? 'الطبيب / الأخصائي *' : 'Praticien *'}
+                            </label>
+                            <input
+                              type="text"
+                              value={santeForm.praticien}
+                              onChange={e => setSanteForm({ ...santeForm, praticien: e.target.value })}
+                              className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-800 outline-none focus:border-rose-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                              {isArabic ? 'الصفة' : 'Professionnel'}
+                            </label>
+                            <select
+                              value={santeForm.professionnelType}
+                              onChange={e => setSanteForm({ ...santeForm, professionnelType: e.target.value as typeof santeForm.professionnelType })}
+                              className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-800 outline-none focus:border-rose-500"
+                            >
+                              <option value="medecin">{isArabic ? 'طبيب' : 'Médecin'}</option>
+                              <option value="psychologue">{isArabic ? 'أخصائي نفساني' : 'Psychologue'}</option>
+                              <option value="infirmier">{isArabic ? 'ممرض' : 'Infirmier'}</option>
+                              <option value="autre">{isArabic ? 'آخر' : 'Autre'}</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                              {isArabic ? 'التذكير القادم' : 'Prochain rappel'}
+                            </label>
+                            <input
+                              type="date"
+                              value={santeForm.prochainRappel}
+                              onChange={e => setSanteForm({ ...santeForm, prochainRappel: e.target.value })}
+                              className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-800 outline-none focus:border-rose-500"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                            {isArabic ? 'الخلاصة' : 'Conclusion'}
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={santeForm.conclusion}
+                            onChange={e => setSanteForm({ ...santeForm, conclusion: e.target.value })}
+                            className="w-full resize-none rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-800 outline-none focus:border-rose-500"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={submitSanteEvenement}
+                      className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-black text-white transition hover:bg-slate-800 sm:w-auto"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      {isArabic ? 'حفظ في السجل' : 'Enregistrer au registre'}
+                    </button>
+                  </div>
+                )}
+
+                {childSante.length === 0 ? (
+                  <p className="rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-center text-[11px] font-semibold text-slate-400">
+                    {isArabic
+                      ? 'لا توجد أي تسجيلات صحية لهذا الطفل حتى الآن.'
+                      : "Aucune écriture au registre de santé pour cet enfant."}
+                  </p>
+                ) : (
+                  <div className="space-y-2.5">
+                    {childSante.map(evenement => {
+                      const libelle = LIBELLES_SANTE[evenement.type] || LIBELLES_SANTE.soin;
+                      const details = [
+                        evenement.medicament && `${evenement.medicament}${evenement.dose ? ` — ${evenement.dose}` : ''}`,
+                        evenement.administrePar && (isArabic ? `من طرف ${evenement.administrePar}` : `administré par ${evenement.administrePar}`),
+                        evenement.description,
+                        evenement.localisation,
+                        evenement.soinsDonnes,
+                        evenement.praticien && `${evenement.praticien}${evenement.professionnelType ? ` (${evenement.professionnelType})` : ''}`,
+                        evenement.conclusion,
+                      ].filter(Boolean);
+
+                      return (
+                        <div key={evenement.id} className="rounded-2xl border border-slate-100 bg-white p-3.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`rounded-lg border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${libelle.classes}`}>
+                                {isArabic ? libelle.ar : libelle.fr}
+                              </span>
+                              <span className="text-[11px] font-bold text-slate-500">
+                                {new Date(evenement.date).toLocaleDateString(isArabic ? 'ar' : 'fr-FR')}
+                                {evenement.heure ? ` · ${evenement.heure}` : ''}
+                              </span>
+                              {evenement.gravite === 'grave' && (
+                                <span className="rounded-lg bg-rose-600 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">
+                                  {isArabic ? 'خطير' : 'Grave'}
+                                </span>
+                              )}
+                              {evenement.parentsAverti && (
+                                <span className="rounded-lg bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700">
+                                  {isArabic ? 'الأولياء مُعلَمون' : 'Parents prévenus'}
+                                </span>
+                              )}
+                              {evenement.prochainRappel && (
+                                <span className="rounded-lg bg-amber-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-700">
+                                  {isArabic ? 'تذكير' : 'Rappel'} {new Date(evenement.prochainRappel).toLocaleDateString(isArabic ? 'ar' : 'fr-FR')}
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => deleteSanteEvenement(evenement.id)}
+                              title={isArabic ? 'حذف هذا التسجيل' : 'Supprimer cette entrée'}
+                              className="rounded-lg p-1.5 text-slate-300 transition hover:bg-rose-50 hover:text-rose-600"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          {details.length > 0 && (
+                            <p className="mt-2 text-[11px] font-semibold leading-5 text-slate-600">
+                              {details.join(' · ')}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </motion.div>
             )}
 

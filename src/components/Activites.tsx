@@ -14,13 +14,14 @@ import {
   Target, 
   Wand2, 
   MapPin,
-  Compass
+  Compass,
+  Printer
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
-import { Activite } from '../types';
+import { Activite, ActiviteDomaine } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface RichActivite extends Activite {
@@ -38,7 +39,7 @@ export default function Activites() {
   const { confirm } = useConfirmDialog();
 
   const { activites: allDbActivites, personnel: personnelData, addActivite, deleteActivite } = useDb();
-  const { user } = useAuth();
+  const { user, creche } = useAuth();
   const isDirecteur = user?.role === 'directeur';
   const dbActivites = isDirecteur ? allDbActivites.filter((a: any) => a.crecheId === user!.id) : allDbActivites;
 
@@ -61,11 +62,19 @@ export default function Activites() {
   const [showModal, setShowModal] = useState(false);
   const [selectedActivite, setSelectedActivite] = useState<any | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  // Planning hebdomadaire : vue « programme pédagogique » en plus de la liste.
+  const [vuePlanning, setVuePlanning] = useState(false);
+  const [semaineDebut, setSemaineDebut] = useState<string>(() => {
+    const jour = new Date();
+    jour.setDate(jour.getDate() - jour.getDay()); // dimanche de la semaine en cours
+    return jour.toISOString().split('T')[0];
+  });
 
   const [formData, setFormData] = useState({
     titre: '',
     date: new Date().toISOString().split('T')[0],
     groupe: 'Bébés' as 'Bébés' | 'Moyens' | 'Grands',
+    domaine: 'Éveil sensoriel' as ActiviteDomaine,
     competenceVisee: 'Motricité Fine',
     heureDebut: '10:00',
     heureFin: '11:00',
@@ -83,6 +92,7 @@ export default function Activites() {
       titre: '',
       date: new Date().toISOString().split('T')[0],
       groupe: 'Bébés',
+      domaine: 'Éveil sensoriel',
       competenceVisee: 'Motricité Fine',
       heureDebut: '10:00',
       heureFin: '11:00',
@@ -100,6 +110,116 @@ export default function Activites() {
       a.groupe.toLowerCase().includes(term)
     );
   });
+
+  // --- Planning hebdomadaire des activités d'éveil -------------------------
+  // La semaine algérienne démarre le dimanche ; le planning imprimable reprend
+  // ce découpage pour être affiché dans les salles et présenté aux contrôles.
+  const JOURS_PLANNING = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+
+  const jourSemaine = (offset: number) => {
+    const jour = new Date(`${semaineDebut}T12:00:00`);
+    jour.setDate(jour.getDate() + offset);
+    return jour.toISOString().split('T')[0];
+  };
+
+  const planningSemaine = JOURS_PLANNING.map((jour, offset) => {
+    const date = jourSemaine(offset);
+    return {
+      jour,
+      date,
+      activites: activites
+        .filter(a => a.date === date)
+        .sort((a, b) => (a.heureDebut || '').localeCompare(b.heureDebut || '')),
+    };
+  });
+
+  const activitesPlanifiees = planningSemaine.reduce((total, jour) => total + jour.activites.length, 0);
+  const domainesCouverts = new Set(
+    planningSemaine.flatMap(jour => jour.activites.map(a => a.domaine).filter(Boolean)),
+  ).size;
+
+  const deplacerSemaine = (offset: number) => {
+    const jour = new Date(`${semaineDebut}T12:00:00`);
+    jour.setDate(jour.getDate() + offset * 7);
+    setSemaineDebut(jour.toISOString().split('T')[0]);
+  };
+
+  const libelleSemaine = `${new Date(`${semaineDebut}T12:00:00`).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })} → ${new Date(`${jourSemaine(6)}T12:00:00`).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+
+  /** Planning hebdomadaire imprimable : programme d'éveil et de stimulation. */
+  const imprimerPlanningSemaine = () => {
+    const lignes = planningSemaine.map(({ jour, date, activites: ateliers }) => `
+      <tr>
+        <td class="jour">${jour}<span class="date">${new Date(`${date}T12:00:00`).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}</span></td>
+        <td>
+          ${ateliers.length > 0
+            ? ateliers.map(a => `<div class="atelier">
+                <span class="heure">${a.heureDebut || '—'}${a.heureFin ? ` - ${a.heureFin}` : ''}</span>
+                <strong>${a.titre}</strong>
+                <span class="meta">${[a.domaine, a.competenceVisee, a.groupe, a.lieu, a.educateurRef].filter(Boolean).join(' · ')}</span>
+              </div>`).join('')
+            : '<span class="vide">Aucun atelier programmé</span>'}
+        </td>
+      </tr>`).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8" />
+<title>Planning des activités — semaine du ${libelleSemaine}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; margin: 26px; color: #0f172a; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #7c3aed; padding-bottom: 13px; margin-bottom: 18px; }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  .meta { font-size: 11px; color: #64748b; line-height: 1.6; }
+  .badge { background: #f3e8ff; color: #6d28d9; font-size: 10px; font-weight: 800; padding: 4px 9px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  th { background: #f8fafc; text-align: left; padding: 9px 8px; border: 1px solid #cbd5e1; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: #475569; }
+  td { padding: 9px 8px; border: 1px solid #e2e8f0; vertical-align: top; }
+  td.jour { width: 130px; font-weight: 800; color: #6d28d9; }
+  td.jour .date { display: block; font-size: 10px; font-weight: 600; color: #94a3b8; margin-top: 2px; }
+  .atelier { margin-bottom: 7px; }
+  .atelier:last-child { margin-bottom: 0; }
+  .heure { display: inline-block; min-width: 84px; font-weight: 800; color: #c2410c; }
+  .meta { display: block; font-size: 9.5px; color: #64748b; margin-top: 2px; }
+  .vide { color: #cbd5e1; font-style: italic; }
+  footer { margin-top: 18px; padding-top: 11px; border-top: 1px solid #e2e8f0; font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; }
+  .visa { margin-top: 26px; display: flex; justify-content: flex-end; gap: 60px; font-size: 10px; color: #475569; }
+  .visa div { border-top: 1px solid #94a3b8; padding-top: 5px; width: 190px; text-align: center; }
+  @media print { body { margin: 8mm; } }
+</style></head>
+<body>
+  <header>
+    <div>
+      <h1>Planning hebdomadaire des activités d'éveil</h1>
+      <div class="meta">
+        <strong>${creche?.nom || 'Rawdha+'}</strong>${creche?.adresse ? ` — ${creche.adresse}` : ''}<br />
+        Semaine du ${libelleSemaine} — ${activitesPlanifiees} atelier(s), ${domainesCouverts} domaine(s) d'éveil
+      </div>
+    </div>
+    <span class="badge">Programme pédagogique</span>
+  </header>
+  <table>
+    <thead><tr><th>Jour</th><th>Ateliers programmés (heure · intitulé · domaine · groupe · lieu · encadrant)</th></tr></thead>
+    <tbody>${lignes}</tbody>
+  </table>
+  <div class="visa">
+    <div>Visa de la direction</div>
+    <div>Visa de l'inspection</div>
+  </div>
+  <footer>
+    <span>Document généré par Rawdha+ — programme d'éveil et de stimulation psychomotrice affiché dans les salles.</span>
+    <span>Imprimé le ${new Date().toLocaleDateString('fr-FR')}</span>
+  </footer>
+</body></html>`;
+
+    const printWindow = window.open('', '_blank', 'height=900,width=1000');
+    if (!printWindow) return;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.onload = () => {
+      setTimeout(() => { printWindow.focus(); printWindow.print(); }, 250);
+    };
+  };
 
   const getGroupBadgeStyles = (grp: string) => {
     switch (grp) {
@@ -177,8 +297,120 @@ export default function Activites() {
         </div>
       </div>
 
+      {/* Bascule fiches d'atelier / planning de la semaine */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setVuePlanning(false)}
+          className={`rounded-xl px-3.5 py-2 text-[11px] font-bold transition ${
+            !vuePlanning ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white text-slate-500 border border-slate-200 hover:text-slate-800'
+          }`}
+        >
+          {isArabic ? 'الأعمال والورشات' : "Fiches d'atelier"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setVuePlanning(true)}
+          className={`rounded-xl px-3.5 py-2 text-[11px] font-bold transition ${
+            vuePlanning ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white text-slate-500 border border-slate-200 hover:text-slate-800'
+          }`}
+        >
+          {isArabic ? 'برنامج الأسبوع' : 'Planning de la semaine'}
+        </button>
+        <button
+          type="button"
+          onClick={imprimerPlanningSemaine}
+          className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 px-3.5 py-2 text-[11px] font-black text-violet-700 transition hover:bg-violet-100"
+        >
+          <Printer className="h-3.5 w-3.5" />
+          {isArabic ? 'طباعة البرنامج' : 'Imprimer le planning'}
+        </button>
+      </div>
+
+      {/* Planning hebdomadaire des activités d'éveil */}
+      {vuePlanning && (
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+          <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-slate-500">
+                {isArabic ? 'برنامج الأسبوع — أنشطة التنبيه والترويض الحركي' : "Planning hebdomadaire des activités d'éveil"}
+              </p>
+              <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                {activitesPlanifiees} {isArabic ? 'ورشة مبرمجة' : 'atelier(s) programmé(s)'} · {domainesCouverts}{' '}
+                {isArabic ? 'مجال مكتسب' : "domaine(s) d'éveil couvert(s)"}
+              </p>
+            </div>
+            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1">
+              <button
+                type="button"
+                onClick={() => deplacerSemaine(-1)}
+                className="grid h-6 w-6 place-items-center rounded-lg text-sm font-black text-slate-500 hover:bg-slate-50 hover:text-indigo-600"
+                aria-label={isArabic ? 'الأسبوع السابق' : 'Semaine précédente'}
+              >
+                ‹
+              </button>
+              <span className="px-1.5 text-[11px] font-black text-slate-700">{libelleSemaine}</span>
+              <button
+                type="button"
+                onClick={() => deplacerSemaine(1)}
+                className="grid h-6 w-6 place-items-center rounded-lg text-sm font-black text-slate-500 hover:bg-slate-50 hover:text-indigo-600"
+                aria-label={isArabic ? 'الأسبوع التالي' : 'Semaine suivante'}
+              >
+                ›
+              </button>
+            </div>
+          </div>
+
+          <div className="divide-y divide-slate-100">
+            {planningSemaine.map(({ jour, date, activites: ateliers }) => (
+              <div key={date} className="flex flex-col gap-2 p-3 sm:flex-row sm:gap-4 sm:px-5 sm:py-4">
+                <div className="flex shrink-0 items-center gap-2 sm:w-40 sm:flex-col sm:items-start">
+                  <span className="text-xs font-black capitalize text-indigo-700">{jour}</span>
+                  <span className="text-[10px] font-bold text-slate-400">
+                    {new Date(`${date}T12:00:00`).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}
+                  </span>
+                </div>
+                <div className="min-w-0 flex-1 space-y-2">
+                  {ateliers.length === 0 ? (
+                    <span className="text-[11px] italic text-slate-300">
+                      {isArabic ? 'لا توجد ورشة مبرمجة' : 'Aucun atelier programmé'}
+                    </span>
+                  ) : ateliers.map(atelier => (
+                    <button
+                      type="button"
+                      key={atelier.id}
+                      onClick={() => setSelectedActivite(atelier)}
+                      className="block w-full rounded-xl border border-slate-100 bg-slate-50/60 p-2.5 text-left transition hover:border-indigo-200 hover:bg-indigo-50/50"
+                    >
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-black text-orange-600 border border-orange-100">
+                          <Clock className="h-3 w-3" />
+                          {atelier.heureDebut || '—'}{atelier.heureFin ? ` - ${atelier.heureFin}` : ''}
+                        </span>
+                        <span className="text-xs font-black text-slate-800">{atelier.titre}</span>
+                        {atelier.domaine && (
+                          <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-violet-700">
+                            {atelier.domaine}
+                          </span>
+                        )}
+                        <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${getGroupBadgeStyles(atelier.groupe)}`}>
+                          {atelier.groupe}
+                        </span>
+                      </span>
+                      <span className="mt-1 block text-[10px] font-semibold text-slate-400">
+                        {[atelier.competenceVisee, atelier.lieu, atelier.educateurRef].filter(Boolean).join(' · ')}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Activities Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-slide-up">
+      <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-slide-up ${vuePlanning ? 'hidden' : ''}`}>
         {filteredActivites.length > 0 ? (
           filteredActivites.map((a) => {
             const grpStyle = getGroupBadgeStyles(a.groupe);
@@ -203,6 +435,11 @@ export default function Activites() {
 
                 {/* Activity Title */}
                 <h3 className="text-lg font-extrabold text-slate-900 tracking-tight leading-snug">{a.titre}</h3>
+                {a.domaine && (
+                  <span className="mt-2 inline-block rounded-full bg-violet-50 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-violet-700">
+                    {a.domaine}
+                  </span>
+                )}
 
                 {/* Target Skill Row */}
                 <div className="mt-4 flex items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-xl">
@@ -314,6 +551,22 @@ export default function Activites() {
                     value={formData.titre} 
                     onChange={e => setFormData({...formData, titre: e.target.value})} 
                   />
+                </div>
+
+                {/* Domaine d'éveil travaillé */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                    {isArabic ? 'مجال التنبيه والترويض' : "Domaine d'éveil"}
+                  </label>
+                  <select
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
+                    value={formData.domaine}
+                    onChange={e => setFormData({...formData, domaine: e.target.value as ActiviteDomaine})}
+                  >
+                    {(['Éveil sensoriel', 'Psychomotricité', 'Langage & comptines', 'Motricité fine', 'Arts plastiques', 'Vie pratique & autonomie', 'Jeux libres'] as ActiviteDomaine[]).map(domaine => (
+                      <option key={domaine} value={domaine}>{domaine}</option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* Competence & Target Group (Row 2) */}

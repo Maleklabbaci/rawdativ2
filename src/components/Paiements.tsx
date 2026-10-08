@@ -46,7 +46,12 @@ const findWhatsAppPhone = (enfant: Enfant | undefined) => {
     .find((value): value is string => Boolean(value)) || null;
 };
 
-const buildWhatsAppRelanceMessage = (paiement: RichPaiement, enfant: Enfant | undefined, isArabic: boolean) => {
+const buildWhatsAppRelanceMessage = (
+  paiement: RichPaiement,
+  enfant: Enfant | undefined,
+  isArabic: boolean,
+  penalite = 0,
+) => {
   if (!enfant) return '';
   const childName = `${enfant.prenom} ${enfant.nom}`;
   const dueDate = paiement.dateEcheance || (isArabic ? 'غير محدد' : 'non précisée');
@@ -55,12 +60,12 @@ const buildWhatsAppRelanceMessage = (paiement: RichPaiement, enfant: Enfant | un
     : paiement.moisConcerne;
   return isArabic
     ? `السلام عليكم، نذكركم بأن فاتورة ${childName} الخاصة بـ ${period} بمبلغ ${formatCurrency(paiement.montant)} ${paiement.statut === 'Retard' ? 'متأخرة وغير مسددة' : 'في انتظار التسديد'}. تاريخ الاستحقاق: ${dueDate}. شكراً لتواصلكم مع إدارة الروضة.`
-    : `Bonjour,\n\nNous vous rappelons que la facture de ${childName} pour ${paiement.moisConcerne} (${formatCurrency(paiement.montant)}) est ${paiement.statut === 'Retard' ? 'en retard et reste impayée' : 'en attente de règlement'}. Échéance : ${dueDate}.\n\nMerci de prendre contact avec la direction de la crèche.\n\nCordialement,\nLa direction de Rawdha+`;
+    : `Bonjour,\n\nNous vous rappelons que la facture de ${childName} pour ${paiement.moisConcerne} (${formatCurrency(paiement.montant)}) est ${paiement.statut === 'Retard' ? 'en retard et reste impayée' : 'en attente de règlement'}. Échéance : ${dueDate}.${penalite > 0 ? `\n\nConformément à la grille tarifaire remise à l'inscription, une pénalité de retard de ${formatCurrency(penalite)} s'y ajoute.` : ''}\n\nMerci de prendre contact avec la direction de la crèche.\n\nCordialement,\nLa direction de Rawdha+`;
 };
 
-const buildWhatsAppRelanceLink = (paiement: RichPaiement, enfant: Enfant | undefined, isArabic: boolean) => {
+const buildWhatsAppRelanceLink = (paiement: RichPaiement, enfant: Enfant | undefined, isArabic: boolean, penalite = 0) => {
   const phone = findWhatsAppPhone(enfant);
-  const message = buildWhatsAppRelanceMessage(paiement, enfant, isArabic);
+  const message = buildWhatsAppRelanceMessage(paiement, enfant, isArabic, penalite);
   if (!phone || !message) return null;
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 };
@@ -70,8 +75,40 @@ interface RichPaiement extends Paiement {
   dateEcheance?: string;
   reductionCode?: string;
   notes?: string;
-  typeFacture?: 'Mensuel' | 'Annuel';
+  typeFacture?: 'Mensuel' | 'Annuel' | 'Inscription';
 }
+
+/** Barème des pénalités, repris des Paramètres de la crèche. */
+interface BaremePenalite {
+  type: 'pourcentage' | 'montant';
+  valeur: number;
+  graceJours: number;
+}
+
+/**
+ * Pénalité de retard d'une facture impayée.
+ * Le calcul doit rester explicable à une famille : on compte les mois entiers
+ * d'échéance dépassés, après le délai de grâce réglé dans les Paramètres, et on
+ * n'applique rien si la crèche n'a pas défini de barème.
+ */
+const calculerPenaliteRetard = (
+  paiement: RichPaiement,
+  bareme: BaremePenalite,
+  todayKey: string,
+): { moisRetard: number; montant: number } => {
+  if (paiement.statut === 'Payé' || !paiement.dateEcheance) return { moisRetard: 0, montant: 0 };
+  if (!Number.isFinite(bareme.valeur) || bareme.valeur <= 0) return { moisRetard: 0, montant: 0 };
+  const echeance = new Date(`${paiement.dateEcheance}T12:00:00`);
+  const aujourdhui = new Date(`${todayKey}T12:00:00`);
+  if (Number.isNaN(echeance.getTime())) return { moisRetard: 0, montant: 0 };
+  const joursRetard = Math.floor((aujourdhui.getTime() - echeance.getTime()) / 86_400_000) - bareme.graceJours;
+  if (joursRetard <= 0) return { moisRetard: 0, montant: 0 };
+  const moisRetard = Math.max(1, Math.ceil(joursRetard / 30));
+  const montant = bareme.type === 'pourcentage'
+    ? Math.round(paiement.montant * (bareme.valeur / 100) * moisRetard)
+    : Math.round(bareme.valeur * moisRetard);
+  return { moisRetard, montant };
+};
 
 const PAYMENT_METHODS: NonNullable<RichPaiement['moyenPaiement']>[] = ['Espèces', 'Chèque', 'Virement', 'Carte'];
 
@@ -101,6 +138,14 @@ export default function Paiements() {
   const nextWeekDateKey = nextWeekDate.toISOString().split('T')[0];
   const todayKey = today.toISOString().split('T')[0];
 
+  // Barème de pénalité saisi dans les Paramètres de la crèche (0 = aucune pénalité).
+  const baremePenalite: BaremePenalite = {
+    type: creche?.penaliteRetardType === 'montant' ? 'montant' : 'pourcentage',
+    valeur: Number(creche?.penaliteRetardValeur) || 0,
+    graceJours: Number(creche?.delaiGraceJours) || 0,
+  };
+  const penaliteDe = (paiement: RichPaiement) => calculerPenaliteRetard(paiement, baremePenalite, todayKey);
+
   const paiements: RichPaiement[] = dbPaiements.map((p: any) => ({
     ...p,
     // Une facture en attente dont l’échéance est passée devient automatiquement un retard à l’affichage.
@@ -127,7 +172,7 @@ export default function Paiements() {
   const isReadOnly = user?.role === 'directeur' && user.approvalStatus === 'pending';
 
   const handleCopyRelance = async (paiement: RichPaiement, enfant?: Enfant) => {
-    const message = buildWhatsAppRelanceMessage(paiement, enfant, isArabic);
+    const message = buildWhatsAppRelanceMessage(paiement, enfant, isArabic, penaliteDe(paiement).montant);
     try {
       await navigator.clipboard.writeText(message);
       setCopiedPaiementId(paiement.id);
@@ -405,7 +450,11 @@ export default function Paiements() {
                           <div>
                             <p className="text-slate-900 leading-none">{displayPaymentPeriod(p.moisConcerne)}</p>
                             <span className="text-[10px] text-slate-400 font-normal">
-                              {p.typeFacture === 'Annuel' ? (isArabic ? 'سنوي' : 'Annuel') : (isArabic ? 'شهري' : 'Mensuel')}
+                              {p.typeFacture === 'Annuel'
+                                ? (isArabic ? 'سنوي' : 'Annuel')
+                                : p.typeFacture === 'Inscription'
+                                  ? (isArabic ? 'رسوم التسجيل' : "Frais d'inscription")
+                                  : (isArabic ? 'شهري' : 'Mensuel')}
                             </span>
                           </div>
                         </span>
@@ -429,10 +478,25 @@ export default function Paiements() {
                             </p>
                           </div>
                         ) : (
-                          <p className="text-xs text-rose-500 font-bold bg-rose-50/50 border border-rose-100 px-2 py-0.5 rounded-md inline-flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5 text-rose-500" />
-                              <span>{isArabic ? 'الاستحقاق' : 'Échéance'}: {p.dateEcheance || (isArabic ? 'فوري' : 'Immédiat')}</span>
-                          </p>
+                          <>
+                            <p className="text-xs text-rose-500 font-bold bg-rose-50/50 border border-rose-100 px-2 py-0.5 rounded-md inline-flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5 text-rose-500" />
+                                <span>{isArabic ? 'الاستحقاق' : 'Échéance'}: {p.dateEcheance || (isArabic ? 'فوري' : 'Immédiat')}</span>
+                            </p>
+                            {/* Pénalité issue de la grille tarifaire remise aux familles. */}
+                            {penaliteDe(p).montant > 0 && (
+                              <p className="mt-1 text-[10px] font-black text-rose-600">
+                                {isArabic ? 'غرامة التأخر' : 'Pénalité de retard'}: {formatCurrency(penaliteDe(p).montant)}
+                                <span className="font-bold text-rose-400">
+                                  {' '}({penaliteDe(p).moisRetard} {isArabic ? 'شهر' : 'mois'})
+                                </span>
+                                {' — '}
+                                <span className="font-bold text-slate-500">
+                                  {isArabic ? 'الإجمالي' : 'Total dû'}: {formatCurrency(p.montant + penaliteDe(p).montant)}
+                                </span>
+                              </p>
+                            )}
+                          </>
                         )}
                       </td>
 
@@ -482,7 +546,7 @@ export default function Paiements() {
 
                               {p.statut !== 'Payé' && (
                             <>
-                              {buildWhatsAppRelanceLink(p, enfant, isArabic) && (
+                              {buildWhatsAppRelanceLink(p, enfant, isArabic, penaliteDe(p).montant) && (
                                 <button
                                   type="button"
                                   onClick={(event) => {
@@ -492,7 +556,7 @@ export default function Paiements() {
                                       setWhatsappPreview({
                                         phone,
                                         childName: `${enfant.prenom} ${enfant.nom}`,
-                                        message: buildWhatsAppRelanceMessage(p, enfant, isArabic),
+                                        message: buildWhatsAppRelanceMessage(p, enfant, isArabic, penaliteDe(p).montant),
                                       });
                                     }
                                   }}
@@ -634,24 +698,31 @@ export default function Paiements() {
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
                     {isArabic ? 'نوع الفاتورة *' : 'Type de Facturation *'}
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     {[
                       { key: 'Mensuel', label: isArabic ? 'شهري' : 'Mensuelle' },
-                      { key: 'Annuel', label: isArabic ? 'سنوي' : 'Annuelle' }
+                      { key: 'Annuel', label: isArabic ? 'سنوي' : 'Annuelle' },
+                      { key: 'Inscription', label: isArabic ? 'رسوم التسجيل' : "Frais d'inscription" }
                     ].map(type => (
                       <button
                         key={type.key}
                         type="button"
                         onClick={() => {
                           const isAnnuel = type.key === 'Annuel';
+                          const isInscription = type.key === 'Inscription';
                           const monthlyRate = creche?.tuitionFeeRate || 12000; // ✅ synchronisé avec Paramètres
+                          // Les frais d'inscription se facturent une seule fois : le montant
+                          // provient des Paramètres, la période reste l'année d'admission.
+                          const fraisInscription = Number(creche?.fraisInscription) || 0;
                           setFormData({
                             ...formData, 
                             typeFacture: type.key as any,
-                            montant: isAnnuel ? monthlyRate * 12 : monthlyRate,
+                            montant: isInscription
+                              ? (fraisInscription > 0 ? fraisInscription : formData.montant)
+                              : isAnnuel ? monthlyRate * 12 : monthlyRate,
                             moisConcerne: isAnnuel
                               ? `Année Scolaire ${today.getFullYear()}/${today.getFullYear() + 1}`
-                              : currentMonthLabel
+                              : isInscription ? `Inscription ${today.getFullYear()}` : currentMonthLabel
                           });
                         }}
                         className={`p-3 text-xs font-bold rounded-xl border transition cursor-pointer text-center ${
@@ -900,7 +971,11 @@ export default function Paiements() {
                     <div className="flex justify-between">
                       <span>{isArabic ? 'النوع والتاريخ' : 'Type de facturation'}:</span>
                       <span className="text-slate-800 font-extrabold">
-                        {selectedPaiement.typeFacture === 'Annuel' ? (isArabic ? 'سنوي' : 'Annuel') : (isArabic ? 'شهري' : 'Mensuel')}
+                        {selectedPaiement.typeFacture === 'Annuel'
+                          ? (isArabic ? 'سنوي' : 'Annuel')
+                          : selectedPaiement.typeFacture === 'Inscription'
+                            ? (isArabic ? 'رسوم التسجيل' : "Frais d'inscription")
+                            : (isArabic ? 'شهري' : 'Mensuel')}
                       </span>
                     </div>
                     <div className="flex justify-between">
@@ -921,6 +996,21 @@ export default function Paiements() {
                       <span>{isArabic ? 'المبلغ المستحق' : 'Net à payer'} (DZD):</span>
                       <span className="text-indigo-600 text-base">{formatCurrency(selectedPaiement.montant)}</span>
                     </div>
+                    {penaliteDe(selectedPaiement).montant > 0 && (
+                      <>
+                        <div className="flex justify-between text-rose-600">
+                          <span>
+                            {isArabic ? 'غرامة التأخر' : 'Pénalité de retard'}
+                            {' '}({penaliteDe(selectedPaiement).moisRetard} {isArabic ? 'شهر' : 'mois'}):
+                          </span>
+                          <span>+{formatCurrency(penaliteDe(selectedPaiement).montant)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm font-black text-rose-700 border-t border-dashed border-rose-200 pt-3">
+                          <span>{isArabic ? 'الإجمالي الواجب دفعه' : 'Total à régler'}:</span>
+                          <span>{formatCurrency(selectedPaiement.montant + penaliteDe(selectedPaiement).montant)}</span>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 text-xs">

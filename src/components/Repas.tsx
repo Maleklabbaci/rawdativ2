@@ -11,7 +11,9 @@ import {
   Flame, 
   Droplet, 
   Apple,
-  HelpCircle
+  HelpCircle,
+  Printer,
+  CalendarRange
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
@@ -37,7 +39,7 @@ export default function RepasPage() {
   const displayHydration = (value?: string) => isArabic && (value === 'Eau filtrée' || value === 'Eau minérale') ? 'ماء مفلتر' : value;
 
   const { repas: allDbRepas, personnel: allPersonnelData, addRepas, deleteRepas } = useDb();
-  const { user } = useAuth();
+  const { user, creche } = useAuth();
   const isDirecteur = user?.role === 'directeur';
   
   const dbRepas = isDirecteur ? allDbRepas.filter((r: any) => r.crecheId === user!.id) : allDbRepas;
@@ -62,6 +64,9 @@ export default function RepasPage() {
   const [showModal, setShowModal] = useState(false);
   const [selectedRepas, setSelectedRepas] = useState<any | null>(null);
   const [filterType, setFilterType] = useState('Tous');
+  // Le décret impose la publication du menu de la semaine : on propose une vue
+  // hebdomadaire (jour x repas) en plus de la liste de fiches.
+  const [vueSemaine, setVueSemaine] = useState(false);
 
   const [formData, setFormData] = useState({
     type: 'Déjeuner' as 'Déjeuner' | 'Goûter',
@@ -90,6 +95,86 @@ export default function RepasPage() {
     });
   };
 
+  // Jours de la semaine algérienne : elle démarre le dimanche.
+  const JOURS_SEMAINE = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+  const JOURS_SEMAINE_AR: Record<string, string> = {
+    Dimanche: 'الأحد', Lundi: 'الاثنين', Mardi: 'الثلاثاء', Mercredi: 'الأربعاء',
+    Jeudi: 'الخميس', Vendredi: 'الجمعة', Samedi: 'السبت',
+  };
+
+  const menuDeLaSemaine = JOURS_SEMAINE.map(jour => ({
+    jour,
+    dejeuner: repas.find(r => r.jour === jour && r.type === 'Déjeuner'),
+    gouter: repas.find(r => r.jour === jour && r.type === 'Goûter'),
+  }));
+
+  const joursCouverts = menuDeLaSemaine.filter(j => j.dejeuner || j.gouter).length;
+
+  /** Menu de la semaine imprimable : affichage en salle et contrôle sanitaire. */
+  const imprimerMenuSemaine = () => {
+    const lignes = menuDeLaSemaine.map(({ jour, dejeuner, gouter }) => `
+      <tr>
+        <td class="jour">${jour}</td>
+        <td>
+          ${dejeuner
+            ? `<div class="menu">${dejeuner.menu}</div>
+               <div class="detail">${dejeuner.apportCalorique || ''}${dejeuner.allergenes ? ` · Allergènes : ${dejeuner.allergenes}` : ''}</div>
+               <div class="detail">${dejeuner.bioIngrediens ? 'Ingrédients bio' : ''}${dejeuner.hydratationRappel ? ` · ${dejeuner.hydratationRappel}` : ''}</div>`
+            : '<span class="vide">Non programmé</span>'}
+        </td>
+        <td>
+          ${gouter
+            ? `<div class="menu">${gouter.menu}</div>
+               <div class="detail">${gouter.apportCalorique || ''}${gouter.allergenes ? ` · Allergènes : ${gouter.allergenes}` : ''}</div>`
+            : '<span class="vide">Non programmé</span>'}
+        </td>
+      </tr>`).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8" />
+<title>Menu de la semaine — ${creche?.nom || 'Rawdha+'}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; margin: 26px; color: #0f172a; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #ea580c; padding-bottom: 13px; margin-bottom: 18px; }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  .meta { font-size: 11px; color: #64748b; line-height: 1.6; }
+  .badge { background: #ffedd5; color: #c2410c; font-size: 10px; font-weight: 800; padding: 4px 9px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  th { background: #f8fafc; text-align: left; padding: 9px 8px; border: 1px solid #cbd5e1; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: #475569; }
+  td { padding: 9px 8px; border: 1px solid #e2e8f0; vertical-align: top; }
+  td.jour { font-weight: 800; color: #c2410c; white-space: nowrap; }
+  .menu { font-weight: 700; }
+  .detail { font-size: 9.5px; color: #64748b; margin-top: 3px; }
+  .vide { color: #cbd5e1; font-style: italic; }
+  footer { margin-top: 18px; padding-top: 11px; border-top: 1px solid #e2e8f0; font-size: 10px; color: #94a3b8; }
+  @media print { body { margin: 10mm; } }
+</style></head>
+<body>
+  <header>
+    <div>
+      <h1>Menu de la semaine</h1>
+      <div class="meta"><strong>${creche?.nom || 'Rawdha+'}</strong>${creche?.adresse ? ` — ${creche.adresse}` : ''}<br />
+      Affichage conforme aux normes sanitaires — ${joursCouverts} jour(s) programmé(s) sur 7</div>
+    </div>
+    <span class="badge">Affichage réglementaire</span>
+  </header>
+  <table>
+    <thead><tr><th style="width:120px">Jour</th><th>Déjeuner</th><th>Goûter</th></tr></thead>
+    <tbody>${lignes}</tbody>
+  </table>
+  <footer>Document généré par Rawdha+ — menu à afficher dans la salle de restauration et à présenter lors des contrôles sanitaires.</footer>
+</body></html>`;
+
+    const printWindow = window.open('', '_blank', 'height=900,width=900');
+    if (!printWindow) return;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.onload = () => {
+      setTimeout(() => { printWindow.focus(); printWindow.print(); }, 250);
+    };
+  };
+
   const filteredRepas = repas.filter(r => {
     return filterType === 'Tous' || r.type === filterType;
   });
@@ -104,9 +189,11 @@ export default function RepasPage() {
           </div>
           <div>
             <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest">
-              {isArabic ? 'الوجبات المبرمجة' : 'Menu de la semaine'}
+              {isArabic ? 'قائمة الأسبوع' : 'Menu de la semaine'}
             </p>
-            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{repas.length} {isArabic ? 'وجبات مبرمجة' : 'fiches repas programmées'}</p>
+            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">
+              {joursCouverts} / 7 <span className="text-xs font-bold text-slate-400">{isArabic ? 'أيام مبرمجة' : 'jours couverts'}</span>
+            </p>
           </div>
         </div>
 
@@ -165,8 +252,101 @@ export default function RepasPage() {
         </div>
       </div>
 
+      {/* Bascule fiches / menu de la semaine */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setVueSemaine(false)}
+          className={`rounded-xl px-3.5 py-2 text-[11px] font-bold transition ${
+            !vueSemaine ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white text-slate-500 border border-slate-200 hover:text-slate-800'
+          }`}
+        >
+          {isArabic ? 'بطاقات الوجبات' : 'Fiches détaillées'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setVueSemaine(true)}
+          className={`rounded-xl px-3.5 py-2 text-[11px] font-bold transition ${
+            vueSemaine ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white text-slate-500 border border-slate-200 hover:text-slate-800'
+          }`}
+        >
+          {isArabic ? 'قائمة الأسبوع' : 'Menu de la semaine'}
+        </button>
+        <button
+          type="button"
+          onClick={imprimerMenuSemaine}
+          className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-orange-200 bg-orange-50 px-3.5 py-2 text-[11px] font-black text-orange-700 transition hover:bg-orange-100"
+        >
+          <Printer className="h-3.5 w-3.5" />
+          {isArabic ? 'طباعة قائمة الأسبوع' : 'Imprimer le menu'}
+        </button>
+      </div>
+
+      {/* Menu de la semaine : grille jour x repas, exigée pour l'affichage en salle */}
+      {vueSemaine && (
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+          <div className="border-b border-slate-100 bg-slate-50/70 px-4 py-3 sm:px-5">
+            <p className="text-xs font-black uppercase tracking-widest text-slate-500">
+              {isArabic ? 'قائمة الأسبوع — الغداء واللمجة' : 'Menu de la semaine — déjeuner et goûter'}
+            </p>
+            <p className="mt-1 text-[11px] font-semibold text-slate-400">
+              {joursCouverts} / 7 {isArabic ? 'أيام مبرمجة' : 'jours programmés'}
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] border-collapse text-left text-xs rtl:text-right">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50/40 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  <th className="p-3 sm:p-4">{isArabic ? 'اليوم' : 'Jour'}</th>
+                  <th className="p-3 sm:p-4">{isArabic ? 'الغداء' : 'Déjeuner'}</th>
+                  <th className="p-3 sm:p-4">{isArabic ? 'اللمجة' : 'Goûter'}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {menuDeLaSemaine.map(({ jour, dejeuner, gouter }) => (
+                  <tr key={jour} className="align-top">
+                    <td className="p-3 sm:p-4">
+                      <span className="text-[11px] font-black text-indigo-700">
+                        {isArabic ? JOURS_SEMAINE_AR[jour] : jour}
+                      </span>
+                    </td>
+                    <td className="p-3 sm:p-4">
+                      {dejeuner ? (
+                        <div>
+                          <p className="font-bold text-slate-800">{dejeuner.menu}</p>
+                          <p className="mt-1 text-[10px] font-semibold text-slate-400">
+                            {[dejeuner.apportCalorique, dejeuner.allergenes, dejeuner.bioIngrediens ? (isArabic ? 'مكونات عضوية' : 'Ingrédients bio') : null]
+                              .filter(Boolean).join(' · ')}
+                          </p>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] italic text-slate-300">{isArabic ? 'غير مبرمج' : 'Non programmé'}</span>
+                      )}
+                    </td>
+                    <td className="p-3 sm:p-4">
+                      {gouter ? (
+                        <div>
+                          <p className="font-bold text-slate-800">{gouter.menu}</p>
+                          <p className="mt-1 text-[10px] font-semibold text-slate-400">
+                            {[gouter.apportCalorique, gouter.allergenes].filter(Boolean).join(' · ')}
+                          </p>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] italic text-slate-300">{isArabic ? 'غير مبرمج' : 'Non programmé'}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Meals Menu Cards List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-slide-up">
+      <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 animate-slide-up ${vueSemaine ? 'hidden' : ''}`}>
+
+
         {filteredRepas.length > 0 ? (
           filteredRepas.map((r) => {
             return (

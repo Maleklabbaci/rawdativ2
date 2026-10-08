@@ -7,6 +7,22 @@ interface CrecheInfo {
   adresse: string;
   logoUrl: string | null;
   tuitionFeeRate: number;
+  /**
+   * Capacité maximale d'accueil fixée par l'agrément de la wilaya (plafond légal
+   * de 150 enfants). `0` = non renseignée : aucun blocage n'est appliqué, mais
+   * l'alerte de conformité reste visible dans les Paramètres.
+   */
+  capaciteAutorisee: number;
+  /** Frais d'inscription facturés une seule fois à l'admission (0 = non facturés). */
+  fraisInscription: number;
+  /** Tarif cantine journalier, repris dans la grille tarifaire. */
+  tarifCantineJour: number;
+  /** Forme de la pénalité appliquée aux mensualités en retard. */
+  penaliteRetardType: 'pourcentage' | 'montant';
+  /** Valeur de la pénalité : pourcentage du montant par mois, ou montant fixe en DA. */
+  penaliteRetardValeur: number;
+  /** Délai de grâce (jours) après l'échéance avant application de la pénalité. */
+  delaiGraceJours: number;
 }
 
 interface AuthUserSnapshot {
@@ -69,6 +85,12 @@ const DEFAULT_CRECHE: CrecheInfo = {
   adresse: 'Plateforme de Gestion | منصة التسيير',
   logoUrl: null,
   tuitionFeeRate: 3500,
+  fraisInscription: 0,
+  tarifCantineJour: 0,
+  penaliteRetardType: 'pourcentage',
+  penaliteRetardValeur: 0,
+  delaiGraceJours: 0,
+  capaciteAutorisee: 0,
 };
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
@@ -157,6 +179,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         adresse: settings?.addressLine || DEFAULT_CRECHE.adresse,
         logoUrl: settings?.logoUrl || null,
         tuitionFeeRate: settings?.tuitionFeeRate ? Number(settings.tuitionFeeRate) : DEFAULT_CRECHE.tuitionFeeRate,
+        capaciteAutorisee: settings?.capaciteAutorisee ? Number(settings.capaciteAutorisee) : DEFAULT_CRECHE.capaciteAutorisee,
+        fraisInscription: settings?.fraisInscription ? Number(settings.fraisInscription) : DEFAULT_CRECHE.fraisInscription,
+        tarifCantineJour: settings?.mealPricePerDay ? Number(settings.mealPricePerDay) : DEFAULT_CRECHE.tarifCantineJour,
+        penaliteRetardType: settings?.penaliteRetardType === 'montant' ? 'montant' : 'pourcentage',
+        penaliteRetardValeur: settings?.penaliteRetardValeur ? Number(settings.penaliteRetardValeur) : DEFAULT_CRECHE.penaliteRetardValeur,
+        delaiGraceJours: settings?.delaiGraceJours ? Number(settings.delaiGraceJours) : DEFAULT_CRECHE.delaiGraceJours,
       });
     } catch (err) {
       console.error('Erreur chargement des paramètres de la crèche:', err);

@@ -16,6 +16,47 @@ export interface Parent {
   profession?: string;
 }
 
+/**
+ * Personne habilitée à récupérer l'enfant. Le décret impose que seules les
+ * personnes désignées par écrit par le tuteur légal puissent repartir avec
+ * l'enfant ; la fiche de retrait doit pouvoir être contrôlée à tout moment.
+ */
+export interface PersonneAutorisee {
+  id: string;
+  nom: string;
+  prenom?: string;
+  /** Mère, Père, Tuteur, Grand-mère, Oncle, Chauffeur, Autre… */
+  lien: string;
+  telephone: string;
+  /** Numéro de pièce d'identité présentée au moment du retrait. */
+  pieceIdentite?: string;
+  /** false = autorisation révoquée par le tuteur (conservée pour l'historique). */
+  active?: boolean;
+}
+
+/** Dossier administratif et pièces obligatoires du dossier enfant. */
+export interface DocumentsEnfant {
+  certificatMedical: boolean;
+  carnetVaccination: boolean;
+  justificatifDomicile: boolean;
+  photoIdentite: boolean;
+  /** Numérisation du contrat d'accueil signé par le tuteur légal. */
+  contratAccueil: boolean;
+  /** Extrait de naissance (ou acte de naissance) de l'enfant. */
+  extraitNaissance: boolean;
+}
+
+/** Pièce jointe stockée en base64 dans le document JSONB de l'enfant. */
+export interface DocumentFichier {
+  nom: string;
+  type: string;
+  taille: number;
+  contenu: string;
+  ajouteLe: string;
+}
+
+export type DocumentEnfantKey = keyof DocumentsEnfant;
+
 export interface Enfant {
   id: string;
   crecheId?: string;
@@ -35,22 +76,29 @@ export interface Enfant {
   notesMedicales?: string;
   contactsUrgence: ContactUrgence[];
   parents: Parent[];
-  documentsRequis: {
-    certificatMedical: boolean;
-    carnetVaccination: boolean;
-    justificatifDomicile: boolean;
-    photoIdentite: boolean;
-  };
+  documentsRequis: DocumentsEnfant;
   // Pièces jointes d'admission réellement sélectionnées par la directrice.
   // Le format data URL est limité côté formulaire pour rester compatible avec le
   // stockage JSONB actuel; un bucket Storage pourra remplacer ce champ plus tard.
-  documentsFichiers?: Partial<Record<'certificatMedical' | 'carnetVaccination' | 'justificatifDomicile' | 'photoIdentite', {
-    nom: string;
-    type: string;
-    taille: number;
-    contenu: string;
-    ajouteLe: string;
-  }>>;
+  documentsFichiers?: Partial<Record<DocumentEnfantKey, DocumentFichier>>;
+  /**
+   * Numéro d'ordre du registre matricule des enfants admis. Il est attribué à
+   * l'admission et doit rester stable : c'est la référence contrôlée par la
+   * Direction de l'Action Sociale (DAS) lors des inspections.
+   */
+  matricule?: number;
+  /**
+   * Personnes habilitées à récupérer l'enfant, désignées par le tuteur légal.
+   * Seules ces personnes peuvent repartir avec l'enfant (voir Presences).
+   */
+  personnesAutorisees?: PersonneAutorisee[];
+  /** Autorisation de sortie signée par le tuteur légal déposée au dossier. */
+  autorisationSortieSignee?: boolean;
+  /**
+   * Section précise de l'enfant, plus fine que `groupeAge` : la réglementation
+   * distingue nourrissons (3-12 mois), petite, moyenne et grande section.
+   */
+  section?: 'Nourrissons' | 'Petite section' | 'Moyenne section' | 'Grande section';
   // ✅ Jour du mois (1-31) où la facture mensuelle de cet enfant doit être générée
   // automatiquement + notification envoyée au directeur jusqu'au règlement.
   jourEcheanceMensuel?: number;
@@ -73,6 +121,15 @@ export interface Presence {
   humeur?: string;
   // Personne ayant récupéré l’enfant lors du départ quotidien.
   personneRecuperation?: string;
+  /** Personne ayant déposé l'enfant le matin (registre d'appel légal). */
+  deposePar?: string;
+  /** Identifiant de la PersonneAutorisee ayant récupéré l'enfant, si tracé. */
+  recupereParId?: string;
+  /**
+   * Résultat du contrôle d'autorisation au départ. `false` signale un retrait par
+   * une personne non habilitée : l'incident doit rester visible dans le registre.
+   */
+  recuperationAutorisee?: boolean;
 }
 
 export interface PresenceJournee {
@@ -82,6 +139,62 @@ export interface PresenceJournee {
   statut: 'ouverte' | 'validee';
   valideeLe?: string;
   valideePar?: string;
+}
+
+// --- Dossier médical & suivi de santé ---------------------------------------
+
+export type SanteEvenementType =
+  | 'medicament'
+  | 'incident'
+  | 'soin'
+  | 'visite_medicale'
+  | 'visite_psychologique'
+  | 'rappel_medical';
+
+export type SanteGravite = 'legere' | 'moyenne' | 'grave';
+
+/**
+ * Écriture du registre de santé d'un enfant. Un événement est immuable dans
+ * l'esprit du décret : on corrige en le modifiant plutôt qu'en le supprimant,
+ * afin de conserver une trace exploitable lors d'un contrôle.
+ */
+export interface SanteEvenement {
+  id: string;
+  enfantId: string;
+  type: SanteEvenementType;
+  /** Jour de l'événement, format YYYY-MM-DD. */
+  date: string;
+  /** Heure de l'événement, format HH:MM. */
+  heure?: string;
+
+  // --- Administration d'un médicament ---
+  medicament?: string;
+  dose?: string;
+  /** true = administration couverte par une ordonnance déposée au dossier. */
+  ordonnance?: boolean;
+  administrePar?: string;
+
+  // --- Incident et soins ---
+  description?: string;
+  gravite?: SanteGravite;
+  /** Lieu de l'incident (cour, salle d'activité, réfectoire…). */
+  localisation?: string;
+  soinsDonnes?: string;
+  /** true = les parents ont été prévenus ; la date est conservée séparément. */
+  parentsAverti?: boolean;
+  parentsAvertiLe?: string;
+
+  // --- Visite d'un professionnel ou rappel ---
+  praticien?: string;
+  professionnelType?: 'medecin' | 'psychologue' | 'infirmier' | 'autre';
+  conclusion?: string;
+  /** Date à laquelle Rawdha+ doit rappeler l'échéance (YYYY-MM-DD). */
+  prochainRappel?: string;
+
+  // --- Traçabilité ---
+  createdBy: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Paiement {
@@ -166,6 +279,36 @@ export interface Personnel {
   // ✅ Assurance de l'éducatrice/employé + référence (numéro de police, etc.)
   assuranceActive?: boolean;
   numeroAssurance?: string;
+  // --- Dossier RH exigé lors des contrôles ---
+  /** Diplômes et qualifications déclarés (ex. « Éducatrice agréée », « CAP petite enfance »). */
+  diplomes?: string[];
+  /** Référence du ou des diplômes (numéro, organisme délivreur). */
+  referencesDiplomes?: string;
+  /** Certificat médical d'aptitude professionnelle déposé au dossier. */
+  certificatMedicalAptitude?: boolean;
+  /** Extrait de casier judiciaire (bulletin n°3) déposé au dossier. */
+  casierJudiciaire?: boolean;
+  dateEmbauche?: string;
+  /** Rôle utilisé pour le calcul du ratio d'encadrement (see Parametres). */
+  roleEncadrement?: boolean;
+  /** Registre des gardes et permanences assurées par cet employé. */
+  gardes?: GardePeriode[];
+}
+
+/**
+ * Une garde ou permanence assurée par un membre du personnel.
+ * Le registre est tenu par personne (voir Personnel) et agrégé par jour pour
+ * l'affichage et l'impression du registre mensuel exigé lors des contrôles.
+ */
+export interface GardePeriode {
+  /** Identifiant unique de la ligne, pour pouvoir la retirer individuellement. */
+  id: string;
+  /** Date de la garde au format AAAA-MM-JJ. */
+  date: string;
+  type: 'Week-end' | 'Jour férié' | 'Permanence';
+  personnelId: string;
+  horaire?: string;
+  note?: string;
 }
 
 export interface Classe {
@@ -176,12 +319,35 @@ export interface Classe {
   capacite: number;
 }
 
+/**
+ * Domaines d'éveil et de stimulation prévus par le programme pédagogique.
+ * Le rattachement de chaque atelier à un domaine est ce qui rend le planning
+ * lisible lors d'un contrôle pédagogique.
+ */
+export type ActiviteDomaine =
+  | 'Éveil sensoriel'
+  | 'Psychomotricité'
+  | 'Langage & comptines'
+  | 'Motricité fine'
+  | 'Arts plastiques'
+  | 'Vie pratique & autonomie'
+  | 'Jeux libres';
+
 export interface Activite {
   id: string;
   crecheId?: string;
   titre: string;
   date: string;
   groupe: 'Bébés' | 'Moyens' | 'Grands';
+  /** Domaine d'éveil travaillé par l'atelier (facultatif : les anciens ateliers n'en ont pas). */
+  domaine?: ActiviteDomaine;
+  /** Compétence précise visée par l'atelier. */
+  competenceVisee?: string;
+  heureDebut?: string;
+  heureFin?: string;
+  materielRequis?: string;
+  lieu?: string;
+  educateurRef?: string;
 }
 
 export interface Repas {

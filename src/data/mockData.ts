@@ -13,7 +13,7 @@ export const enfantsData: Enfant[] = [
     statut: 'Actif',
     contactsUrgence: [{ id: 'c1', nom: 'Amira Khellaf', telephone: '0555 123 456', lien: 'Mère' }],
     parents: [{ id: 'p1', nom: 'Khellaf', prenom: 'Amira', lien: 'Mère', telephone: '0555 123 456' }],
-    documentsRequis: { certificatMedical: true, carnetVaccination: true, justificatifDomicile: true, photoIdentite: true }
+    documentsRequis: { certificatMedical: true, carnetVaccination: true, justificatifDomicile: true, photoIdentite: true, contratAccueil: false, extraitNaissance: false }
   }
 ];
 

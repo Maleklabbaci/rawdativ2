@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Enfant, Presence, PresenceJournee, Paiement, Achat, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction, CommunityFeature, CommunityFeatureKind, AdminAuditLog, AdminAuditAction, AdminAuditTargetType, AdminFollowup, AdminFollowupChannel, AdminFollowupStatus, CommercialStage } from '../types';
+import { Enfant, PersonneAutorisee, SanteEvenement, Presence, PresenceJournee, Paiement, Achat, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction, CommunityFeature, CommunityFeatureKind, AdminAuditLog, AdminAuditAction, AdminAuditTargetType, AdminFollowup, AdminFollowupChannel, AdminFollowupStatus, CommercialStage } from '../types';
 import { 
   getCollectionData, 
   addCollectionDocument, 
@@ -17,6 +17,8 @@ const DEFAULT_CHILD_DOCUMENTS: Enfant['documentsRequis'] = {
   carnetVaccination: false,
   justificatifDomicile: false,
   photoIdentite: false,
+  contratAccueil: false,
+  extraitNaissance: false,
 };
 
 function normalizeDocumentsRequis(value: unknown): Enfant['documentsRequis'] {
@@ -31,7 +33,33 @@ function normalizeDocumentsRequis(value: unknown): Enfant['documentsRequis'] {
     carnetVaccination: source.carnetVaccination === true,
     justificatifDomicile: source.justificatifDomicile === true,
     photoIdentite: source.photoIdentite === true,
+    contratAccueil: source.contratAccueil === true,
+    extraitNaissance: source.extraitNaissance === true,
   };
+}
+
+/**
+ * Normalise la liste des personnes habilitées à récupérer l'enfant. Les fiches
+ * enregistrées avant l'introduction du décret n'en possèdent pas : on renvoie
+ * alors un tableau vide plutôt qu'`undefined`, pour que l'interface de retrait
+ * puisse toujours distinguer « aucune autorisation déclarée » de « non chargé ».
+ */
+function normalizePersonnesAutorisees(value: unknown): PersonneAutorisee[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(Boolean).map((item, index) => {
+    const source = item as Partial<PersonneAutorisee>;
+    return {
+      id: typeof source.id === 'string' && source.id ? source.id : `personne_${index}`,
+      nom: typeof source.nom === 'string' ? source.nom : '',
+      prenom: typeof source.prenom === 'string' && source.prenom ? source.prenom : undefined,
+      lien: typeof source.lien === 'string' && source.lien ? source.lien : 'Autre',
+      telephone: typeof source.telephone === 'string' ? source.telephone : '',
+      pieceIdentite: typeof source.pieceIdentite === 'string' && source.pieceIdentite
+        ? source.pieceIdentite
+        : undefined,
+      active: source.active !== false,
+    };
+  });
 }
 
 function normalizeEnfantData(enfant: Partial<Enfant> | null | undefined): Enfant {
@@ -76,6 +104,17 @@ function normalizeEnfantData(enfant: Partial<Enfant> | null | undefined): Enfant
     contactsUrgence,
     documentsRequis: normalizeDocumentsRequis(candidate.documentsRequis),
     documentsFichiers,
+    matricule: typeof candidate.matricule === 'number' && Number.isFinite(candidate.matricule)
+      ? candidate.matricule
+      : undefined,
+    personnesAutorisees: normalizePersonnesAutorisees(candidate.personnesAutorisees),
+    autorisationSortieSignee: candidate.autorisationSortieSignee === true,
+    section: candidate.section === 'Nourrissons'
+      || candidate.section === 'Petite section'
+      || candidate.section === 'Moyenne section'
+      || candidate.section === 'Grande section'
+      ? candidate.section
+      : undefined,
   } as Enfant;
 }
 
@@ -213,6 +252,7 @@ interface DbContextType {
   classes: Classe[];
   presences: Presence[];
   presenceJournees: PresenceJournee[];
+  santeEvenements: SanteEvenement[];
   paiements: Paiement[];
   achats: Achat[];
   personnel: Personnel[];
@@ -292,6 +332,9 @@ interface DbContextType {
   addPresence: (presence: Omit<Presence, 'id'>) => Promise<string>;
   updatePresence: (id: string, presence: Partial<Presence>) => Promise<void>;
   deletePresence: (id: string) => Promise<void>;
+  addSanteEvenement: (evenement: Omit<SanteEvenement, 'id'>) => Promise<string>;
+  updateSanteEvenement: (id: string, evenement: Partial<SanteEvenement>) => Promise<void>;
+  deleteSanteEvenement: (id: string) => Promise<void>;
   savePresenceJournee: (journee: Omit<PresenceJournee, 'id'> & { id?: string }) => Promise<string>;
 
   addPaiement: (paiement: Omit<Paiement, 'id'>) => Promise<string>;
@@ -341,6 +384,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const [classes, setClasses] = useState<Classe[]>([]);
   const [presences, setPresences] = useState<Presence[]>([]);
   const [presenceJournees, setPresenceJournees] = useState<PresenceJournee[]>([]);
+  const [santeEvenements, setSanteEvenements] = useState<SanteEvenement[]>([]);
   const [paiements, setPaiements] = useState<Paiement[]>([]);
   const [achats, setAchats] = useState<Achat[]>([]);
   const [personnel, setPersonnel] = useState<Personnel[]>([]);
@@ -382,6 +426,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setClasses([]);
       setPresences([]);
       setPresenceJournees([]);
+      setSanteEvenements([]);
       setPaiements([]);
       setAchats([]);
       setPersonnel([]);
@@ -460,8 +505,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         getCollectionData<AppNotification>('notifications'),
         user?.role === 'admin' ? getCollectionData<AdminAuditLog>('admin_audit_logs') : Promise.resolve([] as AdminAuditLog[]),
         user?.role === 'admin' ? getCollectionData<AdminFollowup>('admin_followups') : Promise.resolve([] as AdminFollowup[]),
+        getCollectionData<SanteEvenement>('sante_evenements'),
       ])
-        .then(([dbClasses, dbActivites, dbRepas, dbAchats, dbMessages, dbAvis, dbSignalements, dbCommunityPosts, dbCommunityComments, dbCommunityReactions, dbCommunityFeatures, dbInscriptionLinks, dbDemandesAdmission, dbNotifications, dbAdminAuditLogs, dbAdminFollowups]) => {
+        .then(([dbClasses, dbActivites, dbRepas, dbAchats, dbMessages, dbAvis, dbSignalements, dbCommunityPosts, dbCommunityComments, dbCommunityReactions, dbCommunityFeatures, dbInscriptionLinks, dbDemandesAdmission, dbNotifications, dbAdminAuditLogs, dbAdminFollowups, dbSanteEvenements]) => {
           setClasses(dbClasses);
           setActivites(dbActivites);
           setRepas(dbRepas);
@@ -478,6 +524,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
           setNotifications(dbNotifications);
           setAdminAuditLogs((Array.isArray(dbAdminAuditLogs) ? dbAdminAuditLogs : []).filter(Boolean).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
           setAdminFollowups((Array.isArray(dbAdminFollowups) ? dbAdminFollowups : []).filter(Boolean).sort((a, b) => (a.dueAt || a.createdAt).localeCompare(b.dueAt || b.createdAt)));
+          setSanteEvenements(Array.isArray(dbSanteEvenements) ? dbSanteEvenements : []);
         })
         .catch(err => {
           console.error('Erreur de connexion à Supabase (chargement arrière-plan):', err);
@@ -559,6 +606,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const scopedPresences = user?.role === 'directeur' ? presences.filter(p => validEnfantIds.has(p.enfantId)) : presences;
   const scopedPresenceJournees = user?.role === 'directeur' ? presenceJournees.filter(j => j.crecheId === user.id) : presenceJournees;
   const scopedPaiements = user?.role === 'directeur' ? paiements.filter(p => validEnfantIds.has(p.enfantId)) : paiements;
+  const scopedSanteEvenements = user?.role === 'directeur' ? santeEvenements.filter(e => validEnfantIds.has(e.enfantId)) : santeEvenements;
   const scopedAchats = user?.role === 'directeur' ? achats.filter(achat => achat.crecheId === user.id) : achats;
 
   // ✅ FIX: avant, TOUS les comptes (tous les directeurs : nom, email, statut abonnement...) étaient
@@ -642,13 +690,31 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   // --- ENFANTS ---
+  // Le registre matricule est propre à chaque crèche : on repart du plus grand
+  // numéro déjà attribué dans la même crèche pour garantir une suite continue,
+  // sans collision et sans trou visible lors du contrôle de la DAS.
+  const prochainMatricule = (crecheId?: string) => {
+    const pool = enfants.filter(item => (crecheId ? item.crecheId === crecheId : !item.crecheId));
+    const maximum = pool.reduce(
+      (acc, item) => (typeof item.matricule === 'number' && item.matricule > acc ? item.matricule : acc),
+      0,
+    );
+    return maximum + 1;
+  };
+
   const addEnfant = async (enfant: Omit<Enfant, 'id'>) => {
     assertWriteAccess();
     const tempId = (enfant as any).id || 'child_' + Date.now();
-    const cleanEnfant = normalizeEnfantData({ ...enfant, id: tempId } as Enfant);
+    // Le matricule est attribué une seule fois, à l'admission : il identifie
+    // l'enfant dans le registre officiel et ne doit plus changer ensuite.
+    const enfantComplet: Omit<Enfant, 'id'> = {
+      ...enfant,
+      matricule: enfant.matricule ?? prochainMatricule(enfant.crecheId),
+    };
+    const cleanEnfant = normalizeEnfantData({ ...enfantComplet, id: tempId } as Enfant);
     setEnfants(prev => [...prev.filter(item => item.id !== tempId), cleanEnfant]);
     try {
-      const persistedEnfant = normalizeEnfantData({ ...enfant, id: tempId });
+      const persistedEnfant = normalizeEnfantData({ ...enfantComplet, id: tempId });
       const freshId = await addCollectionDocument('enfants', persistedEnfant);
       setEnfants(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;
@@ -784,6 +850,48 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     setPresences(prev => prev.filter(item => item.id !== id));
     try { await deleteCollectionDocument('presences', id); } catch (err) {
       if (previous) setPresences(prev => [...prev, previous]);
+      notifyWriteError('suppression');
+    }
+  };
+
+  // --- Registre de santé (médicaments, incidents, visites) -----------------
+  // Ces écritures constituent le registre légal de suivi : elles sont créées et
+  // modifiées mais jamais silencieusement perdues. Une suppression est réservée
+  // à une correction d'erreur de saisie et reste tracée côté interface.
+  const addSanteEvenement = async (evenement: Omit<SanteEvenement, 'id'>) => {
+    assertWriteAccess();
+    const tempId = (evenement as any).id || 'sante_' + Date.now();
+    const cleanEvenement = { ...evenement, id: tempId } as SanteEvenement;
+    setSanteEvenements(prev => [...prev.filter(item => item.id !== tempId), cleanEvenement]);
+    try {
+      const freshId = await addCollectionDocument('sante_evenements', cleanEvenement);
+      setSanteEvenements(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      return freshId;
+    } catch (err) {
+      setSanteEvenements(prev => prev.filter(item => item.id !== tempId));
+      notifyWriteError('ajout');
+      return tempId;
+    }
+  };
+
+  const updateSanteEvenement = async (id: string, data: Partial<SanteEvenement>) => {
+    assertWriteAccess();
+    const previous = santeEvenements.find(item => item.id === id);
+    setSanteEvenements(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
+    try {
+      await updateCollectionDocument<SanteEvenement>('sante_evenements', id, data);
+    } catch (err) {
+      if (previous) setSanteEvenements(prev => prev.map(item => item.id === id ? previous : item));
+      notifyWriteError('modification');
+    }
+  };
+
+  const deleteSanteEvenement = async (id: string) => {
+    assertWriteAccess();
+    const previous = santeEvenements.find(item => item.id === id);
+    setSanteEvenements(prev => prev.filter(item => item.id !== id));
+    try { await deleteCollectionDocument('sante_evenements', id); } catch (err) {
+      if (previous) setSanteEvenements(prev => [...prev, previous]);
       notifyWriteError('suppression');
     }
   };
@@ -1698,6 +1806,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       enfants: scopedEnfants,
       classes: scopedClasses,
       presences: scopedPresences,
+      santeEvenements: scopedSanteEvenements,
       presenceJournees: scopedPresenceJournees,
       paiements: scopedPaiements,
       achats: scopedAchats,
@@ -1768,6 +1877,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       addPresence,
       updatePresence,
       deletePresence,
+      addSanteEvenement,
+      updateSanteEvenement,
+      deleteSanteEvenement,
       savePresenceJournee,
       addPaiement,
       updatePaiement,
