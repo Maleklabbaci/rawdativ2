@@ -291,6 +291,24 @@ export interface Personnel {
   dateEmbauche?: string;
   /** Rôle utilisé pour le calcul du ratio d'encadrement (see Parametres). */
   roleEncadrement?: boolean;
+  /** Registre des gardes et permanences assurées par cet employé. */
+  gardes?: GardePeriode[];
+}
+
+/**
+ * Une garde ou permanence assurée par un membre du personnel.
+ * Le registre est tenu par personne (voir Personnel) et agrégé par jour pour
+ * l'affichage et l'impression du registre mensuel exigé lors des contrôles.
+ */
+export interface GardePeriode {
+  /** Identifiant unique de la ligne, pour pouvoir la retirer individuellement. */
+  id: string;
+  /** Date de la garde au format AAAA-MM-JJ. */
+  date: string;
+  type: 'Week-end' | 'Jour férié' | 'Permanence';
+  personnelId: string;
+  horaire?: string;
+  note?: string;
 }
 
 export interface Classe {

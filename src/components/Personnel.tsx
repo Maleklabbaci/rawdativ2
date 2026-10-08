@@ -17,13 +17,16 @@ import {
   Clock,
   GraduationCap,
   ShieldCheck,
-  ShieldAlert
+  ShieldAlert,
+  CalendarDays,
+  Printer,
+  MoonStar
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
-import { Personnel as PersonnelType } from '../types';
+import { GardePeriode, Personnel as PersonnelType } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface RichPersonnel extends PersonnelType {
@@ -39,8 +42,8 @@ export default function Personnel() {
   const isArabic = language === 'ar';
   const { confirm } = useConfirmDialog();
 
-  const { personnel: allDbPersonnel, classes: allDbClasses, enfants: allDbEnfants, addPersonnel, deletePersonnel } = useDb();
-  const { user } = useAuth();
+  const { personnel: allDbPersonnel, classes: allDbClasses, enfants: allDbEnfants, addPersonnel, updatePersonnel, deletePersonnel } = useDb();
+  const { user, creche } = useAuth();
   const isDirecteur = user?.role === 'directeur';
   const dbPersonnel = isDirecteur ? allDbPersonnel.filter((p: any) => p.crecheId === user!.id) : allDbPersonnel;
   const classes = (isDirecteur ? allDbClasses.filter((c: any) => c.crecheId === user!.id) : allDbClasses) as any[];
@@ -148,6 +151,170 @@ export default function Personnel() {
   // Seuil d'alerte indicatif : au-delà, la crèche doit vérifier son agrément.
   const SEUIL_RATIO = 8;
   const ratioDepasse = enfantsParEncadrant !== null && enfantsParEncadrant > SEUIL_RATIO;
+
+  // --- Registre des gardes et permanences ---------------------------------
+  // Les gardes de week-end et de jours fériés doivent être consignées dans un
+  // registre nominatif. Chaque membre du personnel porte ses propres gardes ;
+  // on agrège ici pour l'affichage mensuel et l'impression.
+  const JOURS_FERIES_FIXES: Record<string, string> = {
+    '01-01': 'Nouvel An',
+    '01-12': 'Yennayer',
+    '05-01': 'Fête du Travail',
+    '07-05': "Fête de l'Indépendance",
+    '11-01': 'Anniversaire de la Révolution',
+  };
+  const JOURS_LONGS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+
+  const [gardeMonth, setGardeMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [gardeDate, setGardeDate] = useState<string | null>(null);
+  const [gardeForm, setGardeForm] = useState<{ personnelId: string; type: GardePeriode['type']; horaire: string; note: string }>({
+    personnelId: '',
+    type: 'Week-end',
+    horaire: '08:00 - 17:00',
+    note: '',
+  });
+
+  const gardesDuMois = personnel
+    .flatMap(membre => (membre.gardes || []).map(garde => ({
+      ...garde,
+      personnelId: garde.personnelId || membre.id,
+      nomComplet: `${membre.prenom} ${membre.nom}`.trim(),
+      poste: membre.poste,
+    })))
+    .filter(garde => (garde.date || '').startsWith(gardeMonth))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  /** Tous les jours du mois qui appellent une garde : week-ends, fériés fixes et jours déjà renseignés. */
+  const joursDeGardeDuMois = (() => {
+    const [annee, mois] = gardeMonth.split('-').map(Number);
+    const dernierJour = new Date(annee, mois, 0).getDate();
+    const jours: { date: string; jour: string; libelle: string; type: GardePeriode['type'] }[] = [];
+    for (let jour = 1; jour <= dernierJour; jour += 1) {
+      const date = new Date(annee, mois - 1, jour, 12);
+      const iso = `${annee}-${String(mois).padStart(2, '0')}-${String(jour).padStart(2, '0')}`;
+      const ferie = JOURS_FERIES_FIXES[iso.slice(5)];
+      const weekend = date.getDay() === 5 || date.getDay() === 6; // vendredi et samedi
+      const dejaRenseigne = gardesDuMois.some(garde => garde.date === iso);
+      if (!weekend && !ferie && !dejaRenseigne) continue;
+      const type: GardePeriode['type'] = ferie && !weekend ? 'Jour férié' : weekend ? 'Week-end' : 'Permanence';
+      const libelle = ferie
+        ? `${ferie}${weekend ? ' (week-end)' : ''}`
+        : date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long' });
+      jours.push({ date: iso, jour: JOURS_LONGS[date.getDay()], libelle, type });
+    }
+    return jours;
+  })();
+
+  const libelleMois = new Date(`${gardeMonth}-01T12:00:00`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+
+  const changerMoisGarde = (offset: number) => {
+    const [annee, mois] = gardeMonth.split('-').map(Number);
+    const cible = new Date(annee, mois - 1 + offset, 1);
+    setGardeMonth(`${cible.getFullYear()}-${String(cible.getMonth() + 1).padStart(2, '0')}`);
+    setGardeDate(null);
+  };
+
+  const ajouterGarde = async (date: string) => {
+    const membre = personnel.find(p => p.id === gardeForm.personnelId);
+    if (!membre) return;
+    const garde: GardePeriode = {
+      id: `garde_${Date.now()}`,
+      date,
+      type: gardeForm.type,
+      personnelId: membre.id,
+      horaire: gardeForm.horaire.trim() || undefined,
+      note: gardeForm.note.trim() || undefined,
+    };
+    setGardeDate(null);
+    setGardeForm({ personnelId: '', type: 'Week-end', horaire: '08:00 - 17:00', note: '' });
+    await updatePersonnel(membre.id, { gardes: [...(membre.gardes || []), garde] });
+  };
+
+  const retirerGarde = async (garde: { id: string; personnelId?: string }) => {
+    const membre = personnel.find(p => p.id === garde.personnelId);
+    if (!membre) return;
+    await updatePersonnel(membre.id, { gardes: (membre.gardes || []).filter(item => item.id !== garde.id) });
+  };
+
+  /** Registre mensuel des gardes, imprimable pour le contrôle. */
+  const imprimerRegistreGardes = () => {
+    const lignes = gardesDuMois.map(garde => {
+      const jour = new Date(`${garde.date}T12:00:00`);
+      return `<tr>
+        <td class="num">${jour.toLocaleDateString('fr-FR')}</td>
+        <td>${JOURS_LONGS[jour.getDay()]}</td>
+        <td>${garde.type}</td>
+        <td><strong>${garde.nomComplet}</strong></td>
+        <td>${garde.poste || '—'}</td>
+        <td class="center">${garde.horaire || '—'}</td>
+        <td class="small">${garde.note || ''}</td>
+        <td class="sign"></td>
+      </tr>`;
+    }).join('');
+
+    const agentsConcernes = new Set(gardesDuMois.map(garde => garde.personnelId)).size;
+
+    const html = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8" />
+<title>Registre des gardes — ${libelleMois}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; margin: 26px; color: #0f172a; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #4338ca; padding-bottom: 13px; margin-bottom: 18px; }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  .meta { font-size: 11px; color: #64748b; line-height: 1.6; }
+  .badge { background: #eef2ff; color: #4338ca; font-size: 10px; font-weight: 800; padding: 4px 9px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+  th { background: #f1f5f9; text-align: left; padding: 8px 6px; border: 1px solid #cbd5e1; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; color: #475569; }
+  td { padding: 7px 6px; border: 1px solid #e2e8f0; vertical-align: middle; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  td.num { font-weight: 800; color: #4338ca; white-space: nowrap; }
+  td.center { text-align: center; }
+  td.small { font-size: 9.5px; color: #475569; }
+  td.sign { width: 92px; }
+  footer { margin-top: 20px; padding-top: 11px; border-top: 1px solid #e2e8f0; font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; }
+  .visa { margin-top: 26px; display: flex; justify-content: flex-end; gap: 60px; font-size: 10px; color: #475569; }
+  .visa div { border-top: 1px solid #94a3b8; padding-top: 5px; width: 190px; text-align: center; }
+  @media print { body { margin: 8mm; } }
+</style></head>
+<body>
+  <header>
+    <div>
+      <h1>Registre des gardes et permanences</h1>
+      <div class="meta">
+        <strong>${creche?.nom || 'Rawdha+'}</strong>${creche?.adresse ? ` — ${creche.adresse}` : ''}<br />
+        Période : ${libelleMois} — ${gardesDuMois.length} garde(s) consignée(s), ${agentsConcernes} agent(s)
+      </div>
+    </div>
+    <span class="badge">Registre légal</span>
+  </header>
+  <table>
+    <thead><tr>
+      <th>Date</th><th>Jour</th><th>Type</th><th>Agent</th><th>Poste</th><th>Horaire</th><th>Observations</th><th>Émargement</th>
+    </tr></thead>
+    <tbody>${lignes || '<tr><td colspan="8" style="text-align:center;color:#94a3b8">Aucune garde enregistrée pour cette période.</td></tr>'}</tbody>
+  </table>
+  <div class="visa">
+    <div>Visa de la direction</div>
+    <div>Visa de l'inspection (DAS)</div>
+  </div>
+  <footer>
+    <span>Document généré par Rawdha+ — registre des week-ends, jours fériés et permanences.</span>
+    <span>Imprimé le ${new Date().toLocaleDateString('fr-FR')}</span>
+  </footer>
+</body></html>`;
+
+    const printWindow = window.open('', '_blank', 'height=900,width=1000');
+    if (!printWindow) return;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.onload = () => {
+      setTimeout(() => { printWindow.focus(); printWindow.print(); }, 250);
+    };
+  };
 
   // Pièces RH manquantes, pour le suivi de conformité.
   const dossiersRhIncomplets = personnel.filter(p => {
@@ -812,6 +979,175 @@ export default function Personnel() {
             </motion.div>
           </div>
         )}
+
+      {/* Registre des gardes et permanences : week-ends et jours fériés */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+          <div className="flex items-center gap-3">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-indigo-50 text-indigo-600">
+              <MoonStar className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm font-black text-slate-800">
+                {isArabic ? 'سجل الحراسة والمداومة' : 'Registre des gardes & permanences'}
+              </p>
+              <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
+                {gardesDuMois.length} {isArabic ? 'مداومة مسجلة في' : 'garde(s) enregistrée(s) en'} {libelleMois}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
+              <button
+                type="button"
+                onClick={() => changerMoisGarde(-1)}
+                className="grid h-6 w-6 place-items-center rounded-lg text-sm font-black text-slate-500 hover:bg-white hover:text-indigo-600"
+                aria-label={isArabic ? 'الشهر السابق' : 'Mois précédent'}
+              >
+                ‹
+              </button>
+              <span className="px-1.5 text-[11px] font-black capitalize text-slate-700">{libelleMois}</span>
+              <button
+                type="button"
+                onClick={() => changerMoisGarde(1)}
+                className="grid h-6 w-6 place-items-center rounded-lg text-sm font-black text-slate-500 hover:bg-white hover:text-indigo-600"
+                aria-label={isArabic ? 'الشهر التالي' : 'Mois suivant'}
+              >
+                ›
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={imprimerRegistreGardes}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-[11px] font-black text-indigo-700 transition hover:bg-indigo-100"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              {isArabic ? 'طباعة السجل' : 'Imprimer le registre'}
+            </button>
+          </div>
+        </div>
+
+        <div className="divide-y divide-slate-100">
+          {joursDeGardeDuMois.length === 0 ? (
+            <p className="p-5 text-center text-xs font-semibold text-slate-400">
+              {isArabic ? 'لا توجد أيام مداومة في هذه الفترة.' : 'Aucun jour de garde sur cette période.'}
+            </p>
+          ) : joursDeGardeDuMois.map(jour => {
+            const affectations = gardesDuMois.filter(garde => garde.date === jour.date);
+            const formulaireOuvert = gardeDate === jour.date;
+            const badgeType = jour.type === 'Jour férié'
+              ? 'bg-rose-50 text-rose-700 border-rose-100'
+              : jour.type === 'Week-end'
+                ? 'bg-amber-50 text-amber-700 border-amber-100'
+                : 'bg-slate-50 text-slate-600 border-slate-200';
+            return (
+              <div key={jour.date} className="p-3 sm:px-5 sm:py-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <CalendarDays className="h-4 w-4 shrink-0 text-slate-300" />
+                  <span className="text-xs font-black capitalize text-slate-700">
+                    {jour.jour} {new Date(`${jour.date}T12:00:00`).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}
+                  </span>
+                  <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${badgeType}`}>
+                    {jour.libelle || jour.type}
+                  </span>
+
+                  {affectations.map(garde => (
+                    <span
+                      key={garde.id}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 py-1 pl-2.5 pr-1.5 text-[10px] font-black text-indigo-700"
+                    >
+                      {garde.nomComplet}
+                      {garde.horaire ? <span className="font-bold text-indigo-400">{garde.horaire}</span> : null}
+                      <button
+                        type="button"
+                        onClick={() => void retirerGarde(garde)}
+                        className="grid h-4 w-4 place-items-center rounded-full text-indigo-400 hover:bg-indigo-100 hover:text-rose-600"
+                        title={isArabic ? 'حذف' : 'Retirer cette garde'}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+
+                  {!formulaireOuvert && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGardeDate(jour.date);
+                        setGardeForm({
+                          personnelId: personnel.find(p => p.statut === 'Actif')?.id || '',
+                          type: jour.type,
+                          horaire: '08:00 - 17:00',
+                          note: '',
+                        });
+                      }}
+                      className="inline-flex items-center gap-1 rounded-full border border-dashed border-slate-300 px-2.5 py-1 text-[10px] font-black text-slate-500 hover:border-indigo-300 hover:text-indigo-600"
+                    >
+                      <Plus className="h-3 w-3" />
+                      {isArabic ? 'تعيين' : 'Affecter'}
+                    </button>
+                  )}
+                </div>
+
+                {formulaireOuvert && (
+                  <div className="mt-3 grid grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3 sm:grid-cols-2 lg:grid-cols-5">
+                    <select
+                      value={gardeForm.personnelId}
+                      onChange={e => setGardeForm({ ...gardeForm, personnelId: e.target.value })}
+                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-400"
+                    >
+                      <option value="">{isArabic ? 'اختر الموظف' : "Choisir l'agent"}</option>
+                      {personnel.filter(p => p.statut === 'Actif').map(membre => (
+                        <option key={membre.id} value={membre.id}>
+                          {membre.prenom} {membre.nom} — {membre.poste}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={gardeForm.type}
+                      onChange={e => setGardeForm({ ...gardeForm, type: e.target.value as GardePeriode['type'] })}
+                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-400"
+                    >
+                      <option value="Week-end">{isArabic ? 'عطلة نهاية الأسبوع' : 'Week-end'}</option>
+                      <option value="Jour férié">{isArabic ? 'يوم عطلة' : 'Jour férié'}</option>
+                      <option value="Permanence">{isArabic ? 'مداومة' : 'Permanence'}</option>
+                    </select>
+                    <input
+                      value={gardeForm.horaire}
+                      onChange={e => setGardeForm({ ...gardeForm, horaire: e.target.value })}
+                      placeholder="08:00 - 17:00"
+                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-400"
+                    />
+                    <input
+                      value={gardeForm.note}
+                      onChange={e => setGardeForm({ ...gardeForm, note: e.target.value })}
+                      placeholder={isArabic ? 'ملاحظة' : 'Observation'}
+                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-400"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={!gardeForm.personnelId}
+                        onClick={() => void ajouterGarde(jour.date)}
+                        className="flex-1 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-black text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                      >
+                        {isArabic ? 'حفظ' : 'Enregistrer'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGardeDate(null)}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-500 hover:bg-slate-50"
+                      >
+                        {isArabic ? 'إلغاء' : 'Annuler'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
       </AnimatePresence>
     </div>
   );
