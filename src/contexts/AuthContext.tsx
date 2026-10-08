@@ -7,6 +7,12 @@ interface CrecheInfo {
   adresse: string;
   logoUrl: string | null;
   tuitionFeeRate: number;
+  /**
+   * Capacité maximale d'accueil fixée par l'agrément de la wilaya (plafond légal
+   * de 150 enfants). `0` = non renseignée : aucun blocage n'est appliqué, mais
+   * l'alerte de conformité reste visible dans les Paramètres.
+   */
+  capaciteAutorisee: number;
 }
 
 interface AuthUserSnapshot {
@@ -69,6 +75,7 @@ const DEFAULT_CRECHE: CrecheInfo = {
   adresse: 'Plateforme de Gestion | منصة التسيير',
   logoUrl: null,
   tuitionFeeRate: 3500,
+  capaciteAutorisee: 0,
 };
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
@@ -157,6 +164,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         adresse: settings?.addressLine || DEFAULT_CRECHE.adresse,
         logoUrl: settings?.logoUrl || null,
         tuitionFeeRate: settings?.tuitionFeeRate ? Number(settings.tuitionFeeRate) : DEFAULT_CRECHE.tuitionFeeRate,
+        capaciteAutorisee: settings?.capaciteAutorisee ? Number(settings.capaciteAutorisee) : DEFAULT_CRECHE.capaciteAutorisee,
       });
     } catch (err) {
       console.error('Erreur chargement des paramètres de la crèche:', err);

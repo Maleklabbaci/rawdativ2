@@ -5,9 +5,10 @@ import {
   Plus, 
   Filter, 
   X, 
-  User, 
-  Heart, 
-  FileText, 
+  User,
+  Users,
+  Heart,
+  FileText,
   ShieldAlert, 
   Phone, 
   Mail, 
@@ -34,7 +35,7 @@ import {
 } from 'lucide-react';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
-import { Enfant, InscriptionLink } from '../types';
+import { Enfant, DocumentEnfantKey, DocumentFichier, PersonneAutorisee, InscriptionLink } from '../types';
 import EnfantDetails from './EnfantDetails';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
@@ -42,15 +43,36 @@ import { useToast } from '../contexts/ToastContext';
 import { motion, AnimatePresence } from 'motion/react';
 import * as QRCode from 'qrcode';
 
-type DocumentKey = 'certificatMedical' | 'carnetVaccination' | 'justificatifDomicile' | 'photoIdentite';
-type DocumentUpload = { nom: string; type: string; taille: number; contenu: string; ajouteLe: string };
+type DocumentKey = DocumentEnfantKey;
+type DocumentUpload = DocumentFichier;
+/** Drapeaux historiques du formulaire, conservés par pièce du dossier. */
+type DocumentFlag = 'docCertif' | 'docVaccin' | 'docDomicile' | 'docPhoto' | 'docContrat' | 'docExtrait';
 
 const DEFAULT_DOCUMENTS_REQUIS: Record<DocumentKey, boolean> = {
   certificatMedical: false,
   carnetVaccination: false,
   justificatifDomicile: false,
   photoIdentite: false,
+  contratAccueil: false,
+  extraitNaissance: false,
 };
+
+/**
+ * Correspondance entre une pièce du dossier et son drapeau dans le formulaire.
+ * Centraliser cette table évite la chaîne de ternaires qui devenait illisible
+ * à chaque ajout de pièce exigée par la réglementation.
+ */
+const DOCUMENT_FLAGS: Record<DocumentKey, DocumentFlag> = {
+  certificatMedical: 'docCertif',
+  carnetVaccination: 'docVaccin',
+  justificatifDomicile: 'docDomicile',
+  photoIdentite: 'docPhoto',
+  contratAccueil: 'docContrat',
+  extraitNaissance: 'docExtrait',
+};
+
+/** Liens proposés par défaut pour qualifier une personne autorisée. */
+const LIENS_AUTORISES = ['Mère', 'Père', 'Tuteur', 'Grand-mère', 'Grand-père', 'Oncle', 'Tante', 'Chauffeur', 'Autre'];
 
 type ImportChildDraft = {
   nom: string;
@@ -152,6 +174,8 @@ function getDocumentsRequis(enfant?: Partial<Enfant> | null): Record<DocumentKey
     carnetVaccination: source.carnetVaccination === true,
     justificatifDomicile: source.justificatifDomicile === true,
     photoIdentite: source.photoIdentite === true,
+    contratAccueil: source.contratAccueil === true,
+    extraitNaissance: source.extraitNaissance === true,
   };
 }
 
@@ -170,11 +194,17 @@ export default function Enfants() {
     demandesAdmission,
     decideAdmission,
   } = useDb();
-  const { user } = useAuth();
+  const { user, creche } = useAuth();
   const isDirecteur = user?.role === 'directeur';
   const enfants = allEnfants
     .filter((e): e is Enfant => Boolean(e && e.id))
     .filter(e => !isDirecteur || e.crecheId === user?.id);
+
+  // Capacité maximale fixée par l'agrément de la wilaya. `0` = non renseignée :
+  // Rawdha+ n'impose alors aucune limite mais le rappel reste visible dans les
+  // Paramètres, pour ne jamais bloquer une crèche qui n'a pas encore saisi son
+  // agrément.
+  const capaciteAutorisee = creche?.capaciteAutorisee ?? 0;
 
   const handleDeleteEnfant = async (enfant: Enfant) => {
     const confirmed = await confirm({
@@ -218,6 +248,7 @@ export default function Enfants() {
     dateNaissance: '',
     genre: 'Garçon' as 'Garçon' | 'Fille',
     groupeAge: 'Bébés' as 'Bébés' | 'Moyens' | 'Grands',
+    section: '' as '' | 'Nourrissons' | 'Petite section' | 'Moyenne section' | 'Grande section',
     allergie: '',
     regimeAlimentaire: '',
     bloodGroup: 'O+',
@@ -236,8 +267,14 @@ export default function Enfants() {
     docVaccin: false,
     docDomicile: false,
     docPhoto: false,
+    docContrat: false,
+    docExtrait: false,
     docFiles: {} as Partial<Record<DocumentKey, DocumentUpload>>,
     jourEcheanceMensuel: '5', // ✅ jour du mois (1-31) pour la facture auto + notification de paiement
+    // Autorisation de sortie signée par le tuteur légal.
+    autorisationSortieSignee: false,
+    // Personnes habilitées à récupérer l'enfant (décret : autorisation écrite).
+    personnesAutorisees: [] as PersonneAutorisee[],
   });
 
   const admissionLinkUrl = newAdmissionLink?.token
@@ -348,7 +385,7 @@ export default function Enfants() {
       if (!contenu) return;
       setFormData(prev => ({
         ...prev,
-        [key === 'certificatMedical' ? 'docCertif' : key === 'carnetVaccination' ? 'docVaccin' : key === 'justificatifDomicile' ? 'docDomicile' : 'docPhoto']: true,
+        [DOCUMENT_FLAGS[key]]: true,
         docFiles: {
           ...prev.docFiles,
           [key]: { nom: file.name, type: file.type || 'application/octet-stream', taille: file.size, contenu, ajouteLe: new Date().toISOString() }
@@ -356,6 +393,43 @@ export default function Enfants() {
       }));
     };
     reader.readAsDataURL(file);
+  };
+
+  // --- Personnes habilitées à récupérer l'enfant ---------------------------
+  // Le décret impose que seules les personnes désignées par écrit par le tuteur
+  // légal puissent repartir avec l'enfant. Ces fiches vivent dans le dossier et
+  // servent de référence au pointage du soir.
+  const ajouterPersonneAutorisee = () => {
+    setFormData(prev => ({
+      ...prev,
+      personnesAutorisees: [
+        ...prev.personnesAutorisees,
+        {
+          id: `personne_${Date.now()}_${prev.personnesAutorisees.length}`,
+          nom: '',
+          prenom: '',
+          lien: 'Grand-mère',
+          telephone: '',
+          pieceIdentite: '',
+          active: true,
+        },
+      ],
+    }));
+  };
+
+  const modifierPersonneAutorisee = (id: string, changes: Partial<PersonneAutorisee>) => {
+    setFormData(prev => ({
+      ...prev,
+      personnesAutorisees: prev.personnesAutorisees.map(personne =>
+        personne.id === id ? { ...personne, ...changes } : personne),
+    }));
+  };
+
+  const retirerPersonneAutorisee = (id: string) => {
+    setFormData(prev => ({
+      ...prev,
+      personnesAutorisees: prev.personnesAutorisees.filter(personne => personne.id !== id),
+    }));
   };
 
   const parseCsvLine = (line: string, separator: string) => {
@@ -536,6 +610,23 @@ export default function Enfants() {
       return;
     }
 
+    // --- Plafond légal d'accueil -------------------------------------------
+    // Le décret fixe la capacité maximale par agrément de wilaya : une nouvelle
+    // inscription ne doit jamais la faire dépasser. On ne contrôle qu'à la
+    // création, une modification de fiche ne consommant aucune place.
+    if (!editingEnfantId && capaciteAutorisee > 0) {
+      const enfantsActifs = enfants.filter(item => item.statut === 'Actif').length;
+      if (enfantsActifs >= capaciteAutorisee) {
+        showToast(
+          isArabic
+            ? `تم بلوغ الطاقة القصوى المسموح بها (${capaciteAutorisee} طفلاً). لا يمكن تسجيل طفل جديد قبل تسوية الاعتماد.`
+            : `Capacité maximale autorisée atteinte (${capaciteAutorisee} enfants pour votre agrément). Faites réviser votre agrément auprès de la DAS avant toute nouvelle inscription.`,
+          'error',
+        );
+        return;
+      }
+    }
+
     if (editingEnfantId) {
       const existing = enfants.find(item => item.id === editingEnfantId);
       const updatedEnfant: Partial<Enfant> = {
@@ -544,6 +635,9 @@ export default function Enfants() {
         dateNaissance: formData.dateNaissance,
         genre: formData.genre,
         groupeAge: formData.groupeAge,
+        section: formData.section || undefined,
+        autorisationSortieSignee: formData.autorisationSortieSignee,
+        personnesAutorisees: formData.personnesAutorisees,
         allergie: formData.allergie || undefined,
         regimeAlimentaire: formData.regimeAlimentaire || undefined,
         groupeSanguin: formData.bloodGroup || undefined,
@@ -575,7 +669,9 @@ export default function Enfants() {
           certificatMedical: formData.docCertif,
           carnetVaccination: formData.docVaccin,
           justificatifDomicile: formData.docDomicile,
-          photoIdentite: formData.docPhoto
+          photoIdentite: formData.docPhoto,
+          contratAccueil: formData.docContrat,
+          extraitNaissance: formData.docExtrait
         },
         documentsFichiers: formData.docFiles,
         jourEcheanceMensuel: formData.jourEcheanceMensuel ? Number(formData.jourEcheanceMensuel) : undefined
@@ -591,6 +687,9 @@ export default function Enfants() {
         dateNaissance: formData.dateNaissance,
         genre: formData.genre,
         groupeAge: formData.groupeAge,
+        section: formData.section || undefined,
+        autorisationSortieSignee: formData.autorisationSortieSignee,
+        personnesAutorisees: formData.personnesAutorisees,
         dateInscription: new Date().toISOString().split('T')[0],
         statut: 'Actif',
         allergie: formData.allergie || undefined,
@@ -624,7 +723,9 @@ export default function Enfants() {
           certificatMedical: formData.docCertif,
           carnetVaccination: formData.docVaccin,
           justificatifDomicile: formData.docDomicile,
-          photoIdentite: formData.docPhoto
+          photoIdentite: formData.docPhoto,
+          contratAccueil: formData.docContrat,
+          extraitNaissance: formData.docExtrait
         },
         documentsFichiers: formData.docFiles,
         jourEcheanceMensuel: formData.jourEcheanceMensuel ? Number(formData.jourEcheanceMensuel) : undefined
@@ -655,8 +756,13 @@ export default function Enfants() {
       docVaccin: false,
       docDomicile: false,
       docPhoto: false,
+      docContrat: false,
+      docExtrait: false,
       docFiles: {},
       jourEcheanceMensuel: '5',
+      section: '',
+      autorisationSortieSignee: false,
+      personnesAutorisees: [],
     });
   };
 
@@ -992,6 +1098,11 @@ export default function Enfants() {
                                 docFiles: enfant.documentsFichiers || {},
                                 jourEcheanceMensuel: String(enfant.jourEcheanceMensuel || 5),
                                 docPhoto: getDocumentsRequis(enfant)?.photoIdentite ?? false,
+                                section: enfant.section || '',
+                                docContrat: getDocumentsRequis(enfant)?.contratAccueil ?? false,
+                                docExtrait: getDocumentsRequis(enfant)?.extraitNaissance ?? false,
+                                autorisationSortieSignee: enfant.autorisationSortieSignee === true,
+                                personnesAutorisees: enfant.personnesAutorisees || [],
                                 allergie: enfant.allergie || '',
                                 regimeAlimentaire: enfant.regimeAlimentaire || ''
                               });
@@ -1104,39 +1215,48 @@ export default function Enfants() {
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">
                         {isArabic ? 'الملف الإداري والتراخيص' : 'Dossier administratif et autorisations'}
                       </p>
-                      <div className="grid grid-cols-4 gap-2 text-center text-[10px] font-bold text-slate-500">
-                        <div className="space-y-1">
-                          <div className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
-                            getDocumentsRequis(enfant)?.certificatMedical ?? false ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
-                          }`}>
-                            {getDocumentsRequis(enfant)?.certificatMedical ?? false ? '✓' : '✗'}
-                          </div>
-                          <span className="block text-[9px] truncate">Médic</span>
-                        </div>
-                        <div className="space-y-1">
-                          <div className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
-                            getDocumentsRequis(enfant)?.carnetVaccination ?? false ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
-                          }`}>
-                            {getDocumentsRequis(enfant)?.carnetVaccination ?? false ? '✓' : '✗'}
-                          </div>
-                          <span className="block text-[9px] truncate">Vaccin</span>
-                        </div>
-                        <div className="space-y-1">
-                          <div className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
-                            getDocumentsRequis(enfant)?.justificatifDomicile ?? false ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
-                          }`}>
-                            {getDocumentsRequis(enfant)?.justificatifDomicile ?? false ? '✓' : '✗'}
-                          </div>
-                          <span className="block text-[9px] truncate">Domi</span>
-                        </div>
-                        <div className="space-y-1">
-                          <div className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
-                            getDocumentsRequis(enfant)?.photoIdentite ?? false ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
-                          }`}>
-                            {getDocumentsRequis(enfant)?.photoIdentite ?? false ? '✓' : '✗'}
-                          </div>
-                          <span className="block text-[9px] truncate pointer-events-none">Photo</span>
-                        </div>
+                      <div className="grid grid-cols-3 gap-2 text-center text-[10px] font-bold text-slate-500">
+                        {([
+                          ['certificatMedical', isArabic ? 'طبي' : 'Médic'],
+                          ['carnetVaccination', isArabic ? 'تلقيح' : 'Vaccin'],
+                          ['extraitNaissance', isArabic ? 'ميلاد' : 'Naiss.'],
+                          ['contratAccueil', isArabic ? 'عقد' : 'Contrat'],
+                          ['justificatifDomicile', isArabic ? 'إقامة' : 'Domic.'],
+                          ['photoIdentite', isArabic ? 'صورة' : 'Photo'],
+                        ] as Array<[DocumentKey, string]>).map(([key, label]) => {
+                          const present = getDocumentsRequis(enfant)[key];
+                          return (
+                            <div key={key} className="space-y-1">
+                              <div className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
+                                present ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
+                              }`}>
+                                {present ? '✓' : '✗'}
+                              </div>
+                              <span className="block text-[9px] truncate">{label}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Autorisations de sortie : contrôle immédiat pour la direction. */}
+                      <div className="mt-2.5 flex items-center justify-between gap-2 rounded-xl border border-slate-100 bg-white px-2.5 py-1.5">
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                          {isArabic ? 'تراخيص الاستلام' : 'Autorisations de sortie'}
+                        </span>
+                        {(() => {
+                          const autorisees = (enfant.personnesAutorisees || []).filter(p => p.active !== false);
+                          return (
+                            <span className={`rounded px-1.5 py-0.5 font-black text-[9px] ${
+                              autorisees.length > 0
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : 'bg-rose-50 text-rose-700'
+                            }`}>
+                              {autorisees.length > 0
+                                ? `${autorisees.length} ${isArabic ? 'شخص' : 'pers.'}`
+                                : (isArabic ? 'لا يوجد' : 'Aucune')}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
 
@@ -1192,6 +1312,11 @@ export default function Enfants() {
                           docDomicile: getDocumentsRequis(enfant).justificatifDomicile,
                           jourEcheanceMensuel: String(enfant.jourEcheanceMensuel || 5),
                           docPhoto: getDocumentsRequis(enfant).photoIdentite,
+                          section: enfant.section || '',
+                          docContrat: getDocumentsRequis(enfant)?.contratAccueil ?? false,
+                          docExtrait: getDocumentsRequis(enfant)?.extraitNaissance ?? false,
+                          autorisationSortieSignee: enfant.autorisationSortieSignee === true,
+                          personnesAutorisees: enfant.personnesAutorisees || [],
                           allergie: enfant.allergie || '',
                           regimeAlimentaire: enfant.regimeAlimentaire || ''
                         });
@@ -1584,11 +1709,13 @@ export default function Enfants() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 rounded-2xl p-4">
                     {([
-                      ['certificatMedical', isArabic ? 'الشهادة الطبية' : 'Certificat médical', 'docCertif'],
+                      ['certificatMedical', isArabic ? 'الشهادة الطبية للأهلية' : "Certificat médical d'aptitude", 'docCertif'],
                       ['carnetVaccination', isArabic ? 'دفتر التلقيح' : 'Carnet de vaccination', 'docVaccin'],
+                      ['extraitNaissance', isArabic ? 'شهادة الميلاد' : 'Extrait de naissance', 'docExtrait'],
                       ['justificatifDomicile', isArabic ? 'إثبات الإقامة' : 'Justificatif de domicile', 'docDomicile'],
                       ['photoIdentite', isArabic ? 'صورة الهوية' : 'Photo d\'identité', 'docPhoto'],
-                    ] as Array<[DocumentKey, string, 'docCertif' | 'docVaccin' | 'docDomicile' | 'docPhoto']>).map(([key, label, legacyFlag]) => {
+                      ['contratAccueil', isArabic ? 'عقد الاستقبال الموقَّع' : 'Contrat d\'accueil signé par le tuteur', 'docContrat'],
+                    ] as Array<[DocumentKey, string, DocumentFlag]>).map(([key, label, legacyFlag]) => {
                       const attached = formData.docFiles[key];
                       const legacyDeclared = formData[legacyFlag];
                       return (
@@ -1612,6 +1739,109 @@ export default function Enfants() {
                     })}
                   </div>
                   <p className="mt-2 text-[10px] font-semibold text-slate-400">{isArabic ? 'الحد الأقصى للملف: 2 ميغابايت. الصيغ: PDF أو صورة.' : 'Un vrai fichier est enregistré avec le dossier. Limite : 2 Mo, PDF ou image.'}</p>
+                </div>
+
+                {/* 4. Personnes habilitées à récupérer l'enfant */}
+                <div>
+                  <h4 className="text-xs font-black text-indigo-600 uppercase tracking-widest mb-3.5 pb-1 border-b border-slate-100 flex items-center gap-1.5 pt-2">
+                    <Users className="w-4 h-4" />
+                    {isArabic ? 'رابعاً: الأشخاص المرخَّص لهم باستلام الطفل' : "4. Personnes habilitées à récupérer l'enfant"}
+                  </h4>
+
+                  <label className="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 accent-indigo-600"
+                      checked={formData.autorisationSortieSignee}
+                      onChange={e => setFormData({ ...formData, autorisationSortieSignee: e.target.checked })}
+                    />
+                    <span className="text-[11px] font-semibold leading-5 text-slate-600">
+                      {isArabic
+                        ? 'تم استلام ترخيص كتابي موقَّع من الولي القانوني، وهو محفوظ في الملف.'
+                        : "L'autorisation écrite et signée du tuteur légal est déposée au dossier."}
+                    </span>
+                  </label>
+
+                  <div className="mt-3 space-y-2.5">
+                    {formData.personnesAutorisees.length === 0 && (
+                      <p className="rounded-xl border border-dashed border-slate-200 bg-white p-3 text-[11px] font-semibold text-slate-400">
+                        {isArabic
+                          ? 'لم يتم تسجيل أي شخص. لا يمكن تسليم الطفل إلا لوالديه.'
+                          : "Aucune personne enregistrée : l'enfant ne pourra être remis qu'à ses parents."}
+                      </p>
+                    )}
+
+                    {formData.personnesAutorisees.map((personne, index) => (
+                      <div key={personne.id} className="rounded-xl border border-slate-200 bg-white p-3 space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                            {isArabic ? `الشخص رقم ${index + 1}` : `Personne n° ${index + 1}`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => retirerPersonneAutorisee(personne.id)}
+                            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-black text-rose-600 transition hover:bg-rose-50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            {isArabic ? 'حذف' : 'Retirer'}
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                          <input
+                            type="text"
+                            placeholder={isArabic ? 'اللقب *' : 'Nom *'}
+                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-xs font-semibold text-slate-800"
+                            value={personne.nom}
+                            onChange={e => modifierPersonneAutorisee(personne.id, { nom: e.target.value })}
+                          />
+                          <input
+                            type="text"
+                            placeholder={isArabic ? 'الاسم' : 'Prénom'}
+                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-xs font-semibold text-slate-800"
+                            value={personne.prenom || ''}
+                            onChange={e => modifierPersonneAutorisee(personne.id, { prenom: e.target.value })}
+                          />
+                          <select
+                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-xs font-semibold text-slate-800"
+                            value={personne.lien}
+                            onChange={e => modifierPersonneAutorisee(personne.id, { lien: e.target.value })}
+                          >
+                            {LIENS_AUTORISES.map(lien => <option key={lien} value={lien}>{lien}</option>)}
+                          </select>
+                          <input
+                            type="tel"
+                            placeholder={isArabic ? 'الهاتف *' : 'Téléphone *'}
+                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-xs font-semibold text-slate-800"
+                            value={personne.telephone}
+                            onChange={e => modifierPersonneAutorisee(personne.id, { telephone: e.target.value })}
+                          />
+                          <input
+                            type="text"
+                            placeholder={isArabic ? 'رقم بطاقة الهوية' : "N° de pièce d'identité (au retrait)"}
+                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-xs font-semibold text-slate-800 sm:col-span-2"
+                            value={personne.pieceIdentite || ''}
+                            onChange={e => modifierPersonneAutorisee(personne.id, { pieceIdentite: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={ajouterPersonneAutorisee}
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-700 transition hover:bg-indigo-100"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {isArabic ? 'إضافة شخص مرخَّص له' : 'Ajouter une personne autorisée'}
+                  </button>
+
+                  <p className="mt-2 text-[10px] font-semibold text-slate-400">
+                    {isArabic
+                      ? 'لا يمكن تسليم الطفل إلا للأشخاص المسجلين هنا، مع التحقق من الهوية عند الخروج.'
+                      : "Au départ, seul un retrait par une personne de cette liste est autorisé ; l'identité est vérifiée."}
+                  </p>
                 </div>
 
               </div>

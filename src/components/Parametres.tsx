@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useDb } from '../contexts/DbContext';
 import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { setCollectionDocument, getCollectionDocument } from '../supabase';
 import { motion, AnimatePresence } from 'motion/react';
@@ -37,6 +38,7 @@ import { motion, AnimatePresence } from 'motion/react';
 export default function Parametres() {
   const { t, language } = useLanguage();
   const { user, refreshCreche, updateProfile } = useAuth();
+  const { enfants } = useDb();
   const { confirm } = useConfirmDialog();
   const isFrench = language === 'fr';
   const isArabic = language === 'ar';
@@ -71,6 +73,9 @@ export default function Parametres() {
     tuitionFeeRate: '3500',
     mealPricePerDay: '250',
     currencyType: 'DA (Dinar Algérien)',
+    // ✅ Capacité maximale d'accueil fixée par l'agrément de la wilaya.
+    // Plafond légal national : 150 enfants. Vide ou 0 = non renseignée.
+    capaciteAutorisee: '',
     sendSmsAlerts: true,
     weeklyFicheEmail: true,
     securityCheckRequired: true,
@@ -79,6 +84,12 @@ export default function Parametres() {
   });
 
   const [logoError, setLogoError] = useState('');
+
+  // Occupation réelle de la crèche, comparée au plafond d'agrément.
+  const enfantsActifs = enfants.filter(e => e.statut === 'Actif').length;
+  const capaciteSaisie = Number(crecheData.capaciteAutorisee) || 0;
+  const capaciteDepassee = capaciteSaisie > 0 && enfantsActifs > capaciteSaisie;
+  const capaciteSaturee = capaciteSaisie > 0 && enfantsActifs >= capaciteSaisie;
 
   // ✅ Upload du logo : on exige un vrai fichier PNG (type MIME + extension), on
   // convertit en base64 pour le stocker directement dans le document "parametres"
@@ -718,6 +729,94 @@ export default function Parametres() {
                   </div>
                 </div>
               </div>
+
+              {/* --- Capacité d'accueil légale (agrément de la wilaya) ---
+                  Le décret fixe un plafond d'enfants par agrément (maximum
+                  national : 150). Rawdha+ bloque toute inscription qui ferait
+                  dépasser ce plafond. */}
+              <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                <h2 className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wider pb-3 border-b border-slate-100 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-indigo-600" />
+                  <span>{isFrench ? "3. Agrément & Capacité d'Accueil" : '3. الاعتماد والطاقة الاستيعابية'}</span>
+                </h2>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                      {isFrench ? "Capacité maximale autorisée (agrément)" : 'الطاقة القصوى المسموح بها (الاعتماد)'}
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={150}
+                      placeholder={isFrench ? 'Ex. 60' : 'مثال 60'}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-black text-slate-800"
+                      value={crecheData.capaciteAutorisee}
+                      onChange={e => {
+                        // Le plafond national est de 150 enfants : on borne la saisie.
+                        const brut = e.target.value;
+                        const valeur = Number(brut);
+                        if (brut !== '' && Number.isFinite(valeur) && valeur > 150) {
+                          setCrecheData({ ...crecheData, capaciteAutorisee: '150' });
+                          return;
+                        }
+                        setCrecheData({ ...crecheData, capaciteAutorisee: brut });
+                      }}
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1.5">
+                      {isFrench
+                        ? 'Plafond légal national : 150 enfants. Laissez vide pour désactiver le contrôle.'
+                        : 'السقف القانوني الوطني: 150 طفلاً. اتركه فارغاً لتعطيل المراقبة.'}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-center">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      {isFrench ? 'Occupation actuelle' : 'الإشغال الحالي'}
+                    </span>
+                    <p className={`mt-1 text-2xl font-black ${capaciteDepassee ? 'text-rose-600' : capaciteSaturee ? 'text-amber-600' : 'text-emerald-600'}`}>
+                      {enfantsActifs}
+                      {capaciteSaisie > 0 && <span className="text-sm font-bold text-slate-400"> / {capaciteSaisie}</span>}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      {isFrench ? 'enfants actifs inscrits' : 'طفل مسجل نشط'}
+                    </p>
+                  </div>
+                </div>
+
+                {capaciteDepassee && (
+                  <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3">
+                    <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                    <p className="text-[11px] font-semibold leading-5 text-rose-700">
+                      {isFrench
+                        ? `Votre crèche accueille ${enfantsActifs} enfants pour un agrément de ${capaciteSaisie}. Régularisez la situation auprès de la DAS ou augmentez votre agrément : toute nouvelle inscription est bloquée.`
+                        : `تستقبل روضتكم ${enfantsActifs} طفلاً مقابل اعتماد بـ ${capaciteSaisie}. يرجى تسوية الوضع لدى مديرية النشاط الاجتماعي: كل تسجيل جديد موقوف.`}
+                    </p>
+                  </div>
+                )}
+
+                {!capaciteDepassee && capaciteSaturee && (
+                  <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                    <p className="text-[11px] font-semibold leading-5 text-amber-700">
+                      {isFrench
+                        ? 'Capacité maximale atteinte : il reste 0 place. Les nouvelles inscriptions seront refusées jusqu\'à la sortie d\'un enfant ou la révision de l\'agrément.'
+                        : 'تم بلوغ الطاقة القصوى: لا توجد أماكن متبقية. سيتم رفض التسجيلات الجديدة.'}
+                    </p>
+                  </div>
+                )}
+
+                {capaciteSaisie === 0 && (
+                  <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                    <p className="text-[11px] font-semibold leading-5 text-slate-500">
+                      {isFrench
+                        ? "Renseignez la capacité de votre agrément pour que Rawdha+ contrôle automatiquement le plafond légal à chaque inscription."
+                        : 'أدخل طاقة الاعتماد ليقوم التطبيق بمراقبة السقف القانوني تلقائياً عند كل تسجيل.'}
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Creche Safety Toggle Controls */}
@@ -737,7 +836,7 @@ export default function Parametres() {
               <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
                 <h2 className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wider pb-3 border-b border-slate-100 flex items-center gap-2">
                   <Bell className="w-4 h-4 text-indigo-600" />
-                  <span>{isFrench ? '3. Notifications & Alertes' : '3. الإشعارات والبروتوكول'}</span>
+                  <span>{isFrench ? '4. Notifications & Alertes' : '4. الإشعارات والبروتوكول'}</span>
                 </h2>
 
                 <div className="space-y-4">

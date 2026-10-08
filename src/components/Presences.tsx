@@ -18,7 +18,8 @@ import {
   Layers,
   ArrowLeftRight,
   MessageCircle,
-  Send
+  Send,
+  ClipboardList
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
@@ -89,6 +90,13 @@ export default function PresencesPage() {
   const [selectedEnfantForAbsence, setSelectedEnfantForAbsence] = useState<string | null>(null);
   const [showPresenceDetailsModal, setShowPresenceDetailsModal] = useState(false);
   const [selectedEnfantForPresenceDetails, setSelectedEnfantForPresenceDetails] = useState<string | null>(null);
+
+  // Personnes habilitées à récupérer l'enfant dont la fiche de pointage est
+  // ouverte : sert à alimenter le contrôle de retrait du soir.
+  const personnesAutoriseesSelectionnees = selectedEnfantForPresenceDetails
+    ? (enfantsData.find(e => e.id === selectedEnfantForPresenceDetails)?.personnesAutorisees || [])
+        .filter(p => p.active !== false)
+    : [];
   const [parentNotificationPreview, setParentNotificationPreview] = useState<{ phone: string; childName: string; message: string } | null>(null);
 
   // Formulaires Modals
@@ -102,7 +110,10 @@ export default function PresencesPage() {
     heureDepart: '16:30',
     temperature: '36.5',
     repas: 'Tout',
-    humeur: 'Souriant'
+    humeur: 'Souriant',
+    // Registre d'appel : qui dépose l'enfant et qui le récupère.
+    deposePar: '',
+    recupereParId: ''
   });
 
   // Action rapide de pointage "Présent" : on conserve l’id existant pour éviter
@@ -119,7 +130,9 @@ export default function PresencesPage() {
         heureDepart: existing.heureDepart || '16:30',
         temperature: existing.temperature || '36.5',
         repas: existing.repas || 'Tout',
-        humeur: existing.humeur || 'Souriant'
+        humeur: existing.humeur || 'Souriant',
+        deposePar: existing?.deposePar || '',
+        recupereParId: existing?.recupereParId || ''
       });
     } else {
       setPresenceDetailsForm({
@@ -127,7 +140,9 @@ export default function PresencesPage() {
         heureDepart: '16:30',
         temperature: '36.5',
         repas: 'Tout',
-        humeur: 'Souriant'
+        humeur: 'Souriant',
+        deposePar: '',
+        recupereParId: ''
       });
     }
     setSelectedEnfantForPresenceDetails(enfantId);
@@ -149,12 +164,38 @@ export default function PresencesPage() {
       return;
     }
     const existing = presences.find(p => p.enfantId === selectedEnfantForPresenceDetails && p.date === selectedDate);
+
+    // --- Contrôle de l'autorisation de retrait -----------------------------
+    // Le décret impose que seules les personnes désignées par écrit par le tuteur
+    // légal puissent repartir avec l'enfant. Un retrait par une autre personne
+    // reste enregistré dans le registre d'appel, mais explicitement marqué comme
+    // non autorisé afin de rester visible lors d'un contrôle.
+    const enfantConcerne = enfantsData.find(e => e.id === selectedEnfantForPresenceDetails);
+    const personnesAutorisees = (enfantConcerne?.personnesAutorisees || []).filter(p => p.active !== false);
+    const personneChoisie = personnesAutorisees.find(p => p.id === presenceDetailsForm.recupereParId);
+    const retraitNonAutorise = presenceDetailsForm.recupereParId === 'non_autorisee';
+
+    if (retraitNonAutorise) {
+      showToast(
+        isArabic
+          ? 'تنبيه: تم تسجيل استلام الطفل من طرف غير مرخَّص له. سيظهر ذلك في سجل الرقابة.'
+          : "Attention : retrait enregistré par une personne non habilitée. L'incident restera visible dans le registre.",
+        'error',
+      );
+    }
+
     const details = {
       enfantId: selectedEnfantForPresenceDetails,
       date: selectedDate,
       statut: 'Présent' as const,
       ...presenceDetailsForm,
-      temperature: temperature.toFixed(1)
+      temperature: temperature.toFixed(1),
+      personneRecuperation: personneChoisie
+        ? `${personneChoisie.prenom ? `${personneChoisie.prenom} ` : ''}${personneChoisie.nom} (${personneChoisie.lien})`
+        : retraitNonAutorise
+          ? 'Personne non habilitée'
+          : undefined,
+      recuperationAutorisee: personneChoisie ? true : retraitNonAutorise ? false : undefined,
     };
     if (existing) {
       updatePresence(existing.id, details);
@@ -169,7 +210,9 @@ export default function PresencesPage() {
       heureDepart: '16:30',
       temperature: '36.5',
       repas: 'Tout',
-      humeur: 'Souriant'
+      humeur: 'Souriant',
+      deposePar: '',
+      recupereParId: ''
     });
   };
 
@@ -882,6 +925,71 @@ export default function PresencesPage() {
                       placeholder="16:30"
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-semibold text-sm text-slate-800"
                     />
+                  </div>
+                </div>
+
+                {/* Registre d'appel : identification des personnes qui déposent
+                    et qui récupèrent l'enfant, avec contrôle de l'autorisation. */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                    <ClipboardList className="h-3.5 w-3.5" />
+                    {isArabic ? 'سجل الاستلام والتسليم' : "Registre d'appel — dépôt et retrait"}
+                  </p>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
+                      {isArabic ? 'من أحضر الطفل' : "Déposé par"}
+                    </label>
+                    <input
+                      type="text"
+                      value={presenceDetailsForm.deposePar}
+                      onChange={(e) => setPresenceDetailsForm({ ...presenceDetailsForm, deposePar: e.target.value })}
+                      placeholder={isArabic ? 'الاسم والصفة' : 'Nom et lien (ex. Mère)'}
+                      className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-semibold text-sm text-slate-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
+                      {isArabic ? 'من استلم الطفل' : "Récupéré par"}
+                    </label>
+                    <select
+                      value={presenceDetailsForm.recupereParId}
+                      onChange={(e) => setPresenceDetailsForm({ ...presenceDetailsForm, recupereParId: e.target.value })}
+                      className={`w-full p-3 border rounded-xl outline-none font-semibold text-sm ${
+                        presenceDetailsForm.recupereParId === 'non_autorisee'
+                          ? 'border-rose-300 bg-rose-50 text-rose-800'
+                          : 'border-slate-200 bg-white text-slate-800 focus:border-emerald-500'
+                      }`}
+                    >
+                      <option value="">
+                        {isArabic ? '— غير محدد —' : '— Non précisé —'}
+                      </option>
+                      {personnesAutoriseesSelectionnees.map(personne => (
+                        <option key={personne.id} value={personne.id}>
+                          {personne.prenom ? `${personne.prenom} ` : ''}{personne.nom} — {personne.lien}
+                        </option>
+                      ))}
+                      <option value="non_autorisee">
+                        {isArabic ? 'شخص آخر غير مرخَّص له' : 'Autre personne (non habilitée)'}
+                      </option>
+                    </select>
+
+                    {personnesAutoriseesSelectionnees.length === 0 && presenceDetailsForm.recupereParId === '' && (
+                      <p className="mt-2 text-[10px] font-semibold text-amber-600">
+                        {isArabic
+                          ? 'لا يوجد أي شخص مرخَّص له في ملف هذا الطفل. أضفه من ملف الطفل.'
+                          : "Aucune personne habilitée au dossier de cet enfant. Ajoutez-la depuis sa fiche."}
+                      </p>
+                    )}
+
+                    {presenceDetailsForm.recupereParId === 'non_autorisee' && (
+                      <p className="mt-2 text-[10px] font-bold text-rose-600">
+                        {isArabic
+                          ? 'سيُسجَّل هذا الاستلام كواقعة غير مرخَّصة في سجل الرقابة.'
+                          : "Ce retrait sera consigné comme non autorisé dans le registre de contrôle."}
+                      </p>
+                    )}
                   </div>
                 </div>
 

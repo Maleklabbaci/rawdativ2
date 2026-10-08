@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Enfant, Presence, PresenceJournee, Paiement, Achat, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction, CommunityFeature, CommunityFeatureKind, AdminAuditLog, AdminAuditAction, AdminAuditTargetType, AdminFollowup, AdminFollowupChannel, AdminFollowupStatus, CommercialStage } from '../types';
+import { Enfant, PersonneAutorisee, Presence, PresenceJournee, Paiement, Achat, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction, CommunityFeature, CommunityFeatureKind, AdminAuditLog, AdminAuditAction, AdminAuditTargetType, AdminFollowup, AdminFollowupChannel, AdminFollowupStatus, CommercialStage } from '../types';
 import { 
   getCollectionData, 
   addCollectionDocument, 
@@ -17,6 +17,8 @@ const DEFAULT_CHILD_DOCUMENTS: Enfant['documentsRequis'] = {
   carnetVaccination: false,
   justificatifDomicile: false,
   photoIdentite: false,
+  contratAccueil: false,
+  extraitNaissance: false,
 };
 
 function normalizeDocumentsRequis(value: unknown): Enfant['documentsRequis'] {
@@ -31,7 +33,33 @@ function normalizeDocumentsRequis(value: unknown): Enfant['documentsRequis'] {
     carnetVaccination: source.carnetVaccination === true,
     justificatifDomicile: source.justificatifDomicile === true,
     photoIdentite: source.photoIdentite === true,
+    contratAccueil: source.contratAccueil === true,
+    extraitNaissance: source.extraitNaissance === true,
   };
+}
+
+/**
+ * Normalise la liste des personnes habilitées à récupérer l'enfant. Les fiches
+ * enregistrées avant l'introduction du décret n'en possèdent pas : on renvoie
+ * alors un tableau vide plutôt qu'`undefined`, pour que l'interface de retrait
+ * puisse toujours distinguer « aucune autorisation déclarée » de « non chargé ».
+ */
+function normalizePersonnesAutorisees(value: unknown): PersonneAutorisee[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(Boolean).map((item, index) => {
+    const source = item as Partial<PersonneAutorisee>;
+    return {
+      id: typeof source.id === 'string' && source.id ? source.id : `personne_${index}`,
+      nom: typeof source.nom === 'string' ? source.nom : '',
+      prenom: typeof source.prenom === 'string' && source.prenom ? source.prenom : undefined,
+      lien: typeof source.lien === 'string' && source.lien ? source.lien : 'Autre',
+      telephone: typeof source.telephone === 'string' ? source.telephone : '',
+      pieceIdentite: typeof source.pieceIdentite === 'string' && source.pieceIdentite
+        ? source.pieceIdentite
+        : undefined,
+      active: source.active !== false,
+    };
+  });
 }
 
 function normalizeEnfantData(enfant: Partial<Enfant> | null | undefined): Enfant {
@@ -76,6 +104,17 @@ function normalizeEnfantData(enfant: Partial<Enfant> | null | undefined): Enfant
     contactsUrgence,
     documentsRequis: normalizeDocumentsRequis(candidate.documentsRequis),
     documentsFichiers,
+    matricule: typeof candidate.matricule === 'number' && Number.isFinite(candidate.matricule)
+      ? candidate.matricule
+      : undefined,
+    personnesAutorisees: normalizePersonnesAutorisees(candidate.personnesAutorisees),
+    autorisationSortieSignee: candidate.autorisationSortieSignee === true,
+    section: candidate.section === 'Nourrissons'
+      || candidate.section === 'Petite section'
+      || candidate.section === 'Moyenne section'
+      || candidate.section === 'Grande section'
+      ? candidate.section
+      : undefined,
   } as Enfant;
 }
 
@@ -642,13 +681,31 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   // --- ENFANTS ---
+  // Le registre matricule est propre à chaque crèche : on repart du plus grand
+  // numéro déjà attribué dans la même crèche pour garantir une suite continue,
+  // sans collision et sans trou visible lors du contrôle de la DAS.
+  const prochainMatricule = (crecheId?: string) => {
+    const pool = enfants.filter(item => (crecheId ? item.crecheId === crecheId : !item.crecheId));
+    const maximum = pool.reduce(
+      (acc, item) => (typeof item.matricule === 'number' && item.matricule > acc ? item.matricule : acc),
+      0,
+    );
+    return maximum + 1;
+  };
+
   const addEnfant = async (enfant: Omit<Enfant, 'id'>) => {
     assertWriteAccess();
     const tempId = (enfant as any).id || 'child_' + Date.now();
-    const cleanEnfant = normalizeEnfantData({ ...enfant, id: tempId } as Enfant);
+    // Le matricule est attribué une seule fois, à l'admission : il identifie
+    // l'enfant dans le registre officiel et ne doit plus changer ensuite.
+    const enfantComplet: Omit<Enfant, 'id'> = {
+      ...enfant,
+      matricule: enfant.matricule ?? prochainMatricule(enfant.crecheId),
+    };
+    const cleanEnfant = normalizeEnfantData({ ...enfantComplet, id: tempId } as Enfant);
     setEnfants(prev => [...prev.filter(item => item.id !== tempId), cleanEnfant]);
     try {
-      const persistedEnfant = normalizeEnfantData({ ...enfant, id: tempId });
+      const persistedEnfant = normalizeEnfantData({ ...enfantComplet, id: tempId });
       const freshId = await addCollectionDocument('enfants', persistedEnfant);
       setEnfants(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
       return freshId;

@@ -47,8 +47,13 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
     carnetVaccination: false,
     justificatifDomicile: false,
     photoIdentite: false,
+    contratAccueil: false,
+    extraitNaissance: false,
     ...(enfant.documentsRequis || {}),
   };
+
+  // Personnes habilitées à récupérer l'enfant, désignées par le tuteur légal.
+  const personnesAutorisees = (enfant.personnesAutorisees || []).filter(p => p.active !== false);
 
   const birthDate = new Date(enfant.dateNaissance).toLocaleDateString(isArabic ? 'ar' : 'fr-FR', {
     day: 'numeric',
@@ -188,7 +193,18 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isArabic ? 'الفئة العمرية' : 'Section'}</span>
                     <p className="text-sm font-black text-slate-800 mt-1 flex items-center gap-1.5">
                       <School className="w-4 h-4 text-indigo-500" />
-                      {enfant.groupeAge}
+                      {enfant.section || enfant.groupeAge}
+                    </p>
+                  </div>
+
+                  {/* Numéro d'ordre du registre matricule, contrôlé par la DAS. */}
+                  <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isArabic ? 'رقم السجل' : 'Matricule'}</span>
+                    <p className="text-sm font-black text-slate-800 mt-1 flex items-center gap-1.5">
+                      <ClipboardList className="w-4 h-4 text-indigo-500" />
+                      {typeof enfant.matricule === 'number'
+                        ? `N° ${String(enfant.matricule).padStart(4, '0')}`
+                        : <span className="text-[11px] font-semibold text-amber-600">{isArabic ? 'غير مُرقَّم' : 'Non attribué'}</span>}
                     </p>
                   </div>
 
@@ -199,7 +215,7 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                     </p>
                   </div>
 
-                  <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl col-span-2">
+                  <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isArabic ? 'تاريخ التسجيل بالروضة' : 'Date d\'Admission'}</span>
                     <p className="text-sm font-bold text-slate-800 mt-1 flex items-center gap-1.5">
                       <Clock className="w-4 h-4 text-slate-400" />
@@ -274,6 +290,8 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                       {[
                         { label: "Certificat d'Aptitude Médicale", icon: FileCheck, status: documentsRequis.certificatMedical },
                         { label: "Carnet de Vaccination Pédiatrique", icon: FileCheck, status: documentsRequis.carnetVaccination },
+                        { label: "Extrait de Naissance", icon: FileCheck, status: documentsRequis.extraitNaissance },
+                        { label: "Contrat d'Accueil Signé", icon: FileCheck, status: documentsRequis.contratAccueil },
                         { label: "Justificatif d'Adresse Parentale", icon: FileCheck, status: documentsRequis.justificatifDomicile },
                         { label: "Fiches Photos d'Identité Admis", icon: FileCheck, status: documentsRequis.photoIdentite },
                       ].map((doc, idx) => (
@@ -290,6 +308,68 @@ export default function EnfantDetails({ enfant, onClose }: { enfant: Enfant, onC
                       ))}
                     </div>
                   </div>
+                </div>
+
+                {/* Personnes habilitées à récupérer l'enfant : le décret impose que
+                    seules les personnes désignées par écrit par le tuteur puissent
+                    repartir avec l'enfant. */}
+                <div className="p-5 bg-emerald-50/20 border border-emerald-100/50 rounded-2xl space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-xs font-black text-emerald-700 uppercase tracking-widest flex items-center gap-2">
+                      <User className="w-4 h-4 text-emerald-600" />
+                      {isArabic ? 'الأشخاص المرخَّص لهم باستلام الطفل' : 'Autorisations de sortie'}
+                    </h3>
+                    <span className={`px-2 py-0.5 rounded font-black text-[9px] uppercase tracking-wider border ${
+                      enfant.autorisationSortieSignee
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                    }`}>
+                      {enfant.autorisationSortieSignee
+                        ? (isArabic ? 'ترخيص موقَّع محفوظ' : 'Autorisation signée déposée')
+                        : (isArabic ? 'الترخيص غير محفوظ' : 'Autorisation non déposée')}
+                    </span>
+                  </div>
+
+                  {personnesAutorisees.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-emerald-200 bg-white p-3 text-[11px] font-semibold text-slate-500">
+                      {isArabic
+                        ? 'لا يوجد أي شخص مسجَّل: لا يمكن تسليم الطفل إلا لوالديه.'
+                        : "Aucune personne déclarée : l'enfant ne pourra être remis qu'à ses parents."}
+                    </p>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {personnesAutorisees.map((personne) => (
+                        <div key={personne.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 bg-white p-3">
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-slate-800 truncate">
+                              {personne.prenom ? `${personne.prenom} ` : ''}{personne.nom}
+                              <span className="ml-2 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700">{personne.lien}</span>
+                            </p>
+                            <div className="mt-1 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-500">
+                              {personne.telephone && (
+                                <span className="inline-flex items-center gap-1"><Phone className="w-3 h-3" />{personne.telephone}</span>
+                              )}
+                              {personne.pieceIdentite && (
+                                <span className="inline-flex items-center gap-1">
+                                  <ClipboardList className="w-3 h-3" />
+                                  {isArabic ? 'هوية:' : 'Pièce :'} {personne.pieceIdentite}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <a
+                            href={`https://wa.me/${personne.telephone.replace(/\D/g, '')}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-700 transition hover:bg-emerald-100"
+                          >
+                            <Phone className="w-3 h-3" />
+                            {isArabic ? 'اتصال' : 'Appeler'}
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="border-t border-slate-150 pt-5">

@@ -10,6 +10,7 @@ import {
   ArrowDown,
   FileText,
   ShieldCheck,
+  ShieldAlert,
   Coffee,
   Zap,
   School,
@@ -173,13 +174,23 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
     return value.replace(/janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre/gi, match => monthLabels[match.toLowerCase()] ?? match);
   };
 
+  // Dossier administratif incomplet : on compte désormais les six pièces exigées
+  // par le décret (contrat d'accueil et extrait de naissance inclus).
   const documentsManquants = enfantsData.filter(e => {
     const documents = e.documentsRequis || {};
     return !documents.certificatMedical ||
       !documents.carnetVaccination ||
       !documents.justificatifDomicile ||
-      !documents.photoIdentite;
+      !documents.photoIdentite ||
+      !documents.contratAccueil ||
+      !documents.extraitNaissance;
   }).length;
+
+  // Enfants sans aucune personne habilitée déclarée : point de contrôle immédiat
+  // pour la direction, car le retrait n'est alors possible que par les parents.
+  const enfantsSansAutorisation = enfantsData.filter(
+    e => (e.personnesAutorisees || []).filter(p => p.active !== false).length === 0,
+  ).length;
 
   const statsCards = [
     {
@@ -497,6 +508,24 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
                   <p className="text-xs font-extrabold text-amber-900">{isArabic ? 'ملفات تسجيل غير مكتملة' : 'Dossiers Incomplets (Justificatifs)'}</p>
                   <p className="text-[11px] text-amber-700/80 font-bold mt-1">
                     {documentsManquants} {isArabic ? 'أطفال لم يكتمل تقديم شهادات اللقاحات الخاصة بهم' : "enfants n'ont pas encore fourni de certificat médical ou vaccination valide."}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Contrôle DAS : un enfant sans personne habilitée déclarée ne peut
+                être remis qu'à ses parents. À régulariser au plus vite. */}
+            {enfantsSansAutorisation > 0 && (
+              <div className="p-4 bg-rose-50/50 border border-rose-100 rounded-xl flex gap-3 mt-4">
+                <ShieldAlert className="w-5 h-5 text-rose-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-extrabold text-rose-900">
+                    {isArabic ? 'تراخيص الاستلام ناقصة' : "Autorisations de sortie manquantes"}
+                  </p>
+                  <p className="text-[11px] text-rose-700/80 font-bold mt-1">
+                    {enfantsSansAutorisation} {isArabic
+                      ? 'أطفال بدون أي شخص مرخَّص له باستلامهم. لا يمكن تسليمهم إلا لوالديهم.'
+                      : "enfants n'ont aucune personne habilitée déclarée : ils ne peuvent être remis qu'à leurs parents."}
                   </p>
                 </div>
               </div>
