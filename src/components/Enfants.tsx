@@ -1475,6 +1475,25 @@ export default function Enfants() {
                       </select>
                     </div>
 
+                    {/* Tranche d'âge réglementaire : le décret distingue les
+                        nourrissons (3-12 mois) puis les sections 3-6 ans. */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                        {isArabic ? 'القسم النظامي' : 'Section réglementaire'}
+                      </label>
+                      <select
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800"
+                        value={formData.section}
+                        onChange={e => setFormData({ ...formData, section: e.target.value as typeof formData.section })}
+                      >
+                        <option value="">{isArabic ? '— غير محدَّد —' : '— Non précisée —'}</option>
+                        <option value="Nourrissons">{isArabic ? 'رضّع (3-12 شهراً)' : 'Nourrissons (3-12 mois)'}</option>
+                        <option value="Petite section">{isArabic ? 'القسم الصغير (1-2 سنة)' : 'Petite section (1-2 ans)'}</option>
+                        <option value="Moyenne section">{isArabic ? 'القسم المتوسط (2-3 سنوات)' : 'Moyenne section (2-3 ans)'}</option>
+                        <option value="Grande section">{isArabic ? 'القسم التحضيري (3-6 سنوات)' : 'Grande section (3-6 ans)'}</option>
+                      </select>
+                    </div>
+
                     <div>
                       <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
                         {isArabic ? 'فصيلة الدم *' : 'Groupe Sanguin *'}
