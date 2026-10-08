@@ -319,12 +319,35 @@ export interface Classe {
   capacite: number;
 }
 
+/**
+ * Domaines d'éveil et de stimulation prévus par le programme pédagogique.
+ * Le rattachement de chaque atelier à un domaine est ce qui rend le planning
+ * lisible lors d'un contrôle pédagogique.
+ */
+export type ActiviteDomaine =
+  | 'Éveil sensoriel'
+  | 'Psychomotricité'
+  | 'Langage & comptines'
+  | 'Motricité fine'
+  | 'Arts plastiques'
+  | 'Vie pratique & autonomie'
+  | 'Jeux libres';
+
 export interface Activite {
   id: string;
   crecheId?: string;
   titre: string;
   date: string;
   groupe: 'Bébés' | 'Moyens' | 'Grands';
+  /** Domaine d'éveil travaillé par l'atelier (facultatif : les anciens ateliers n'en ont pas). */
+  domaine?: ActiviteDomaine;
+  /** Compétence précise visée par l'atelier. */
+  competenceVisee?: string;
+  heureDebut?: string;
+  heureFin?: string;
+  materielRequis?: string;
+  lieu?: string;
+  educateurRef?: string;
 }
 
 export interface Repas {
