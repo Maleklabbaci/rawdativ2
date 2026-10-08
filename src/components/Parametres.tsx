@@ -26,7 +26,8 @@ import {
   Smartphone,
   Lock,
   Image as ImageIcon,
-  Trash2
+  Trash2,
+  Printer
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -76,6 +77,12 @@ export default function Parametres() {
     // ✅ Capacité maximale d'accueil fixée par l'agrément de la wilaya.
     // Plafond légal national : 150 enfants. Vide ou 0 = non renseignée.
     capaciteAutorisee: '',
+    // ✅ Conditions financières complètes : elles alimentent la facturation et
+    // la grille tarifaire remise aux familles (transparence exigée).
+    fraisInscription: '',
+    penaliteRetardType: 'pourcentage' as 'pourcentage' | 'montant',
+    penaliteRetardValeur: '',
+    delaiGraceJours: '',
     sendSmsAlerts: true,
     weeklyFicheEmail: true,
     securityCheckRequired: true,
@@ -250,6 +257,103 @@ export default function Parametres() {
     } finally {
       setSaveLoading(false);
     }
+  };
+
+  /**
+   * Grille tarifaire imprimable : elle rassemble en une page les montants
+   * affichés aux familles (mensualité, inscription, cantine, pénalités). C'est
+   * la pièce qui matérialise la transparence tarifaire exigée à l'inscription.
+   * On imprime les valeurs actuellement saisies à l'écran, pour que la grille
+   * corresponde exactement à ce que la direction s'apprête à enregistrer.
+   */
+  const imprimerGrilleTarifaire = () => {
+    const devise = 'DA';
+    const montant = (valeur: string) => {
+      const nombre = Number(valeur);
+      return Number.isFinite(nombre) && nombre > 0 ? `${nombre.toLocaleString('fr-FR')} ${devise}` : '—';
+    };
+    const penaliteNombre = Number(crecheData.penaliteRetardValeur);
+    const penalite = Number.isFinite(penaliteNombre) && penaliteNombre > 0
+      ? (crecheData.penaliteRetardType === 'pourcentage'
+          ? `${penaliteNombre}% du montant par mois de retard`
+          : `${penaliteNombre.toLocaleString('fr-FR')} ${devise} par mois de retard`)
+      : 'Aucune pénalité appliquée';
+    const grace = Number(crecheData.delaiGraceJours);
+
+    const lignes: [string, string][] = [
+      ['Frais de scolarité mensuel', montant(crecheData.tuitionFeeRate)],
+      ["Frais d'inscription (une seule fois à l'admission)", montant(crecheData.fraisInscription)],
+      ['Repas cantine (par jour et par enfant)', montant(crecheData.mealPricePerDay)],
+      ['Pénalité de retard', penalite],
+      ["Délai de grâce après l'échéance", grace > 0 ? `${grace} jour(s)` : 'Aucun'],
+      ['Devise de facturation', crecheData.currencyType || devise],
+    ];
+
+    const html = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8" />
+<title>Grille tarifaire — ${crecheData.crecheName || 'Rawdha+'}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; margin: 30px; color: #0f172a; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #4f46e5; padding-bottom: 14px; margin-bottom: 22px; }
+  h1 { font-size: 20px; margin: 0 0 5px; }
+  .meta { font-size: 11px; color: #64748b; line-height: 1.6; }
+  .badge { background: #eef2ff; color: #4338ca; font-size: 10px; font-weight: 800; padding: 4px 9px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  td { padding: 11px 10px; border-bottom: 1px solid #e2e8f0; }
+  td.libelle { color: #475569; }
+  td.valeur { text-align: right; font-weight: 800; color: #312e81; white-space: nowrap; }
+  .note { margin-top: 22px; border-left: 4px solid #4f46e5; background: #f8fafc; padding: 12px 14px; font-size: 11px; color: #475569; line-height: 1.7; }
+  .note strong { color: #1e293b; }
+  footer { margin-top: 26px; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; }
+  .visa { margin-top: 30px; display: flex; justify-content: flex-end; gap: 70px; font-size: 10px; color: #475569; }
+  .visa div { border-top: 1px solid #94a3b8; padding-top: 5px; width: 200px; text-align: center; }
+  @media print { body { margin: 12mm; } }
+</style></head>
+<body>
+  <header>
+    <div>
+      <h1>Grille tarifaire et conditions financières</h1>
+      <div class="meta">
+        <strong>${crecheData.crecheName || 'Rawdha+'}</strong>${crecheData.addressLine ? ` — ${crecheData.addressLine}` : ''}<br />
+        ${crecheData.phoneNumbers ? `Tél. : ${crecheData.phoneNumbers}<br />` : ''}
+        Horaires d'accueil : ${crecheData.workingHours || '—'}
+      </div>
+    </div>
+    <span class="badge">Transparence tarifaire</span>
+  </header>
+
+  <table>
+    <tbody>
+      ${lignes.map(([libelle, valeur]) => `<tr><td class="libelle">${libelle}</td><td class="valeur">${valeur}</td></tr>`).join('')}
+    </tbody>
+  </table>
+
+  <div class="note">
+    <strong>Modalités de règlement.</strong> Les mensualités sont dues à l'avance, avant le début du mois concerné.
+    ${grace > 0 ? `Un délai de grâce de ${grace} jour(s) est accordé après la date d'échéance.` : ''}
+    ${penaliteNombre > 0 ? `Passé ce délai, une pénalité de ${penalite.toLowerCase()} est appliquée.` : 'Aucune pénalité de retard n’est appliquée.'}
+    Tout règlement donne lieu à un reçu remis à la famille ; les factures impayées font l'objet d'un rappel.
+  </div>
+
+  <div class="visa">
+    <div>Signature de la direction</div>
+    <div>Signature de la famille</div>
+  </div>
+
+  <footer>
+    <span>Document remis à l'inscription — ${crecheData.crecheName || 'Rawdha+'}.</span>
+    <span>Établi le ${new Date().toLocaleDateString('fr-FR')}</span>
+  </footer>
+</body></html>`;
+
+    const printWindow = window.open('', '_blank', 'height=900,width=800');
+    if (!printWindow) return;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.onload = () => {
+      setTimeout(() => { printWindow.focus(); printWindow.print(); }, 250);
+    };
   };
 
   if (loading) {
@@ -727,6 +831,85 @@ export default function Parametres() {
                       onChange={e => setCrecheData({...crecheData, currencyType: e.target.value})}
                     />
                   </div>
+                </div>
+
+                {/* --- Frais d'inscription et pénalités de retard ---
+                    Ces montants doivent être écrits et affichés : la facturation
+                    d'un parent ne peut pas reposer sur un tarif non communiqué. */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                      {isFrench ? "Frais d'inscription (DA, une fois)" : 'رسوم التسجيل (مرة واحدة)'}
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-black text-slate-800"
+                      value={crecheData.fraisInscription}
+                      onChange={e => setCrecheData({...crecheData, fraisInscription: e.target.value})}
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1.5">
+                      {isFrench ? "Facturés une seule fois, à l'admission. Laisser vide si aucun frais d'inscription." : 'تُحتسب مرة واحدة عند القبول. اتركه فارغاً إن لم تكن هناك رسوم تسجيل.'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                      {isFrench ? 'Pénalité de retard appliquée' : 'غرامة التأخر'}
+                    </label>
+                    <div className="flex gap-2">
+                      <select
+                        className="w-32 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800"
+                        value={crecheData.penaliteRetardType}
+                        onChange={e => setCrecheData({...crecheData, penaliteRetardType: e.target.value as 'pourcentage' | 'montant'})}
+                      >
+                        <option value="pourcentage">{isFrench ? '% / mois' : 'نسبة % شهرياً'}</option>
+                        <option value="montant">{isFrench ? 'DA / mois' : 'دج شهرياً'}</option>
+                      </select>
+                      <input
+                        type="number"
+                        min={0}
+                        className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-black text-slate-800"
+                        value={crecheData.penaliteRetardValeur}
+                        onChange={e => setCrecheData({...crecheData, penaliteRetardValeur: e.target.value})}
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1.5">
+                      {isFrench ? 'Montant ajouté aux factures en retard. 0 ou vide = aucune pénalité.' : 'يُضاف إلى الفواتير المتأخرة. 0 أو فارغ = بدون غرامة.'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                      {isFrench ? "Délai de grâce (jours)" : 'مهلة السماح (أيام)'}
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-black text-slate-800"
+                      value={crecheData.delaiGraceJours}
+                      onChange={e => setCrecheData({...crecheData, delaiGraceJours: e.target.value})}
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1.5">
+                      {isFrench ? "Jours accordés après l'échéance avant de compter une pénalité." : 'الأيام الممنوحة بعد تاريخ الاستحقاق قبل احتساب الغرامة.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+                  <p className="text-[11px] font-semibold text-indigo-900/80 max-w-xl">
+                    {isFrench
+                      ? "La grille tarifaire reprend le tarif mensuel, les frais d'inscription, la cantine et les pénalités : remettez-la aux familles pour garantir une tarification transparente."
+                      : 'تُظهر لائحة الأسعار الرسم الشهري ورسوم التسجيل والمطعم والغرامات: سلّموها للعائلات لضمان شفافية التسعير.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={imprimerGrilleTarifaire}
+                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-black text-white transition hover:bg-indigo-700"
+                  >
+                    <Printer className="h-4 w-4" />
+                    {isFrench ? 'Imprimer la grille tarifaire' : 'طباعة لائحة الأسعار'}
+                  </button>
                 </div>
               </div>
 
