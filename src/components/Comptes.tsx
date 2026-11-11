@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useDb } from '../contexts/DbContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { useToast } from '../contexts/ToastContext';
-import { setCollectionDocument } from '../supabase';
+import { addCollectionDocument } from '../supabase';
 import type { DemandeDirecteur } from '../types';
 import { 
   Users, 
@@ -74,10 +74,11 @@ export default function Comptes() {
   
   // ✅ Essai gratuit de 15 jours par défaut (le blocage auto existe déjà dans App.tsx :
   // dès que "dateFinAbonnement" est dépassée, le compte est bloqué automatiquement).
+  const getLocalDateKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const getDefaultDate = () => {
     const d = new Date();
     d.setDate(d.getDate() + 15);
-    return d.toISOString().split('T')[0];
+    return getLocalDateKey(d);
   };
 
   // Form fields
@@ -88,7 +89,7 @@ export default function Comptes() {
   const [nomCreche, setNomCreche] = useState('');
   const [telephoneCreche, setTelephoneCreche] = useState('');
   const [adresseCreche, setAdresseCreche] = useState('');
-  const [tarifCreche, setTarifCreche] = useState('3500');
+  const [tarifCreche, setTarifCreche] = useState('');
   const [siteWebCreche, setSiteWebCreche] = useState('');
   const [dateFinAbonnement, setDateFinAbonnement] = useState(getDefaultDate());
   const [abonnementActif, setAbonnementActif] = useState(true);
@@ -97,9 +98,11 @@ export default function Comptes() {
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
   const [submitLoading, setSubmitLoading] = useState(false);
+  const submitRef = useRef(false);
   const [selectedDemande, setSelectedDemande] = useState<DemandeDirecteur | null>(null);
   const [decisionError, setDecisionError] = useState('');
   const [decisionLoading, setDecisionLoading] = useState(false);
+  const decisionRef = useRef(false);
 
   // Check user role
   const isAdmin = currentUser?.role === 'admin';
@@ -138,20 +141,26 @@ export default function Comptes() {
 
   const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitRef.current || submitLoading) return;
     setFormError('');
     setFormSuccess('');
 
-    if (!nom || !prenom || !email || !motDePasse) {
+    if (!nom.trim() || !prenom.trim() || !email.trim() || !motDePasse) {
       setFormError(isFrench ? 'Veuillez remplir tous les champs requis.' : 'يرجى ملء جميع الحقول المطلوبة.');
       return;
     }
 
-    if (isAdmin && !nomCreche) {
+    if (isAdmin && !nomCreche.trim()) {
       setFormError(isFrench ? 'Veuillez renseigner le nom de la crèche.' : 'يرجى إدخال اسم الروضة.');
       return;
     }
     if (isAdmin && !normalizeWhatsAppNumber(telephoneCreche)) {
       setFormError(isFrench ? 'Veuillez renseigner un numéro de téléphone algérien valide.' : 'يرجى إدخال رقم هاتف جزائري صالح.');
+      return;
+    }
+    const trimmedTarif = tarifCreche.trim();
+    if (isAdmin && trimmedTarif && (!Number.isFinite(Number(trimmedTarif)) || Number(trimmedTarif) < 0)) {
+      setFormError(isFrench ? 'Veuillez saisir un tarif mensuel valide.' : 'يرجى إدخال تعريفة شهرية صالحة.');
       return;
     }
 
@@ -169,42 +178,47 @@ export default function Comptes() {
         : `هل تريد إنشاء حساب ${prenom} ${nom}${nomCreche ? ` للروضة « ${nomCreche} »` : ''}؟ يمكن تفعيل الحساب مباشرة.`,
       confirmLabel: isFrench ? 'Créer le compte' : 'إنشاء الحساب',
     });
-    if (!creationConfirmed) return;
+    if (!creationConfirmed || submitRef.current) return;
 
     try {
+      submitRef.current = true;
       setSubmitLoading(true);
       
       const roleToSave = isAdmin ? 'directeur' : 'parent';
 
       const nouveauId = await addCompte({
-        nom,
-        prenom,
+        nom: nom.trim(),
+        prenom: prenom.trim(),
         email: email.trim().toLowerCase(),
         motDePasse,
         role: roleToSave,
         telephone: roleToSave === 'directeur' ? telephoneCreche.trim() : undefined,
         abonnementActif,
-        ...(roleToSave === 'directeur' ? { nomCreche, dateFinAbonnement } : {}),
+        ...(roleToSave === 'directeur' ? { nomCreche: nomCreche.trim(), dateFinAbonnement } : {}),
         ...(roleToSave === 'parent' && enfantId ? { enfantId } : {})
       });
 
-      // ✅ Si admin a rempli les infos crèche (tel/adresse/tarif/site web), on les
-      // enregistre tout de suite -> le directeur n'aura pas besoin de repasser par
-      // l'onboarding (le doc "parametres/creche_{id}" existera déjà à son 1er login).
-      if (roleToSave === 'directeur' && nouveauId) {
-        await setCollectionDocument('parametres', `creche_${nouveauId}`, {
-          id: `creche_${nouveauId}`,
-          crecheName: nomCreche,
-          principalEmail: email.trim().toLowerCase(),
-          phoneNumbers: telephoneCreche,
-          addressLine: adresseCreche,
-          tuitionFeeRate: tarifCreche,
-          siteWeb: siteWebCreche,
-          logoUrl: '',
-        });
+      let settingsSaved = true;
+      if (roleToSave === 'directeur' && nouveauId && adresseCreche.trim() && trimmedTarif) {
+        try {
+          await addCollectionDocument('parametres', {
+            id: `creche_${nouveauId}`,
+            crecheName: nomCreche.trim(),
+            principalEmail: email.trim().toLowerCase(),
+            phoneNumbers: telephoneCreche.trim(),
+            addressLine: adresseCreche.trim(),
+            tuitionFeeRate: trimmedTarif,
+            siteWeb: siteWebCreche.trim(),
+            logoUrl: '',
+          });
+        } catch {
+          settingsSaved = false;
+        }
       }
 
-      setFormSuccess(isFrench ? 'Compte créé avec succès!' : 'تم إنشاء الحساب بنجاح!');
+      setFormSuccess(settingsSaved
+        ? (isFrench ? 'Compte créé avec succès !' : 'تم إنشاء الحساب بنجاح!')
+        : (isFrench ? 'Compte créé. La fiche paramètres devra être complétée au premier démarrage.' : 'تم إنشاء الحساب. يجب إكمال إعدادات الحضانة عند أول دخول.'));
       
       // Reset form
       setNom('');
@@ -214,7 +228,7 @@ export default function Comptes() {
       setNomCreche('');
       setTelephoneCreche('');
       setAdresseCreche('');
-      setTarifCreche('3500');
+      setTarifCreche('');
       setSiteWebCreche('');
       setDateFinAbonnement(getDefaultDate());
       setAbonnementActif(true);
@@ -226,8 +240,9 @@ export default function Comptes() {
         setFormSuccess('');
       }, 1500);
     } catch (err: any) {
-      setFormError(err.message || 'Une erreur est survenue.');
+      setFormError(err.message || (isFrench ? 'Création non confirmée. Vérifiez la liste des comptes avant de réessayer.' : 'لم يتأكد إنشاء الحساب. تحققوا من قائمة الحسابات قبل المحاولة مجدداً.'));
     } finally {
+      submitRef.current = false;
       setSubmitLoading(false);
     }
   };
@@ -235,22 +250,26 @@ export default function Comptes() {
   const pendingDemandes = demandesDirecteur.filter(demande => demande.statut === 'en_attente').sort((a, b) => new Date(b.dateDemande).getTime() - new Date(a.dateDemande).getTime());
 
   const handleAcceptDemande = async (demande: DemandeDirecteur) => {
+    if (decisionRef.current || decisionLoading) return;
     setDecisionError('');
     try {
+      decisionRef.current = true;
       setDecisionLoading(true);
       const accountId = await approveDemandeDirecteur(demande.id);
-      await logAdminAction('director_approved', 'director_request', demande.id, demande.nomCreche, { accountId });
+      await logAdminAction('director_approved', 'director_request', demande.id, demande.nomCreche, { accountId }).catch(() => undefined);
       setSelectedDemande(null);
-      await refreshAll();
+      await refreshAll().catch(() => undefined);
     } catch (err) {
       console.error('Erreur acceptation demande directeur:', err);
-      setDecisionError(err instanceof Error ? err.message : 'Impossible d’accepter cette demande.');
+      setDecisionError(err instanceof Error ? err.message : (isFrench ? 'Impossible d’accepter cette demande.' : 'تعذر قبول هذا الطلب.'));
     } finally {
+      decisionRef.current = false;
       setDecisionLoading(false);
     }
   };
 
   const handleRefuseDemande = async (demande: DemandeDirecteur) => {
+    if (decisionRef.current || decisionLoading) return;
     const confirmationText = isFrench
       ? `Refuser la demande de ${demande.prenom} ${demande.nom} et la supprimer définitivement de Rawdha+ et de la base de données ?`
       : `هل تريد رفض طلب ${demande.prenom} ${demande.nom} وحذفه نهائياً من Rawdha+ وقاعدة البيانات؟`;
@@ -260,18 +279,20 @@ export default function Comptes() {
       confirmLabel: isFrench ? 'Refuser et supprimer' : 'رفض وحذف',
       variant: 'danger',
     });
-    if (!confirmed) return;
+    if (!confirmed || decisionRef.current) return;
 
     try {
+      decisionRef.current = true;
       setDecisionLoading(true);
       await deleteDemandeDirecteur(demande.id);
-      await logAdminAction('director_request_rejected', 'director_request', demande.id, demande.nomCreche);
+      await logAdminAction('director_request_rejected', 'director_request', demande.id, demande.nomCreche).catch(() => undefined);
       setSelectedDemande(null);
-      await refreshAll();
+      await refreshAll().catch(() => undefined);
     } catch (err) {
       console.error('Erreur suppression demande directeur:', err);
-      setDecisionError(err instanceof Error ? err.message : 'Impossible de supprimer cette demande.');
+      setDecisionError(err instanceof Error ? err.message : (isFrench ? 'Impossible de supprimer cette demande.' : 'تعذر حذف هذا الطلب.'));
     } finally {
+      decisionRef.current = false;
       setDecisionLoading(false);
     }
   };
@@ -366,12 +387,12 @@ export default function Comptes() {
   };
 
   return (
-    <div className="space-y-6 font-sans">
+    <div className="space-y-6 font-sans" dir={isFrench ? 'ltr' : 'rtl'}>
       {/* Upper header section */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            <Users className="w-8 h-8 text-indigo-600" />
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <Users className="w-8 h-8 shrink-0 text-indigo-600" />
             <span>
               {isAdmin 
                 ? (isFrench ? 'Abonnés & Directeurs de Crèches' : 'المشتركون ومدراء الروضات')
@@ -391,8 +412,9 @@ export default function Comptes() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button
+            type="button"
             onClick={() => refreshAll()}
             className="p-3 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 hover:text-slate-950 transition flex items-center gap-2 text-sm font-bold shadow-sm cursor-pointer disabled:opacity-50"
             disabled={loading}
@@ -402,6 +424,7 @@ export default function Comptes() {
           </button>
           
           <button
+            type="button"
             onClick={() => setShowAddForm(!showAddForm)}
             className="px-5 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl hover:shadow-lg hover:shadow-indigo-100 transition duration-200 flex items-center gap-2 text-sm font-bold shadow-sm cursor-pointer"
           >
@@ -419,19 +442,21 @@ export default function Comptes() {
       <section className="bg-white border border-indigo-100 rounded-3xl shadow-sm overflow-hidden">
         <div className="px-6 py-5 bg-gradient-to-r from-indigo-50 via-white to-violet-50 border-b border-indigo-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-sm"><UserCheck className="w-5 h-5" /></div>
+            <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-sm shrink-0"><UserCheck className="w-5 h-5" /></div>
             <div>
-              <h2 className="font-black text-slate-900 text-lg">Demandes de directeurs</h2>
-              <p className="text-sm text-slate-500">Examinez les informations puis acceptez ou refusez la demande.</p>
+              <h2 className="font-black text-slate-900 text-lg">{isFrench ? 'Demandes de directeurs' : 'طلبات مدراء الروضات'}</h2>
+              <p className="text-sm text-slate-500">{isFrench ? 'Examinez les informations puis acceptez ou refusez la demande.' : 'راجعوا المعلومات ثم اقبلوا أو ارفضوا الطلب.'}</p>
             </div>
           </div>
-          <span className="inline-flex items-center justify-center min-w-9 px-3 py-1.5 rounded-full bg-indigo-100 text-indigo-700 text-sm font-black">{pendingDemandes.length} en attente</span>
+          <span className="inline-flex items-center justify-center min-w-9 px-3 py-1.5 rounded-full bg-indigo-100 text-indigo-700 text-sm font-black">
+            {isFrench ? `${pendingDemandes.length} en attente` : `${pendingDemandes.length} في الانتظار`}
+          </span>
         </div>
         {pendingDemandes.length === 0 ? (
           <div className="px-6 py-10 text-center text-slate-400">
             <Clock className="w-9 h-9 mx-auto mb-2 text-slate-300" />
-            <p className="font-bold text-slate-600">Aucune demande en attente</p>
-            <p className="text-sm mt-1">Les nouvelles demandes publiques apparaîtront ici automatiquement.</p>
+            <p className="font-bold text-slate-600">{isFrench ? 'Aucune demande en attente' : 'لا توجد طلبات معلقة'}</p>
+            <p className="text-sm mt-1">{isFrench ? 'Les nouvelles demandes publiques apparaîtront ici automatiquement.' : 'ستظهر الطلبات العامة الجديدة هنا تلقائياً.'}</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
@@ -440,23 +465,23 @@ export default function Comptes() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-black text-slate-900">{demande.prenom} {demande.nom}</h3>
-                    <span className="px-2 py-1 rounded-lg bg-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-wider">À examiner</span>
+                    <span className="px-2 py-1 rounded-lg bg-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-wider">{isFrench ? 'À examiner' : 'قيد المراجعة'}</span>
                   </div>
                   <div className="mt-2 grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm text-slate-600">
-                    <span><strong className="text-slate-800">Crèche :</strong> {demande.nomCreche}</span>
-                    <span><strong className="text-slate-800">Téléphone :</strong> {demande.telephone}</span>
-                    <span><strong className="text-slate-800">E-mail :</strong> {demande.email}</span>
-                    <span><strong className="text-slate-800">Reçue le :</strong> {new Date(demande.dateDemande).toLocaleString('fr-FR')}</span>
+                    <span><strong className="text-slate-800">{isFrench ? 'Crèche :' : 'الروضة:'}</strong> {demande.nomCreche}</span>
+                    <span><strong className="text-slate-800">{isFrench ? 'Téléphone :' : 'الهاتف:'}</strong> {demande.telephone}</span>
+                    <span><strong className="text-slate-800">{isFrench ? 'E-mail :' : 'البريد الإلكتروني:'}</strong> {demande.email}</span>
+                    <span><strong className="text-slate-800">{isFrench ? 'Reçue le :' : 'تاريخ الاستلام:'}</strong> {new Date(demande.dateDemande).toLocaleString(isFrench ? 'fr-FR' : 'ar-DZ')}</span>
                   </div>
-                  <p className="text-xs text-slate-500 mt-2 truncate max-w-3xl"><strong className="text-slate-700">Adresse :</strong> {demande.adresse}{demande.siteWeb ? ` · ${demande.siteWeb}` : ''}</p>
+                  <p className="text-xs text-slate-500 mt-2 truncate max-w-3xl"><strong className="text-slate-700">{isFrench ? 'Adresse :' : 'العنوان:'}</strong> {demande.adresse}{demande.siteWeb ? ` · ${demande.siteWeb}` : ''}</p>
                   {demande.message && <p className="text-xs text-indigo-700 mt-2 italic">“{demande.message}”</p>}
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
                   <button type="button" onClick={() => { setSelectedDemande(demande); setDecisionError(''); }} className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-extrabold hover:bg-indigo-700 transition">
-                    <UserCheck className="w-4 h-4" /> Accepter
+                    <UserCheck className="w-4 h-4" /> {isFrench ? 'Accepter' : 'قبول'}
                   </button>
                   <button type="button" onClick={() => handleRefuseDemande(demande)} disabled={decisionLoading} className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white border border-rose-200 text-rose-700 text-sm font-extrabold hover:bg-rose-50 transition disabled:opacity-50">
-                    <UserX className="w-4 h-4" /> Refuser et supprimer
+                    <UserX className="w-4 h-4" /> {isFrench ? 'Refuser et supprimer' : 'رفض وحذف'}
                   </button>
                 </div>
               </div>
@@ -471,19 +496,21 @@ export default function Comptes() {
             <motion.div initial={{ opacity: 0, scale: 0.96, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-3xl bg-white p-4 shadow-2xl space-y-5 sm:p-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-xs uppercase tracking-widest font-black text-indigo-600">Validation admin</p>
-                  <h3 className="mt-1 break-words text-lg font-black text-slate-900 sm:text-xl">Activer {selectedDemande.prenom} {selectedDemande.nom}</h3>
+                  <p className="text-xs uppercase tracking-widest font-black text-indigo-600">{isFrench ? 'Validation admin' : 'موافقة الإدارة'}</p>
+                  <h3 className="mt-1 break-words text-lg font-black text-slate-900 sm:text-xl">{isFrench ? `Activer ${selectedDemande.prenom} ${selectedDemande.nom}` : `تفعيل ${selectedDemande.prenom} ${selectedDemande.nom}`}</h3>
                   <p className="text-sm text-slate-500 mt-1">{selectedDemande.nomCreche} · {selectedDemande.email}</p>
                 </div>
-                <button type="button" onClick={() => setSelectedDemande(null)} className="p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-100"><XCircle className="w-5 h-5" /></button>
+                <button type="button" disabled={decisionLoading} aria-label={isFrench ? 'Fermer' : 'إغلاق'} onClick={() => setSelectedDemande(null)} className="p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-100 disabled:opacity-50"><XCircle className="w-5 h-5" /></button>
               </div>
               <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-100 text-sm text-indigo-900 leading-relaxed">
-                Le directeur a déjà choisi son mot de passe lors de l’inscription. En acceptant, vous activez immédiatement son compte Rawdha+ ; aucun mot de passe ne vous est demandé ni transmis.
+                {isFrench
+                  ? 'Le directeur a déjà choisi son mot de passe lors de l’inscription. En acceptant, vous activez immédiatement son compte Rawdha+ ; aucun mot de passe ne vous est demandé ni transmis.'
+                  : 'اختار المدير كلمة المرور عند التسجيل. بقبول الطلب يتم تفعيل حساب Rawdha+ مباشرة دون طلب أو إظهار كلمة المرور.'}
               </div>
-              {decisionError && <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm flex items-start gap-2"><AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />{decisionError}</div>}
+              {decisionError && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm flex items-start gap-2"><AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />{decisionError}</div>}
               <div className="flex flex-col sm:flex-row gap-3 sm:justify-end">
-                <button type="button" onClick={() => handleRefuseDemande(selectedDemande)} disabled={decisionLoading} className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-rose-200 text-rose-700 font-extrabold hover:bg-rose-50 transition disabled:opacity-50"><UserX className="w-4 h-4" /> Refuser et supprimer la demande</button>
-                <button type="button" onClick={() => handleAcceptDemande(selectedDemande)} disabled={decisionLoading} className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-indigo-600 text-white font-extrabold hover:bg-indigo-700 transition disabled:opacity-50">{decisionLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />} Accepter et activer</button>
+                <button type="button" onClick={() => handleRefuseDemande(selectedDemande)} disabled={decisionLoading} className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-rose-200 text-rose-700 font-extrabold hover:bg-rose-50 transition disabled:opacity-50"><UserX className="w-4 h-4" /> {isFrench ? 'Refuser et supprimer la demande' : 'رفض وحذف الطلب'}</button>
+                <button type="button" onClick={() => handleAcceptDemande(selectedDemande)} disabled={decisionLoading} className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-indigo-600 text-white font-extrabold hover:bg-indigo-700 transition disabled:opacity-50">{decisionLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />} {isFrench ? 'Accepter et activer' : 'قبول وتفعيل'}</button>
               </div>
             </motion.div>
           </motion.div>
@@ -520,7 +547,7 @@ export default function Comptes() {
               </div>
 
               {formError && (
-                <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm flex items-start gap-2.5">
+                <div role="alert" className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm flex items-start gap-2.5">
                   <AlertCircle className="w-5 h-5 text-rose-500 mt-0.5 flex-shrink-0" />
                   <p>{formError}</p>
                 </div>
@@ -570,12 +597,12 @@ export default function Comptes() {
                     {isFrench ? 'Adresse Email *' : 'البريد الإلكتروني *'}
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Mail className="absolute start-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition font-medium text-slate-800"
+                      className="w-full ps-10 pe-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition font-medium text-slate-800"
                       placeholder="ex: directeur@rawdha.com"
                       required
                     />
@@ -588,12 +615,12 @@ export default function Comptes() {
                     {isFrench ? 'Mot de passe *' : 'كلمة المرور *'}
                   </label>
                   <div className="relative">
-                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Lock className="absolute start-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input
                       type="text"
                       value={motDePasse}
                       onChange={(e) => setMotDePasse(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition font-medium text-slate-800"
+                      className="w-full ps-10 pe-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition font-medium text-slate-800"
                       placeholder="••••••••"
                       required
                     />
@@ -609,12 +636,12 @@ export default function Comptes() {
                         {isFrench ? 'Nom de la Crèche *' : 'اسم الروضة والمؤسسة *'}
                       </label>
                       <div className="relative">
-                        <Building className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <Building className="absolute start-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                         <input
                           type="text"
                           value={nomCreche}
                           onChange={(e) => setNomCreche(e.target.value)}
-                          className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition font-medium text-slate-800"
+                          className="w-full ps-10 pe-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition font-medium text-slate-800"
                           placeholder={isFrench ? 'ex: Crèche Florale' : 'مثال: روضة الأزهار'}
                           required
                         />
@@ -623,7 +650,7 @@ export default function Comptes() {
 
                     {/* ✅ Infos crèche optionnelles — si remplies ici, le directeur n'aura
                         pas besoin de repasser par l'écran d'onboarding à son 1er login. */}
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
                           {isFrench ? 'Téléphone crèche *' : 'هاتف الحضانة *'}
@@ -645,8 +672,10 @@ export default function Comptes() {
                         </label>
                         <input
                           type="number"
+                          min="0"
                           value={tarifCreche}
                           onChange={(e) => setTarifCreche(e.target.value)}
+                          placeholder={isFrench ? 'À saisir par la crèche' : 'تحددها الروضة'}
                           className="w-full px-3 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition text-sm"
                         />
                       </div>
@@ -679,12 +708,12 @@ export default function Comptes() {
                         {isFrench ? 'Fin de la période (essai gratuit de 15 jours par défaut) *' : 'نهاية الفترة (تجربة مجانية لمدة 15 يوماً افتراضياً) *'}
                       </label>
                       <div className="relative">
-                        <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <Calendar className="absolute start-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                         <input
                           type="date"
                           value={dateFinAbonnement}
                           onChange={(e) => setDateFinAbonnement(e.target.value)}
-                          className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition font-medium text-slate-800"
+                          className="w-full ps-10 pe-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition font-medium text-slate-800"
                           required
                         />
                       </div>
@@ -733,6 +762,8 @@ export default function Comptes() {
 
                   <button
                     type="button"
+                    aria-pressed={abonnementActif}
+                    aria-label={isFrench ? 'Activer l’accès immédiatement' : 'تفعيل الوصول مباشرة'}
                     onClick={() => setAbonnementActif(!abonnementActif)}
                     className="text-indigo-600 hover:text-indigo-800 transition cursor-pointer"
                   >
@@ -775,12 +806,12 @@ export default function Comptes() {
         {/* Search header bar */}
         <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="relative w-full max-w-md">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-slate-400" />
+            <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-slate-400" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition bg-white font-medium text-slate-800"
+              className="w-full ps-10 pe-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition bg-white font-medium text-slate-800"
               placeholder={
                 isAdmin
                   ? (isFrench ? 'Rechercher un directeur par nom, email ou crèche...' : 'ابحث بالإيميل، اللقب، أو اسم الروضة الشريكة...')
@@ -800,7 +831,17 @@ export default function Comptes() {
         </div>
 
         {/* User accounts list table structure */}
-        <div className="overflow-x-auto">
+        {filteredComptes.length > 0 && (
+          <p className="px-5 pt-3 text-xs text-slate-500 xl:hidden">
+            {isFrench ? 'Faites défiler le tableau horizontalement pour voir toutes les colonnes.' : 'مرر الجدول أفقياً لرؤية كل الأعمدة.'}
+          </p>
+        )}
+        <div
+          className="mobile-scroll-x focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+          role="region"
+          tabIndex={0}
+          aria-label={isFrench ? 'Tableau des comptes' : 'جدول الحسابات'}
+        >
           {filteredComptes.length === 0 ? (
             <div className="py-16 text-center text-slate-400 space-y-2">
               <Users className="w-12 h-12 mx-auto text-slate-200" />
@@ -808,7 +849,7 @@ export default function Comptes() {
               <p className="text-xs">{isFrench ? 'Essayez avec un autre mot-clé ou créez un compte.' : 'جرب كلمات بحث مختلفة أو قم بإنشاء حساب جديد.'}</p>
             </div>
           ) : (
-              <table className="min-w-[760px] w-full text-left border-collapse">
+              <table className="min-w-[760px] w-full text-start border-collapse">
               <thead>
                 <tr className="border-b border-slate-150 text-slate-500 text-[11px] font-black tracking-wider uppercase bg-slate-100/30">
                   <th className="px-6 py-4">{isFrench ? 'Utilisateur' : 'المستفيد'}</th>
@@ -839,7 +880,7 @@ export default function Comptes() {
                   // Evaluate if subscription has expired relative to the current local date
                   let isExpired = false;
                   if (c.role !== 'admin' && c.dateFinAbonnement) {
-                    const todayStr = new Date().toISOString().split('T')[0];
+                    const todayStr = getLocalDateKey();
                     if (todayStr > c.dateFinAbonnement) {
                       isExpired = true;
                     }
@@ -897,7 +938,7 @@ export default function Comptes() {
                         <>
                           {/* Creche Name */}
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-indigo-950">
-                            {c.nomCreche || <span className="text-slate-400 italic">Non spécifié</span>}
+                            {c.nomCreche || <span className="text-slate-400 italic">{isFrench ? 'Non spécifié' : 'غير محدد'}</span>}
                           </td>
 
                           {/* Nombre d'enfants */}
@@ -940,6 +981,7 @@ export default function Comptes() {
                                   value={c.dateFinAbonnement || ''}
                                   onChange={(e) => handleUpdateEndDate(c.id, e.target.value)}
                                   disabled={c.approvalStatus === 'pending'}
+                                  aria-label={isFrench ? `Date d’expiration de ${c.prenom} ${c.nom}` : `تاريخ انتهاء اشتراك ${c.prenom} ${c.nom}`}
                                   className={`px-2 py-1.5 border rounded-lg text-xs font-black outline-none focus:ring-2 focus:ring-indigo-100 transition ${
                                     c.approvalStatus === 'pending' ? 'border-amber-200 bg-amber-50 text-amber-700 cursor-not-allowed' :
                                     isExpired 
@@ -948,7 +990,7 @@ export default function Comptes() {
                                   }`}
                                 />
                                 {isExpired && (
-                                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" title="Abonnement de ce Directeur expiré !" />
+                                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" title={isFrench ? 'Abonnement de ce Directeur expiré !' : 'انتهى اشتراك هذا المدير!'} />
                                 )}
                               </div>
                             )}
@@ -957,12 +999,12 @@ export default function Comptes() {
                           {/* Active subscription status */}
                           <td className="px-6 py-4 whitespace-nowrap">
                             {c.role === 'admin' ? (
-                              <span className="text-xs font-semibold text-slate-400">Accès Permanent</span>
+                              <span className="text-xs font-semibold text-slate-400">{isFrench ? 'Accès Permanent' : 'وصول دائم'}</span>
                             ) : (
                               <div className="flex items-center gap-2">
                                 {c.approvalStatus === 'pending' ? (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-700 rounded-full border border-amber-200 text-[10px] font-black uppercase">
-                                    En attente
+                                    {isFrench ? 'En attente' : 'قيد الانتظار'}
                                   </span>
                                 ) : (
                                 <>
@@ -973,15 +1015,17 @@ export default function Comptes() {
                                 >
                                   {c.abonnementActif && !isExpired ? (
                                     <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200 text-[10px] font-black uppercase">
-                                      Actif
+                                      {isFrench ? 'Actif' : 'نشط'}
                                     </span>
                                   ) : (
                                     <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-50 text-rose-700 rounded-full border border-rose-200 text-[10px] font-black uppercase">
-                                      {isExpired ? 'Expiré' : 'Suspendu'}
+                                      {isExpired ? (isFrench ? 'Expiré' : 'منتهي') : (isFrench ? 'Suspendu' : 'معلق')}
                                     </span>
                                   )}
                                 </button>
                                 <button
+                                  type="button"
+                                  aria-label={c.abonnementActif ? (isFrench ? 'Suspendre l’abonnement' : 'تعليق الاشتراك') : (isFrench ? 'Activer l’abonnement' : 'تفعيل الاشتراك')}
                                   onClick={() => handleToggleSubscription(c.id, c.abonnementActif)}
                                   className="text-slate-400 hover:text-indigo-600 cursor-pointer transition flex items-center justify-center"
                                 >
@@ -1007,7 +1051,7 @@ export default function Comptes() {
                                 <span>{mappedEnfant.nom} {mappedEnfant.prenom}</span>
                               </div>
                             ) : (
-                              <span className="text-xs text-slate-400 italic">Aucun élève lié</span>
+                              <span className="text-xs text-slate-400 italic">{isFrench ? 'Aucun élève lié' : 'لا يوجد طفل مرتبط'}</span>
                             )}
                           </td>
                         </>
@@ -1017,7 +1061,7 @@ export default function Comptes() {
                       <td className="px-6 py-4 text-center whitespace-nowrap">
                         {c.id === 'adm1' ? (
                           <span className="text-[10px] text-slate-400 font-bold uppercase select-none">
-                            System
+                            {isFrench ? 'Système' : 'النظام'}
                           </span>
                         ) : (
                           <div className="inline-flex items-center gap-1">

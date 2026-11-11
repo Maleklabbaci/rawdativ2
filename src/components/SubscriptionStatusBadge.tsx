@@ -4,11 +4,12 @@ import { useLanguage } from '../contexts/LanguageContext';
 interface Props {
   dateFinAbonnement?: string; // format 'YYYY-MM-DD'
   abonnementActif?: boolean;
+  onClick?: () => void;
 }
 
 // ✅ Badge dans le header montrant au directeur combien de jours il lui reste
 // (essai gratuit ou abonnement payant), ou la date de fin s'il reste plus de 7 jours.
-export default function SubscriptionStatusBadge({ dateFinAbonnement, abonnementActif }: Props) {
+export default function SubscriptionStatusBadge({ dateFinAbonnement, abonnementActif, onClick }: Props) {
   const { isFrench } = useLanguage();
 
   if (!abonnementActif || !dateFinAbonnement) return null;
@@ -35,12 +36,28 @@ export default function SubscriptionStatusBadge({ dateFinAbonnement, abonnementA
         ? `Abonnement actif jusqu'au ${dateFormatee}`
         : `الاشتراك ساري حتى ${dateFormatee}`);
 
+  const className = `min-h-8! flex min-w-0 max-w-full items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-semibold whitespace-nowrap overflow-hidden transition ${
+    urgent ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100/80' : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
+  } ${onClick ? 'cursor-pointer' : ''}`;
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={isFrench ? `Fin le ${dateFormatee} · Ouvrir la page de paiement` : `ينتهي في ${dateFormatee} · فتح صفحة الدفع`}
+        className={className}
+      >
+        {urgent ? <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" /> : <Clock className="w-3.5 h-3.5 flex-shrink-0" />}
+        <span className="min-w-0 truncate">{texte}</span>
+      </button>
+    );
+  }
+
   return (
     <div
       title={isFrench ? `Fin le ${dateFormatee}` : `ينتهي في ${dateFormatee}`}
-      className={`flex min-w-0 max-w-full items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-semibold whitespace-nowrap overflow-hidden ${
-        urgent ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-slate-50 text-slate-600 border border-slate-200'
-      }`}
+      className={className}
     >
       {urgent ? <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" /> : <Clock className="w-3.5 h-3.5 flex-shrink-0" />}
       <span className="min-w-0 truncate">{texte}</span>

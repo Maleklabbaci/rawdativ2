@@ -1,3 +1,4 @@
+import { reminderContext, reminderBlockReason } from './financePeriod';
 import type { Classe, Enfant, Paiement, Personnel, Presence } from '../types';
 
 export type CommandCenterLocale = 'fr' | 'ar';
@@ -68,11 +69,28 @@ function buildPaymentAlerts(
   now: Date,
   locale: CommandCenterLocale,
 ): CommandCenterAlert[] {
-  const latePayments = paiements.filter(payment => payment.statut === 'Retard');
-  const waitingOverFiveDays = paiements.filter(
+  const reminderState = reminderContext(paiements);
+  const held = reminderState.suspectedIds;
+  const visibleHeld = paiements.filter(payment => held.has(payment.id));
+  const actionable = paiements.filter(payment => reminderBlockReason(payment, reminderState) === null);
+  const needsReview = paiements.filter(payment => { const reason = reminderBlockReason(payment, reminderState); return reason === 'period' || reason === 'sibling-period' || reason === 'details'; });
+  const latePayments = actionable.filter(payment => payment.statut === 'Retard');
+  const waitingOverFiveDays = actionable.filter(
     payment => payment.statut === 'En attente' && daysPastDue(payment, now) > 5,
   );
   const alerts: CommandCenterAlert[] = [];
+
+  if (visibleHeld.length > 0) alerts.push({
+    id:'payments-suspected-duplicates', level:'check', title: locale === 'ar' ? 'اشتباه تكرار فواتير' : 'Doublons suspects à vérifier',
+    message: locale === 'ar' ? `${visibleHeld.length} فواتير مرتبطة باشتباه تكرار، لم تُلغَ مبالغها.` : `${visibleHeld.length} facture(s) liée(s) à un soupçon ; aucun montant n’a été annulé.`,
+    targetPage:'paiements', count:visibleHeld.length,
+  });
+
+  if (needsReview.length > 0) alerts.push({
+    id:'payments-reminder-review', level:'check', title: locale === 'ar' ? 'فواتير تحتاج للتحقق قبل التذكير' : 'Factures à vérifier avant rappel',
+    message: locale === 'ar' ? `${needsReview.length} فاتورة مستثناة من التذكيرات بسبب فترة تحتاج للمراجعة في الملف أو مبلغ أو حالة تحتاج للتحقق؛ لم تُلغَ مبالغها.` : `${needsReview.length} facture(s) exclues des rappels : période à vérifier sur le dossier, ou montant/statut à vérifier ; aucun montant n’a été annulé.`,
+    targetPage:'paiements', count:needsReview.length,
+  });
 
   if (latePayments.length > 0) {
     alerts.push({
@@ -81,7 +99,7 @@ function buildPaymentAlerts(
       title: locale === 'ar' ? 'مدفوعات متأخرة' : 'Paiements en retard',
       message: locale === 'ar'
         ? `يوجد ${latePayments.length} من المدفوعات المتأخرة التي تحتاج إلى متابعة.`
-        : `${latePayments.length} règlement${latePayments.length > 1 ? 's' : ''} nécessite${latePayments.length > 1 ? 'nt' : ''} une relance.`,
+        : `${latePayments.length} facture(s) au statut retard à vérifier avant tout contact.`,
       targetPage: 'paiements',
       count: latePayments.length,
     });

@@ -1,8 +1,13 @@
+import PickupAuthorizations from './PickupAuthorizations';
+import { documentedText, mealAppliesOnDate } from '../utils/mealSafety';
+import { runInBatches } from '../utils/runInBatches';
+import { departureConfirmed, departureTimeValid } from '../utils/departure';
+import { dispatchAutomaticAttendancePush } from '../utils/parentPortal';
 /**
  * Style context — Parcours quotidien Rawdha+ : contrôle fiable et lisible de la journée de crèche.
  * Les actions WhatsApp sont manuelles, précédées d’un aperçu éditable, et ne remplacent jamais le pointage sécurisé.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -39,7 +44,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useDb } from '../contexts/DbContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useToast } from '../contexts/ToastContext';
-import type { Activite, Classe, Enfant, Personnel, Presence, Repas } from '../types';
+import type { Activite, Classe, Enfant, Personnel, Presence, PickupAuthorization } from '../types';
 
 type RoutineStepKey = 'ouverture' | 'presences' | 'sante' | 'repas' | 'activites' | 'departs' | 'fermeture';
 
@@ -91,24 +96,8 @@ const readStoredArray = (key: string): string[] => {
   }
 };
 
-const readStoredObject = <T extends object>(key: string, fallback: T): T => {
-  if (typeof window === 'undefined') return fallback;
-  try {
-    const value = JSON.parse(window.localStorage.getItem(key) || 'null');
-    return value && typeof value === 'object' && !Array.isArray(value) ? value as T : fallback;
-  } catch {
-    return fallback;
-  }
-};
-
-const runInBatches = async <T,>(items: T[], worker: (item: T) => Promise<void>, batchSize = 10) => {
-  for (let index = 0; index < items.length; index += batchSize) {
-    await Promise.all(items.slice(index, index + batchSize).map(worker));
-  }
-};
-
 export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps) {
-  const { user } = useAuth();
+  const { user, creche } = useAuth();
   const { language } = useLanguage();
   const { showToast } = useToast();
   const {
@@ -122,6 +111,7 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
     loading,
     addPresence,
     updatePresence,
+    confirmPickupDeparture,
     savePresenceJournee,
   } = useDb();
   const isArabic = language === 'ar';
@@ -133,23 +123,28 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
   const [completedSteps, setCompletedSteps] = useState<string[]>(() => storagePrefix ? readStoredArray(`${storagePrefix}:completed`) : []);
   const [absenceDraft, setAbsenceDraft] = useState<AbsenceDraft | null>(null);
   const [healthChildId, setHealthChildId] = useState<string | null>(null);
-  const [healthForm, setHealthForm] = useState({ temperature: '36.5', repas: 'Tout', humeur: 'Souriant' });
+  const [healthSnapshot, setHealthSnapshot] = useState<Presence | null>(null);
+  const [healthForm, setHealthForm] = useState({ temperature: '', repas: '', humeur: '' });
   const [confirmedMeals, setConfirmedMeals] = useState<boolean>(() => storagePrefix ? window.localStorage.getItem(`${storagePrefix}:meals`) === '1' : false);
   const [confirmedActivities, setConfirmedActivities] = useState<boolean>(() => storagePrefix ? window.localStorage.getItem(`${storagePrefix}:activities`) === '1' : false);
-  const [departures, setDepartures] = useState<DepartureMap>(() => storagePrefix ? readStoredObject<DepartureMap>(`${storagePrefix}:departures`, {}) : {});
   const [departureSelections, setDepartureSelections] = useState<DepartureMap>({});
-  const [closed, setClosed] = useState<boolean>(() => storagePrefix ? window.localStorage.getItem(`${storagePrefix}:closed`) === '1' : false);
+  const [pickupRegistry, setPickupRegistry] = useState<Record<string, PickupAuthorization[] | null>>({});
+  const [departureChecks, setDepartureChecks] = useState<Record<string, boolean>>({});
+  const [savingDepartures, setSavingDepartures] = useState<Record<string, boolean>>({});
+  const departureWrites = useRef(new Set<string>());
+  const [closed, setClosed] = useState(false);
   const [selectedChildIds, setSelectedChildIds] = useState<string[]>([]);
   const [presenceSearch, setPresenceSearch] = useState('');
   const [presenceFilter, setPresenceFilter] = useState<'tous' | 'a-pointer' | 'presents' | 'absents'>('tous');
   const [batchAbsenceDraft, setBatchAbsenceDraft] = useState<{ statut: AbsenceDraft['statut']; motif: string } | null>(null);
   const [isSavingBatch, setIsSavingBatch] = useState(false);
+  const pointingInFlight = useRef(new Set<string>());
   const [whatsAppDraft, setWhatsAppDraft] = useState<WhatsAppDraft | null>(null);
 
   const enfants = useMemo(() => {
-    if (!isDirecteur || !user?.id) return allEnfants;
-    return allEnfants.filter((child) => child.crecheId === user.id && child.statut === 'Actif');
-  }, [allEnfants, isDirecteur, user?.id]);
+    const recorded = new Set(allPresences.filter(presence => presence.date === today).map(presence => presence.enfantId));
+    return allEnfants.filter(child => (!isDirecteur || child.crecheId === user?.id) && (child.statut === 'Actif' || recorded.has(child.id)));
+  }, [allEnfants, allPresences, isDirecteur, user?.id, today]);
 
   const enfantIds = useMemo(() => new Set(enfants.map((child) => child.id)), [enfants]);
   const presences = useMemo(() => allPresences.filter((presence) => enfantIds.has(presence.enfantId)), [allPresences, enfantIds]);
@@ -187,13 +182,13 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
   const dayPresence = presenceJournees.find((journee) => journee.date === today && (!user?.id || journee.crecheId === user.id));
   const isDayValidated = dayPresence?.statut === 'validee';
 
-  const todayMeals = useMemo(() => repas.filter((meal) => meal.date === today), [repas, today]);
+  const todayMeals = useMemo(() => repas.filter((meal) => mealAppliesOnDate(meal, today)), [repas, today]);
   const todayActivities = useMemo(() => activites.filter((activity) => activity.date === today), [activites, today]);
   const healthMissingCount = presentChildren.filter((child) => {
     const presence = todayPresences.get(child.id) as (Presence & { temperature?: string; humeur?: string; repas?: string }) | undefined;
     return !presence?.temperature || !presence?.humeur || !presence?.repas;
   }).length;
-  const pendingDepartures = presentChildren.filter((child) => !departures[child.id]);
+  const pendingDepartures = presentChildren.filter((child) => !departureConfirmed(todayPresences.get(child.id)));
   const activePersonnelCount = personnel.filter((person) => person.statut === 'Actif').length;
   const dateLabel = new Intl.DateTimeFormat(isArabic ? 'ar-DZ' : 'fr-FR', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -217,9 +212,7 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
     window.localStorage.setItem(`${storagePrefix}:completed`, JSON.stringify(completedSteps));
     window.localStorage.setItem(`${storagePrefix}:meals`, confirmedMeals ? '1' : '0');
     window.localStorage.setItem(`${storagePrefix}:activities`, confirmedActivities ? '1' : '0');
-    window.localStorage.setItem(`${storagePrefix}:departures`, JSON.stringify(departures));
-    if (closed) window.localStorage.setItem(`${storagePrefix}:closed`, '1');
-  }, [closed, completedSteps, confirmedActivities, confirmedMeals, departures, storagePrefix]);
+  }, [completedSteps, confirmedActivities, confirmedMeals, storagePrefix]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -237,7 +230,10 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
     const next = steps[activeStepIndex + 1];
     if (next) setActiveStep(next.key);
   };
-  const skipCurrentStep = () => goNext(activeStep);
+  const skipCurrentStep = () => {
+    const next = steps[activeStepIndex + 1];
+    if (next) setActiveStep(next.key);
+  };
 
   const getPresence = (childId: string) => todayPresences.get(childId);
   const isPointingLocked = isDayValidated;
@@ -265,7 +261,7 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
 
   const savePresent = async (child: Enfant, silent = false) => {
     if (isPointingLocked) {
-      if (silent) return;
+      if (silent) throw new Error('pointing_locked');
 
       showToast(text('La journée est validée. Rouvrez-la depuis Présences pour modifier un pointage.', 'تم اعتماد اليوم. افتحه من صفحة الحضور قبل التعديل.'), 'error');
       return;
@@ -276,14 +272,29 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
       date: today,
       statut: 'Présent' as const,
       heureArrivee: existing?.heureArrivee || getTimeLabel(),
-      heureDepart: existing?.heureDepart || '16:30',
-      temperature: existing?.temperature || '36.5',
-      repas: existing?.repas || 'Tout',
-      humeur: existing?.humeur || 'Souriant',
+      heureDepart: existing?.statut === 'Présent' ? existing.heureDepart || '' : '',
+      temperature: existing?.statut === 'Présent' ? existing.temperature || '' : '',
+      repas: existing?.statut === 'Présent' ? existing.repas || '' : '',
+      humeur: existing?.statut === 'Présent' ? existing.humeur || '' : '',
       motifAbsence: '',
+      ...(existing?.statut !== 'Présent' ? { personneRecuperation: '', personneRecuperationId: '', departVerifie: false, departVerifiePar: '', departVerifieLe: '' } : {}),
     };
-    if (existing) await updatePresence(existing.id, payload);
-    else await addPresence(payload);
+    if (pointingInFlight.current.has(child.id)) throw new Error('pointing_in_progress');
+    pointingInFlight.current.add(child.id);
+    try {
+      if (existing) await updatePresence(existing.id, payload, existing);
+      else await addPresence(payload);
+      await dispatchAutomaticAttendancePush({
+        crecheId: user?.id,
+        crecheNom: creche?.nom,
+        enfant: child,
+        previous: existing,
+        next: payload,
+        isArabic,
+      }).catch(() => {});
+    } finally {
+      pointingInFlight.current.delete(child.id);
+    }
   };
 
   const saveAbsenceForChild = async (enfantId: string, statut: AbsenceDraft['statut'], motif: string, silent = false) => {
@@ -302,11 +313,26 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
       temperature: '',
       repas: '',
       humeur: '',
-      personneRecuperation: '',
+      personneRecuperation: '', personneRecuperationId: '', departVerifie: false, departVerifiePar: '', departVerifieLe: '',
     };
-    if (existing) await updatePresence(existing.id, payload);
-    else await addPresence(payload);
-    return true;
+    if (pointingInFlight.current.has(enfantId)) throw new Error('pointing_in_progress');
+    pointingInFlight.current.add(enfantId);
+    try {
+      if (existing) await updatePresence(existing.id, payload, existing);
+      else await addPresence(payload);
+      const targetChild = allEnfants.find(item => item.id === enfantId) || null;
+      await dispatchAutomaticAttendancePush({
+        crecheId: user?.id,
+        crecheNom: creche?.nom,
+        enfant: targetChild,
+        previous: existing,
+        next: payload,
+        isArabic,
+      }).catch(() => {});
+      return true;
+    } finally {
+      pointingInFlight.current.delete(enfantId);
+    }
   };
 
   const saveAbsence = async () => {
@@ -326,9 +352,15 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
     }
     setIsSavingBatch(true);
     try {
-      await runInBatches<Enfant>(enfants.filter((item) => selectedChildIds.includes(item.id)), async (child: Enfant) => { await savePresent(child, true); });
-      showToast(text(`${selectedChildIds.length} enfant${selectedChildIds.length > 1 ? 's' : ''} marqué${selectedChildIds.length > 1 ? 's' : ''} présent${selectedChildIds.length > 1 ? 's' : ''}.`, `تم تسجيل حضور ${selectedChildIds.length} طفل.`), 'success');
-      setSelectedChildIds([]);
+      const selected = enfants.filter((item) => selectedChildIds.includes(item.id));
+      const failed = await runInBatches<Enfant>(selected, async (child) => { await savePresent(child, true); });
+      if (failed.length) {
+        showToast(text(`${selected.length - failed.length} enregistré(s), ${failed.length} en échec. Vérifiez et réessayez les enfants sélectionnés.`, `تم تسجيل ${selected.length - failed.length}، وفشل تسجيل ${failed.length}. تحقق وحاول مجدداً للأطفال المحددين.`), 'error');
+        setSelectedChildIds(failed.map(child => child.id));
+      } else {
+        showToast(text(`${selected.length} enfant(s) marqué(s) présent(s).`, `تم تسجيل حضور ${selected.length} طفل.`), 'success');
+        setSelectedChildIds([]);
+      }
     } finally {
       setIsSavingBatch(false);
     }
@@ -350,10 +382,17 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
     if (!batchAbsenceDraft || selectedChildIds.length === 0) return;
     setIsSavingBatch(true);
     try {
-      await runInBatches<string>(selectedChildIds, async (childId: string) => { await saveAbsenceForChild(childId, batchAbsenceDraft.statut, batchAbsenceDraft.motif, true); });
-      showToast(text(`${selectedChildIds.length} absence${selectedChildIds.length > 1 ? 's' : ''} enregistrée${selectedChildIds.length > 1 ? 's' : ''}.`, `تم تسجيل غياب ${selectedChildIds.length} طفل.`), 'success');
-      setSelectedChildIds([]);
-      setBatchAbsenceDraft(null);
+      const failed = await runInBatches<string>(selectedChildIds, async (childId) => {
+        if (!await saveAbsenceForChild(childId, batchAbsenceDraft.statut, batchAbsenceDraft.motif, true)) throw new Error('pointing_locked');
+      });
+      if (failed.length) {
+        showToast(text(`${selectedChildIds.length - failed.length} enregistré(s), ${failed.length} en échec. Vérifiez et réessayez les enfants sélectionnés.`, `تم تسجيل ${selectedChildIds.length - failed.length}، وفشل تسجيل ${failed.length}. تحقق وحاول مجدداً للأطفال المحددين.`), 'error');
+        setSelectedChildIds(failed);
+      } else {
+        showToast(text(`${selectedChildIds.length} absence(s) enregistrée(s).`, `تم تسجيل غياب ${selectedChildIds.length} طفل.`), 'success');
+        setSelectedChildIds([]);
+        setBatchAbsenceDraft(null);
+      }
     } finally {
       setIsSavingBatch(false);
     }
@@ -379,36 +418,45 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
   const openHealthEditor = (child: Enfant) => {
     const presence = getPresence(child.id) as (Presence & { temperature?: string; repas?: string; humeur?: string }) | undefined;
     setHealthChildId(child.id);
+    setHealthSnapshot(presence || null);
     setHealthForm({
-      temperature: presence?.temperature || '36.5',
-      repas: presence?.repas || 'Tout',
-      humeur: presence?.humeur || 'Souriant',
+      temperature: presence?.temperature || '',
+      repas: presence?.repas || '',
+      humeur: presence?.humeur || '',
     });
   };
 
   const saveHealth = async () => {
     if (!healthChildId) return;
-    const presence = getPresence(healthChildId);
-    if (!presence) return;
+    const presence = healthSnapshot;
+    if (!presence || presence.enfantId !== healthChildId) return;
     const temperature = Number(healthForm.temperature.replace(',', '.'));
-    if (!Number.isFinite(temperature) || temperature < 30 || temperature > 45) {
+    if (healthForm.temperature.trim() && (!Number.isFinite(temperature) || temperature < 30 || temperature > 45)) {
       showToast(text('La température saisie est invalide.', 'درجة الحرارة المدخلة غير صالحة.'), 'error');
       return;
     }
+    const nextTemp = healthForm.temperature.trim() ? temperature.toFixed(1) : '';
     await updatePresence(presence.id, {
-      temperature: temperature.toFixed(1),
+      temperature: nextTemp,
       repas: healthForm.repas,
       humeur: healthForm.humeur,
-    });
+    }, presence);
+    const targetChild = allEnfants.find(item => item.id === healthChildId) || null;
+    await dispatchAutomaticAttendancePush({
+      crecheId: user?.id,
+      crecheNom: creche?.nom,
+      enfant: targetChild,
+      previous: presence,
+      next: {
+        ...presence,
+        temperature: nextTemp,
+        repas: healthForm.repas,
+        humeur: healthForm.humeur,
+      },
+      isArabic,
+    }).catch(() => {});
     setHealthChildId(null);
-  };
-
-  const authorizedPeople = (child: Enfant) => {
-    const people = [
-      ...child.parents.map((parent) => ({ id: `parent-${parent.id}`, name: `${parent.prenom} ${parent.nom}`.trim(), detail: parent.lien })),
-      ...child.contactsUrgence.map((contact) => ({ id: `contact-${contact.id}`, name: contact.nom, detail: contact.lien })),
-    ].filter((person) => person.name);
-    return people.length > 0 ? people : [{ id: 'unknown', name: text('Personne autorisée à confirmer', 'الشخص المصرح له بالتأكيد'), detail: '' }];
+    setHealthSnapshot(null);
   };
 
   const prepareWhatsApp = (child: Enfant, event: WhatsAppEvent) => {
@@ -419,20 +467,22 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
       return;
     }
 
-    const time = getTimeLabel();
+    const record = getPresence(child.id);
+    const time = event === 'departure' ? record?.heureDepart : record?.heureArrivee;
+    const timeLabel = time || text('non précisée', 'غير محدد');
     const childName = child.prenom;
     const parentName = parent.prenom || parent.nom;
     const message = isArabic
       ? event === 'presence'
-        ? `السلام عليكم ${parentName}، تم تسجيل حضور ${childName} في الحضانة اليوم على الساعة ${time}. — Rawdha+`
+        ? `السلام عليكم ${parentName}، تم تسجيل حضور ${childName} في الحضانة اليوم على الساعة ${timeLabel}. — Rawdha+`
         : event === 'absence'
           ? `السلام عليكم ${parentName}، تم تسجيل غياب ${childName} اليوم في الحضانة. — Rawdha+`
-          : `السلام عليكم ${parentName}، تم تأكيد مغادرة ${childName} من الحضانة اليوم على الساعة ${time}. — Rawdha+`
+          : `السلام عليكم ${parentName}، تم تأكيد مغادرة ${childName} من الحضانة اليوم على الساعة ${timeLabel}. — Rawdha+`
       : event === 'presence'
-        ? `Bonjour ${parentName}, la présence de ${childName} à la crèche a été enregistrée aujourd’hui à ${time}. — Rawdha+`
+        ? `Bonjour ${parentName}, la présence de ${childName} à la crèche a été enregistrée aujourd’hui à ${timeLabel}. — Rawdha+`
         : event === 'absence'
           ? `Bonjour ${parentName}, l’absence de ${childName} à la crèche a été enregistrée aujourd’hui. — Rawdha+`
-          : `Bonjour ${parentName}, le départ de ${childName} de la crèche a été confirmé aujourd’hui à ${time}. — Rawdha+`;
+          : `Bonjour ${parentName}, le départ de ${childName} de la crèche a été confirmé aujourd’hui à ${timeLabel}. — Rawdha+`;
 
     setWhatsAppDraft({ childName, parentName, phone, event, message });
   };
@@ -444,26 +494,58 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
     setWhatsAppDraft(null);
   };
 
+  const pickupChoices = (child: Enfant) => [
+    ...(pickupRegistry[child.id] || []).filter(item => !item.revokedAt).map(item => ({ id: `registry-${item.id}`, name: item.nom, detail: item.lien, kind: 'registry' as const })),
+  ];
+
+  useEffect(() => { if (activeStep !== 'departs') setPickupRegistry({}); }, [activeStep]);
+
   const confirmDeparture = async (child: Enfant) => {
-    const people = authorizedPeople(child);
-    const selected = departureSelections[child.id] || people[0]?.name;
-    if (!selected || people[0]?.id === 'unknown') {
-      showToast(text('Sélectionnez la personne qui récupère l’enfant.', 'اختر الشخص الذي سيستلم الطفل.'), 'error');
+    if (departureWrites.current.has(child.id)) return;
+    const selected = pickupChoices(child).find(person => person.id === departureSelections[child.id]);
+    if (!selected || !departureChecks[child.id]) {
+      showToast(text('Choisissez la personne et confirmez la vérification de son identité et de son autorisation.', 'اختر الشخص وأكد التحقق من هويته وترخيصه.'), 'error');
       return;
     }
     const presence = getPresence(child.id);
-    if (!presence) return;
-    await updatePresence(presence.id, {
-      heureDepart: getTimeLabel(),
-      personneRecuperation: selected,
-    } as Partial<Presence> & { personneRecuperation: string });
-    setDepartures((previous) => ({ ...previous, [child.id]: selected }));
+    if (!presence || presence.statut !== 'Présent' || !user?.id || departureConfirmed(presence)) return;
+    // Do not silently replace a name already stored by an older version.
+    if (presence.personneRecuperation?.trim() && presence.personneRecuperation.trim() !== selected.name) {
+      showToast(text('Le nom enregistré pour ce départ est différent. Vérifiez et corrigez le dossier avant de confirmer.', 'الاسم المسجل للمغادرة مختلف. تحقق وصحح الملف قبل التأكيد.'), 'error');
+      return;
+    }
+    const departureTime = presence.heureDepart || getTimeLabel();
+    if (!departureTimeValid(presence.heureArrivee, departureTime)) {
+      showToast(text('Vérifiez les heures : le départ doit être après l’arrivée.', 'تحقق من الأوقات: يجب أن تكون المغادرة بعد الوصول.'), 'error');
+      return;
+    }
+    departureWrites.current.add(child.id);
+    setSavingDepartures(previous => ({ ...previous, [child.id]: true }));
+    try {
+      await confirmPickupDeparture(presence, selected.id.slice('registry-'.length), departureTime);
+      await dispatchAutomaticAttendancePush({
+        crecheId: user?.id,
+        crecheNom: creche?.nom,
+        enfant: child,
+        previous: presence,
+        next: {
+          ...presence,
+          heureDepart: departureTime,
+          personneRecuperation: selected.name,
+        },
+        isArabic,
+      }).catch(() => {});
+      setDepartureChecks(previous => ({ ...previous, [child.id]: false }));
+    } finally {
+      departureWrites.current.delete(child.id);
+      setSavingDepartures(previous => ({ ...previous, [child.id]: false }));
+    }
   };
 
-  const canClose = enfants.length === 0 || (unpointedCount === 0 && pendingDepartures.length === 0);
+  const canClose = !loading && enfants.length > 0 && unpointedCount === 0 && pendingDepartures.length === 0;
   const completeClosing = async () => {
     if (!canClose) {
-      showToast(text('Il reste des présences ou des départs à vérifier.', 'ما زالت هناك حضور أو مغادرات يجب التحقق منها.'), 'error');
+      showToast(text('Vérifiez le chargement des enfants, les présences et les départs avant de terminer.', 'تحقق من تحميل الأطفال والحضور والمغادرات قبل إنهاء المسار.'), 'error');
       return;
     }
     if (user?.id && unpointedCount === 0 && dayPresence?.statut !== 'validee') {
@@ -479,8 +561,10 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
     markCompleted('fermeture');
     setClosed(true);
     onCompleted?.();
-    showToast(text('La journée est bien clôturée.', 'تم إغلاق اليوم بنجاح.'), 'success');
+    showToast(text('Parcours terminé sur cet appareil.', 'اكتمل المسار على هذا الجهاز.'), 'success');
   };
+
+  const validCompletedSteps = completedSteps.filter(key => (key !== 'departs' || pendingDepartures.length === 0) && (key !== 'fermeture' || (closed && canClose)));
 
   const renderStepContent = () => {
     if (loading) {
@@ -495,26 +579,29 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
 
     if (activeStep === 'ouverture') {
       return (
-        <div className="space-y-5">
-          <div className="rounded-[2rem] bg-gradient-to-br from-indigo-950 via-indigo-900 to-violet-800 p-5 text-white shadow-xl sm:p-8">
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs sm:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-indigo-200"><Zap className="h-4 w-4" /> {text('Le pilotage quotidien commence ici', 'تبدأ إدارة يوم الحضانة من هنا')}</div>
-                <h2 className="max-w-2xl text-2xl font-black tracking-tight sm:text-4xl">{text('Un déroulement clair, étape par étape.', 'سير عمل واضح، خطوة بخطوة.')}</h2>
-                <p className="mt-3 max-w-xl text-sm leading-6 text-indigo-100/80">{text('Ouvrez la crèche, préparez les équipes et suivez chaque étape sans parcourir les menus.', 'افتح الحضانة، حضّر الفريق وتابع كل مرحلة دون التنقل بين القوائم.')}</p>
+                <p className="text-xs font-medium capitalize text-slate-500">{dateLabel}</p>
+                <h2 className="mt-0.5 text-lg font-bold tracking-tight text-slate-900 sm:text-2xl">{text('Ouverture de la journée', 'افتتاح يوم الحضانة')}</h2>
+                <p className="mt-1 max-w-xl text-xs sm:text-sm text-slate-500">{text('Vérifiez l’effectif et suivez les étapes du matin jusqu’aux départs.', 'راجع الأعداد وتابع مراحل اليوم من الصباح حتى المغادرة.')}</p>
               </div>
-              <div className="rounded-2xl bg-white/10 p-4 sm:min-w-48"><p className="text-xs font-bold text-indigo-200">{dateLabel}</p><p className="mt-2 text-3xl font-black">{getTimeLabel()}</p></div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 sm:text-end">
+                <p className="text-[11px] font-medium text-slate-500">{text('Heure actuelle', 'الوقت الحالي')}</p>
+                <p className="text-xl font-bold text-slate-900 tabular-nums">{getTimeLabel()}</p>
+              </div>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
-              { label: text('Enfants actifs', 'الأطفال النشطون'), value: enfants.length, icon: Baby, color: 'text-indigo-600 bg-indigo-50' },
-              { label: text('Équipe active', 'الفريق النشط'), value: activePersonnelCount, icon: Users, color: 'text-emerald-600 bg-emerald-50' },
-              { label: text('Classes', 'الأقسام'), value: classes.length, icon: ClipboardCheck, color: 'text-amber-600 bg-amber-50' },
-              { label: text('À pointer', 'بانتظار التسجيل'), value: unpointedCount, icon: CircleAlert, color: 'text-rose-600 bg-rose-50' },
-            ].map(({ label, value, icon: Icon, color }) => (
-              <div key={label} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-xs"><div className={`mb-3 flex h-9 w-9 items-center justify-center rounded-xl ${color}`}><Icon className="h-4 w-4" /></div><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="mt-1 text-2xl font-black text-slate-900">{value}</p></div>
+              { label: text('Enfants actifs', 'الأطفال النشطون'), value: enfants.length },
+              { label: text('Équipe active', 'الفريق النشط'), value: activePersonnelCount },
+              { label: text('Classes', 'الأقسام'), value: classes.length },
+              { label: text('À pointer', 'بانتظار التسجيل'), value: unpointedCount },
+            ].map(({ label, value }) => (
+              <div key={label} className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs"><p className="text-xs font-medium text-slate-500">{label}</p><p className="mt-1 text-2xl font-bold text-slate-900 tabular-nums">{value}</p></div>
             ))}
           </div>
 
@@ -553,10 +640,10 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
           </div>
           <div className="space-y-4">
             {groups.length === 0 ? <EmptyState icon={Users} text={text('Aucun enfant actif à pointer. Vous pouvez passer cette étape.', 'لا يوجد أطفال نشطون لتسجيل حضورهم. يمكنك تجاوز هذه المرحلة.')} /> : groups.map(({ classe, children }) => { const visibleChildren = children.filter(isPresenceVisible); const visibleIds = visibleChildren.map((child) => child.id); const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedChildIds.includes(id)); if (visibleChildren.length === 0) return null; return (
-              <section key={classe.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xs"><div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"><div className="min-w-0"><p className="truncate text-sm font-black text-slate-900">{classe.nom}</p><p className="text-xs font-semibold text-slate-400">{visibleChildren.length} {text('enfant(s)', 'طفل')}</p></div><div className="flex flex-wrap items-center gap-2"><button type="button" onClick={() => toggleChildrenSelection(visibleIds)} className="rounded-xl bg-white px-3 py-2 text-[10px] font-black text-indigo-600 shadow-xs hover:bg-indigo-100">{allVisibleSelected ? text('Désélectionner', 'إلغاء التحديد') : text('Tout le groupe', 'كل المجموعة')}</button><span className="rounded-xl bg-white px-3 py-2 text-xs font-black text-indigo-600 shadow-xs">{visibleChildren.filter((child) => getPresence(child.id)?.statut === 'Présent').length}/{visibleChildren.length}</span></div></div><div className="divide-y divide-slate-100">{visibleChildren.map((child) => { const presence = getPresence(child.id); const isPresent = presence?.statut === 'Présent'; const isAbsent = presence?.statut?.startsWith('Absent'); const absenceOpen = absenceDraft?.enfantId === child.id; return <div key={child.id} className="p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3"><button type="button" onClick={() => toggleChildSelection(child.id)} aria-label={text(`Sélectionner ${child.prenom} ${child.nom}`, `تحديد ${child.prenom} ${child.nom}`)} className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition ${selectedChildIds.includes(child.id) ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-transparent hover:border-indigo-300'}`}><Check className="h-4 w-4" /></button><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-sm font-black text-indigo-600">{child.prenom.charAt(0)}{child.nom.charAt(0)}</div><div className="min-w-0"><p className="truncate text-sm font-black text-slate-900">{child.prenom} {child.nom}</p><p className="text-xs font-semibold text-slate-400">{child.groupeAge}{presence?.heureArrivee ? ` • ${presence.heureArrivee}` : ''}</p></div></div><div className="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-nowrap"><button type="button" disabled={isPointingLocked} onClick={() => void savePresent(child)} className={`min-w-0 flex-1 rounded-xl px-2.5 py-2 text-[11px] font-black transition active:scale-[0.98] sm:flex-none sm:px-3 sm:text-xs ${isPresent ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'} disabled:cursor-not-allowed disabled:opacity-50`}><Check className="mr-1 inline h-3.5 w-3.5" />{text('Présent', 'حاضر')}</button>{isPresent && <button type="button" onClick={() => prepareWhatsApp(child, 'presence')} className="inline-flex items-center justify-center gap-1 rounded-xl bg-emerald-50 px-2.5 py-2 text-[11px] font-black text-emerald-700 transition hover:bg-emerald-100 sm:text-xs"><MessageCircle className="h-3.5 w-3.5" />WhatsApp</button>}<button type="button" disabled={isPointingLocked} onClick={() => setAbsenceDraft({ enfantId: child.id, statut: presence?.statut === 'Absent justifié' ? 'Absent justifié' : 'Absent non justifié', motif: presence?.motifAbsence || '' })} className={`min-w-0 flex-1 rounded-xl px-2.5 py-2 text-[11px] font-black transition active:scale-[0.98] sm:flex-none sm:px-3 sm:text-xs ${isAbsent ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'} disabled:cursor-not-allowed disabled:opacity-50`}>{text('Absent', 'غائب')}</button>{isAbsent && <button type="button" onClick={() => prepareWhatsApp(child, 'absence')} className="inline-flex items-center justify-center gap-1 rounded-xl bg-rose-50 px-2.5 py-2 text-[11px] font-black text-rose-700 transition hover:bg-rose-100 sm:text-xs"><MessageCircle className="h-3.5 w-3.5" />WhatsApp</button>}</div></div>{absenceOpen && <div className="mt-3 rounded-2xl border border-rose-100 bg-rose-50/60 p-3"><div className="grid gap-2 sm:grid-cols-[180px_1fr_auto]"><select value={absenceDraft.statut} onChange={(event) => setAbsenceDraft({ ...absenceDraft, statut: event.target.value as AbsenceDraft['statut'] })} className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none"><option value="Absent non justifié">{text('Absence non justifiée', 'غياب غير مبرر')}</option><option value="Absent justifié">{text('Absence justifiée', 'غياب مبرر')}</option></select><input value={absenceDraft.motif} onChange={(event) => setAbsenceDraft({ ...absenceDraft, motif: event.target.value })} placeholder={text('Motif de l’absence', 'سبب الغياب')} className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-rose-400" /><button type="button" onClick={() => void saveAbsence()} className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-black text-white">{text('Enregistrer', 'حفظ')}</button></div></div>}</div>; })}</div></section>
+              <section key={classe.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xs"><div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"><div className="min-w-0"><p className="truncate text-sm font-black text-slate-900">{classe.nom}</p><p className="text-xs font-semibold text-slate-400">{visibleChildren.length} {text('enfant(s)', 'طفل')}</p></div><div className="flex flex-wrap items-center gap-2"><button type="button" onClick={() => toggleChildrenSelection(visibleIds)} className="rounded-xl bg-white px-3 py-2 text-[10px] font-black text-indigo-600 shadow-xs hover:bg-indigo-100">{allVisibleSelected ? text('Désélectionner', 'إلغاء التحديد') : text('Tout le groupe', 'كل المجموعة')}</button><span className="rounded-xl bg-white px-3 py-2 text-xs font-black text-indigo-600 shadow-xs">{visibleChildren.filter((child) => getPresence(child.id)?.statut === 'Présent').length}/{visibleChildren.length}</span></div></div><div className="divide-y divide-slate-100">{visibleChildren.map((child) => { const presence = getPresence(child.id); const isPresent = presence?.statut === 'Présent'; const isAbsent = presence?.statut?.startsWith('Absent'); const absenceOpen = absenceDraft?.enfantId === child.id; return <div key={child.id} className="p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3"><button type="button" onClick={() => toggleChildSelection(child.id)} aria-label={text(`Sélectionner ${child.prenom} ${child.nom}`, `تحديد ${child.prenom} ${child.nom}`)} className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition ${selectedChildIds.includes(child.id) ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-transparent hover:border-indigo-300'}`}><Check className="h-4 w-4" /></button><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-sm font-black text-indigo-600">{child.prenom.charAt(0)}{child.nom.charAt(0)}</div><div className="min-w-0"><p className="truncate text-sm font-black text-slate-900">{child.prenom} {child.nom}</p><p className="text-xs font-semibold text-slate-400">{child.groupeAge}{presence?.heureArrivee ? ` • ${presence.heureArrivee}` : ''}</p></div></div><div className="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-nowrap"><button type="button" disabled={isPointingLocked} onClick={() => void savePresent(child).catch(() => {})} className={`min-w-0 flex-1 rounded-xl px-2.5 py-2 text-[11px] font-black transition active:scale-[0.98] sm:flex-none sm:px-3 sm:text-xs ${isPresent ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'} disabled:cursor-not-allowed disabled:opacity-50`}><Check className="me-1 inline h-3.5 w-3.5" />{text('Présent', 'حاضر')}</button>{isPresent && <button type="button" onClick={() => prepareWhatsApp(child, 'presence')} className="inline-flex items-center justify-center gap-1 rounded-xl bg-emerald-50 px-2.5 py-2 text-[11px] font-black text-emerald-700 transition hover:bg-emerald-100 sm:text-xs"><MessageCircle className="h-3.5 w-3.5" />WhatsApp</button>}<button type="button" disabled={isPointingLocked} onClick={() => setAbsenceDraft({ enfantId: child.id, statut: presence?.statut === 'Absent justifié' ? 'Absent justifié' : 'Absent non justifié', motif: presence?.motifAbsence || '' })} className={`min-w-0 flex-1 rounded-xl px-2.5 py-2 text-[11px] font-black transition active:scale-[0.98] sm:flex-none sm:px-3 sm:text-xs ${isAbsent ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'} disabled:cursor-not-allowed disabled:opacity-50`}>{text('Absent', 'غائب')}</button>{isAbsent && <button type="button" onClick={() => prepareWhatsApp(child, 'absence')} className="inline-flex items-center justify-center gap-1 rounded-xl bg-rose-50 px-2.5 py-2 text-[11px] font-black text-rose-700 transition hover:bg-rose-100 sm:text-xs"><MessageCircle className="h-3.5 w-3.5" />WhatsApp</button>}</div></div>{absenceOpen && <div className="mt-3 rounded-2xl border border-rose-100 bg-rose-50/60 p-3"><div className="grid gap-2 sm:grid-cols-[180px_1fr_auto]"><select value={absenceDraft.statut} onChange={(event) => setAbsenceDraft({ ...absenceDraft, statut: event.target.value as AbsenceDraft['statut'] })} className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none"><option value="Absent non justifié">{text('Absence non justifiée', 'غياب غير مبرر')}</option><option value="Absent justifié">{text('Absence justifiée', 'غياب مبرر')}</option></select><input value={absenceDraft.motif} onChange={(event) => setAbsenceDraft({ ...absenceDraft, motif: event.target.value })} placeholder={text('Motif de l’absence', 'سبب الغياب')} className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-rose-400" /><button type="button" onClick={() => void saveAbsence().catch(() => {})} className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-black text-white">{text('Enregistrer', 'حفظ')}</button></div></div>}</div>; })}</div></section>
             ); })}
           </div>
-          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between"><button type="button" onClick={skipCurrentStep} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-black text-slate-600 hover:bg-slate-50">{text('Passer cette étape', 'تجاوز هذه المرحلة')}</button><button type="button" disabled={unpointedCount > 0 || loading} onClick={() => void validatePresences()} className="flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">{text('Valider les présences', 'اعتماد الحضور')}<ArrowRight className="h-4 w-4 rtl:rotate-180" /></button></div>
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between"><button type="button" onClick={skipCurrentStep} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-black text-slate-600 hover:bg-slate-50">{text('Passer cette étape', 'تجاوز هذه المرحلة')}</button><button type="button" disabled={unpointedCount > 0 || loading} onClick={() => void validatePresences().catch(() => {})} className="flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">{text('Valider les présences', 'اعتماد الحضور')}<ArrowRight className="h-4 w-4 rtl:rotate-180" /></button></div>
         </div>
       );
     }
@@ -565,9 +652,9 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
       return (
         <div className="space-y-5">
           <SectionIntro icon={Stethoscope} title={text('Santé et sécurité', 'الصحة والسلامة')} description={text('Contrôlez rapidement la température, l’humeur et le repas prévu pour les enfants présents.', 'تحقق بسرعة من درجة الحرارة والمزاج والوجبة المقررة للأطفال الحاضرين.')} />
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Metric label={text('Présents', 'حاضر')} value={presentCount} color="emerald" /><Metric label={text('À vérifier', 'للمراجعة')} value={healthMissingCount} color={healthMissingCount > 0 ? 'rose' : 'emerald'} /><Metric label={text('Absents', 'غائب')} value={absentCount} color="amber" /><Metric label={text('Sécurité', 'السلامة')} value={text('OK', 'جيدة')} color="indigo" /></div>
-          {presentChildren.length === 0 ? <EmptyState icon={ShieldCheck} text={text('Aucun enfant présent à contrôler pour le moment.', 'لا يوجد طفل حاضر للتحقق منه حالياً.')} /> : <div className="grid gap-3 md:grid-cols-2">{presentChildren.map((child) => { const presence = getPresence(child.id) as (Presence & { temperature?: string; humeur?: string; repas?: string }) | undefined; const selected = healthChildId === child.id; return <div key={child.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs"><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-xs font-black text-rose-600">{child.prenom.charAt(0)}{child.nom.charAt(0)}</div><div className="min-w-0"><p className="break-words text-sm font-black text-slate-900">{child.prenom} {child.nom}</p><p className="text-xs font-semibold text-slate-400">{text('Arrivée', 'وقت الوصول')} {presence?.heureArrivee || '—'}</p></div></div><span className={`rounded-lg px-2 py-1 text-[10px] font-black ${presence?.temperature ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>{presence?.temperature ? `${presence.temperature} °C` : text('À vérifier', 'للمراجعة')}</span></div><div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500"><span className="rounded-lg bg-slate-50 px-2 py-1">{presence?.humeur || text('Humeur à renseigner', 'المزاج غير مسجل')}</span><span className="rounded-lg bg-slate-50 px-2 py-1">{presence?.repas || text('Repas à renseigner', 'الوجبة غير مسجلة')}</span></div><button type="button" onClick={() => openHealthEditor(child)} className="mt-3 w-full rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">{selected ? text('Fermer la fiche', 'إغلاق البطاقة') : text('Mettre à jour', 'تحديث')}</button>{selected && <div className="mt-3 grid gap-2 border-t border-slate-100 pt-3"><div className="grid grid-cols-2 gap-2"><label className="text-[11px] font-bold text-slate-500"><span className="mb-1 block">{text('Température', 'الحرارة')}</span><input value={healthForm.temperature} onChange={(event) => setHealthForm({ ...healthForm, temperature: event.target.value })} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold outline-none focus:border-indigo-500" /></label><label className="text-[11px] font-bold text-slate-500"><span className="mb-1 block">{text('Repas', 'الوجبة')}</span><select value={healthForm.repas} onChange={(event) => setHealthForm({ ...healthForm, repas: event.target.value })} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold outline-none focus:border-indigo-500"><option value="Tout">{text('Tout', 'الكل')}</option><option value="Partiel">{text('Partiel', 'جزئي')}</option><option value="Refusé">{text('Refusé', 'مرفوض')}</option></select></label></div><label className="text-[11px] font-bold text-slate-500"><span className="mb-1 block">{text('Humeur', 'المزاج')}</span><input value={healthForm.humeur} onChange={(event) => setHealthForm({ ...healthForm, humeur: event.target.value })} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold outline-none focus:border-indigo-500" /></label><button type="button" onClick={() => void saveHealth()} className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black text-white">{text('Enregistrer la fiche', 'حفظ البطاقة')}</button></div>}</div>; })}</div>}
-          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between"><button type="button" onClick={skipCurrentStep} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-black text-slate-600">{text('Passer cette étape', 'تجاوز هذه المرحلة')}</button><button type="button" onClick={() => goNext('sante')} className="flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white">{text('Santé vérifiée', 'تم التحقق من الصحة')}<ArrowRight className="h-4 w-4 rtl:rotate-180" /></button></div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Metric label={text('Présents', 'حاضر')} value={presentCount} color="emerald" /><Metric label={text('À vérifier', 'للمراجعة')} value={healthMissingCount} color={healthMissingCount > 0 ? 'rose' : 'emerald'} /><Metric label={text('Absents', 'غائب')} value={absentCount} color="amber" /><Metric label={text('Sécurité', 'السلامة')} value={text('À vérifier', 'للتحقق')} color="indigo" /></div>
+          {presentChildren.length === 0 ? <EmptyState icon={ShieldCheck} text={text('Aucun enfant présent à contrôler pour le moment.', 'لا يوجد طفل حاضر للتحقق منه حالياً.')} /> : <div className="grid gap-3 md:grid-cols-2">{presentChildren.map((child) => { const presence = getPresence(child.id) as (Presence & { temperature?: string; humeur?: string; repas?: string }) | undefined; const selected = healthChildId === child.id; return <div key={child.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs"><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-xs font-black text-rose-600">{child.prenom.charAt(0)}{child.nom.charAt(0)}</div><div className="min-w-0"><p className="break-words text-sm font-black text-slate-900">{child.prenom} {child.nom}</p><p className="text-xs font-semibold text-slate-400">{text('Arrivée', 'وقت الوصول')} {presence?.heureArrivee || '—'}</p></div></div><span className={`rounded-lg px-2 py-1 text-[10px] font-black ${presence?.temperature ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>{presence?.temperature ? `${presence.temperature} °C` : text('À vérifier', 'للمراجعة')}</span></div><div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500"><span className="rounded-lg bg-slate-50 px-2 py-1">{presence?.humeur || text('Humeur à renseigner', 'المزاج غير مسجل')}</span><span className="rounded-lg bg-slate-50 px-2 py-1">{presence?.repas || text('Repas à renseigner', 'الوجبة غير مسجلة')}</span></div><button type="button" onClick={() => openHealthEditor(child)} className="mt-3 w-full rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">{selected ? text('Fermer la fiche', 'إغلاق البطاقة') : text('Mettre à jour', 'تحديث')}</button>{selected && <div className="mt-3 grid gap-2 border-t border-slate-100 pt-3"><div className="grid grid-cols-2 gap-2"><label className="text-[11px] font-bold text-slate-500"><span className="mb-1 block">{text('Température', 'الحرارة')}</span><input value={healthForm.temperature} onChange={(event) => setHealthForm({ ...healthForm, temperature: event.target.value })} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold outline-none focus:border-indigo-500" /></label><label className="text-[11px] font-bold text-slate-500"><span className="mb-1 block">{text('Repas', 'الوجبة')}</span><select value={healthForm.repas} onChange={(event) => setHealthForm({ ...healthForm, repas: event.target.value })} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold outline-none focus:border-indigo-500"><option value="">{text('Non renseigné', 'غير مسجل')}</option><option value="Tout">{text('Tout', 'الكل')}</option><option value="Partiel">{text('Partiel', 'جزئي')}</option><option value="Refusé">{text('Refusé', 'مرفوض')}</option></select></label></div><label className="text-[11px] font-bold text-slate-500"><span className="mb-1 block">{text('Humeur', 'المزاج')}</span><input value={healthForm.humeur} onChange={(event) => setHealthForm({ ...healthForm, humeur: event.target.value })} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold outline-none focus:border-indigo-500" /></label><button type="button" onClick={() => void saveHealth().catch(() => {})} className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black text-white">{text('Enregistrer la fiche', 'حفظ البطاقة')}</button></div>}</div>; })}</div>}
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between"><button type="button" onClick={skipCurrentStep} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-black text-slate-600">{text('Passer cette étape', 'تجاوز هذه المرحلة')}</button><button type="button" onClick={() => goNext('sante')} className="flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white">{text('Continuer', 'متابعة')}<ArrowRight className="h-4 w-4 rtl:rotate-180" /></button></div>
         </div>
       );
     }
@@ -576,9 +663,14 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
       return (
         <div className="space-y-5">
           <SectionIntro icon={ChefHat} title={text('Repas', 'الوجبات')} description={text('Confirmez ce qui sera servi aujourd’hui et gardez les informations sensibles visibles au bon moment.', 'أكد ما سيتم تقديمه اليوم واجعل المعلومات الحساسة واضحة في الوقت المناسب.')} />
-          {todayMeals.length === 0 ? <EmptyState icon={Utensils} text={text('Aucun repas planifié pour aujourd’hui. Vous pouvez confirmer et passer cette étape.', 'لا توجد وجبات مبرمجة لليوم. يمكنك التأكيد وتجاوز هذه المرحلة.')} /> : <div className="grid gap-3 md:grid-cols-2">{todayMeals.map((meal) => <div key={meal.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><p className="text-xs font-black uppercase tracking-widest text-orange-600">{meal.type === 'Déjeuner' ? text('Déjeuner', 'الغداء') : text('Goûter', 'اللمجة')}</p><p className="mt-1 break-words text-base font-black text-slate-900">{meal.menu}</p></div><Utensils className="h-5 w-5 text-orange-500" /></div><p className="mt-3 text-xs font-semibold text-slate-400">{(meal as Repas & { allergenes?: string }).allergenes || text('Allergènes à vérifier dans la fiche repas', 'تحقق من الحساسية في بطاقة الوجبة')}</p></div>)}</div>}
-          <div className="flex items-start justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 sm:items-center sm:p-4"><div className="flex min-w-0 items-center gap-2.5"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-600 sm:h-9 sm:w-9"><CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5" /></div><div className="min-w-0"><p className="break-words text-[11px] font-black text-emerald-900 sm:text-sm">{text('Service des repas confirmé', 'تم تأكيد تقديم الوجبات')}</p><p className="text-xs font-semibold text-emerald-700/80">{text('Une seule validation suffit pour l’équipe du jour.', 'يكفي تأكيد واحد لفريق اليوم.')}</p></div></div><button type="button" onClick={() => setConfirmedMeals((value) => !value)} className={`relative h-7 w-12 shrink-0 rounded-full transition ${confirmedMeals ? 'bg-emerald-600' : 'bg-emerald-200'}`} aria-pressed={confirmedMeals}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${confirmedMeals ? 'left-6' : 'left-1'}`} /></button></div>
-          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between"><button type="button" onClick={skipCurrentStep} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-black text-slate-600">{text('Passer cette étape', 'تجاوز هذه المرحلة')}</button><button type="button" onClick={() => goNext('repas')} className="flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white">{text('Repas confirmés', 'تم تأكيد الوجبات')}<ArrowRight className="h-4 w-4 rtl:rotate-180" /></button></div>
+          {todayMeals.length === 0 ? <EmptyState icon={Utensils} text={text('Aucun repas affiché pour aujourd’hui. Vérifiez le planning et son chargement.', 'لا تظهر وجبات اليوم. تحقق من الجدول وتحميل البيانات.')} /> : <div className="grid gap-3 md:grid-cols-2">{todayMeals.map((meal) => <div key={meal.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><p className="text-xs font-black uppercase tracking-widest text-orange-600">{meal.type === 'Déjeuner' ? text('Déjeuner', 'الغداء') : text('Goûter', 'اللمجة')}</p><p className="mt-1 break-words text-base font-black text-slate-900">{meal.menu}</p></div><Utensils className="h-5 w-5 text-orange-500" /></div><p className="mt-3 text-xs font-semibold text-slate-400">{text('Allergènes déclarés', 'مسببات الحساسية المسجلة')}: {documentedText(meal.allergenes) || text('Non renseignés — à vérifier', 'غير مسجلة — يجب التحقق')}</p></div>)}</div>}
+          <section className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <h3 className="text-sm font-black text-amber-950">{text('Vérification manuelle avant le repas', 'تحقق يدوي قبل تقديم الطعام')}</h3>
+            <p className="text-xs font-semibold text-amber-900">{text('Comparez les ingrédients et les traces avec les dossiers et les informations à jour de chaque enfant. Le texte ne permet pas une détection automatique fiable ; une information vide ou ancienne ne signifie pas absence d’allergie. Vérifiez aussi le chargement et les enfants non pointés.', 'قارن المكونات وآثارها بملفات ومعلومات كل طفل المحدثة. لا يمكن الاعتماد على النص للكشف التلقائي؛ غياب المعلومة أو قدمها لا يعني غياب الحساسية. تحقق أيضاً من تحميل البيانات والأطفال غير المؤشرين.')}</p>
+            {presentChildren.length === 0 ? <p className="text-xs text-amber-900">{text('Aucun enfant pointé présent affiché.', 'لا يظهر أطفال مؤشَّر عليهم بالحضور.')}</p> : <ul className="grid gap-2 sm:grid-cols-2">{presentChildren.map(child => <li key={child.id} className="rounded-xl border border-amber-100 bg-white p-3 text-xs text-slate-700"><p className="font-black text-slate-900">{child.prenom} {child.nom}</p><p className="mt-1 break-words"><strong>{text('Allergies', 'الحساسيات')}:</strong> {documentedText(child.allergie) || text('Non renseignées — à vérifier', 'غير مسجلة — يجب التحقق')}</p><p className="mt-1 break-words"><strong>{text('Régime', 'النظام الغذائي')}:</strong> {documentedText(child.regimeAlimentaire) || text('Non renseigné — à vérifier', 'غير مسجل — يجب التحقق')}</p></li>)}</ul>}
+          </section>
+          <div className="flex items-start justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 sm:items-center sm:p-4"><div className="flex min-w-0 items-center gap-2.5"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-600 sm:h-9 sm:w-9"><CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5" /></div><div className="min-w-0"><p className="break-words text-[11px] font-black text-emerald-900 sm:text-sm">{text('Repère personnel du service des repas', 'علامة شخصية لمتابعة تقديم الوجبات')}</p><p className="text-xs font-semibold text-emerald-700/80">{text('Repère local à cet appareil, non partagé et sans preuve de service.', 'علامة محلية على هذا الجهاز، غير مشتركة ولا تثبت تقديم الطعام.')}</p></div></div><button type="button" onClick={() => setConfirmedMeals((value) => !value)} className={`relative h-7 w-12 shrink-0 rounded-full transition ${confirmedMeals ? 'bg-emerald-600' : 'bg-emerald-200'}`} aria-pressed={confirmedMeals}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${confirmedMeals ? 'left-6' : 'left-1'}`} /></button></div>
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between"><button type="button" onClick={skipCurrentStep} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-black text-slate-600">{text('Passer cette étape', 'تجاوز هذه المرحلة')}</button><button type="button" onClick={() => goNext('repas')} className="flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white">{text('Continuer', 'متابعة')}<ArrowRight className="h-4 w-4 rtl:rotate-180" /></button></div>
         </div>
       );
     }
@@ -597,9 +689,33 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
     if (activeStep === 'departs') {
       return (
         <div className="space-y-5">
-          <SectionIntro icon={LogOut} title={text('Départs sécurisés', 'مغادرة آمنة')} description={text('Confirmez chaque enfant récupéré avec une personne autorisée. Les départs encore en attente restent visibles.', 'أكد استلام كل طفل من طرف شخص مصرح له. ستبقى المغادرات المعلقة ظاهرة.')}/>
+          <SectionIntro icon={LogOut} title={text('Départs à vérifier', 'المغادرة: تحقق مطلوب')} description={text('Vérifiez personnellement l’identité et l’autorisation avant chaque remise. Les départs en attente restent visibles.', 'تحقق شخصياً من الهوية والترخيص قبل كل تسليم. تبقى المغادرات المعلقة ظاهرة.')}/>
           <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-amber-100 bg-amber-50 p-4"><div className="flex min-w-0 items-center gap-3"><DoorClosed className="h-5 w-5 shrink-0 text-amber-600"/><div className="min-w-0"><p className="truncate text-sm font-black text-amber-900">{text('Départs en attente', 'المغادرات المعلقة')}</p><p className="text-xs font-semibold text-amber-700">{pendingDepartures.length} {text('enfant(s) à vérifier', 'طفل للتحقق')}</p></div></div><p className="shrink-0 text-2xl font-black text-amber-700">{pendingDepartures.length}</p></div>
-          {presentChildren.length === 0 ? <EmptyState icon={LogOut} text={text('Aucun enfant présent à faire sortir.', 'لا يوجد طفل حاضر للمغادرة.')} /> : <div className="grid gap-3 md:grid-cols-2">{presentChildren.map((child) => { const people = authorizedPeople(child); const departed = Boolean(departures[child.id]); return <div key={child.id} className={`rounded-2xl border p-4 shadow-xs ${departed ? 'border-emerald-200 bg-emerald-50/40' : 'border-slate-200 bg-white'}`}><div className="flex min-w-0 items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-xs font-black text-indigo-600">{child.prenom.charAt(0)}{child.nom.charAt(0)}</div><div className="min-w-0"><p className="truncate text-sm font-black text-slate-900">{child.prenom} {child.nom}</p><p className="truncate text-xs font-semibold text-slate-400">{departed ? `${text('Récupéré par', 'استلمه')} ${departures[child.id]}` : text('Départ non confirmé', 'المغادرة غير مؤكدة')}</p></div></div>{departed && <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />}</div>{departed && <button type="button" onClick={() => prepareWhatsApp(child, 'departure')} className="mt-3 inline-flex items-center gap-1 rounded-xl bg-emerald-100 px-3 py-2 text-xs font-black text-emerald-800 transition hover:bg-emerald-200"><MessageCircle className="h-3.5 w-3.5" />{text('Préparer WhatsApp', 'تحضير واتساب')}</button>}{!departed && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><select value={departureSelections[child.id] || people[0]?.name || ''} onChange={(event) => setDepartureSelections((previous) => ({ ...previous, [child.id]: event.target.value }))} className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500">{people.map((person) => <option key={person.id} value={person.name}>{person.name}{person.detail ? ` · ${person.detail}` : ''}</option>)}</select><button type="button" onClick={() => void confirmDeparture(child)} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-black text-white hover:bg-slate-800">{text('Confirmer', 'تأكيد')}</button></div>}</div>; })}</div>}
+          {presentChildren.length === 0 ? <EmptyState icon={LogOut} text={text('Aucun enfant présent à faire sortir.', 'لا يوجد طفل حاضر للمغادرة.')} /> : <div className="grid gap-3 md:grid-cols-2">{presentChildren.map((child) => {
+            const people = pickupChoices(child);
+            const presence = getPresence(child.id);
+            const departed = departureConfirmed(presence);
+            return <div key={child.id} className={`rounded-2xl border p-4 shadow-xs ${departed ? 'border-emerald-200 bg-emerald-50/40' : 'border-slate-200 bg-white'}`}>
+              <div className="flex items-start justify-between gap-3"><div><p className="font-black text-slate-900">{child.prenom} {child.nom}</p>
+                <p className="text-xs font-semibold text-slate-500">{departed
+                  ? `${text('Départ enregistré', 'المغادرة مسجلة')} ${presence?.heureDepart} · ${presence?.personneRecuperation}${presence?.personneRecuperationId?.startsWith('registry-') ? '' : text(' · ancienne confirmation manuelle', ' · تأكيد يدوي سابق')}`
+                  : text('Départ non confirmé', 'المغادرة غير مؤكدة')}</p>
+                {!departed && (presence?.heureDepart || presence?.personneRecuperation) && <p className="mt-1 text-xs font-bold text-amber-700">{text('Ancienne saisie à vérifier', 'إدخال سابق يحتاج للتحقق')}: {presence.heureDepart || '—'} · {presence.personneRecuperation || '—'}</p>}
+              </div>{departed && <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />}</div>
+              {departed ? <button type="button" onClick={() => prepareWhatsApp(child, 'departure')} className="mt-3 rounded-xl bg-emerald-100 px-3 py-2 text-xs font-black text-emerald-800"><MessageCircle className="me-1 inline h-3.5 w-3.5" />{text('Préparer WhatsApp', 'تحضير واتساب')}</button> : <div className="mt-3 space-y-3">
+                <p className="text-xs text-slate-600">{text('Seules les déclarations actives du registre peuvent être choisies. Le serveur contrôle leur état lors de la confirmation. Vérifiez toujours personnellement l’identité et le document avant la remise.', 'يمكن اختيار التصريحات النشطة في السجل فقط. يتحقق الخادم من حالتها عند التأكيد. تحقق دائماً بنفسك من الهوية والوثيقة قبل التسليم.')}</p>
+                <PickupAuthorizations childId={child.id} compact onRecordsChange={records => { setPickupRegistry(previous => ({ ...previous, [child.id]: records })); setDepartureChecks(previous => ({ ...previous, [child.id]: false })); }} />
+                {people.length === 0 ? <p className="text-xs font-bold text-amber-700">{text('Ouvrez et actualisez le registre. Sans déclaration active, ajoutez-en une depuis le dossier enfant après vérification.', 'افتح السجل وحدّثه. إذا لم يوجد تصريح نشط، أضفه من ملف الطفل بعد التحقق.')}</p> : <>
+                  <select aria-label={text(`Personne qui récupère ${child.prenom} ${child.nom}`, `الشخص الذي يستلم ${child.prenom} ${child.nom}`)} value={departureSelections[child.id] || ''} onChange={(event) => { setDepartureSelections(previous => ({ ...previous, [child.id]: event.target.value })); setDepartureChecks(previous => ({ ...previous, [child.id]: false })); }} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">
+                    <option value="">{text('Choisir une personne', 'اختر شخصاً')}</option>
+                    {people.map(person => <option key={person.id} value={person.id}>{person.name} · {text('Déclaration du registre', 'تصريح السجل')} · {person.detail}</option>)}
+                  </select>
+                  <label className="flex items-start gap-2 text-xs font-bold text-slate-700"><input type="checkbox" checked={Boolean(departureChecks[child.id])} onChange={event => setDepartureChecks(previous => ({ ...previous, [child.id]: event.target.checked }))} />{text('J’ai vérifié son identité et son autorisation à récupérer cet enfant.', 'تحققت من هويته ومن ترخيصه لاستلام هذا الطفل.')}</label>
+                  <button type="button" disabled={!people.some(person => person.id === departureSelections[child.id]) || !departureChecks[child.id] || savingDepartures[child.id]} onClick={() => void confirmDeparture(child).catch(() => {})} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-black text-white disabled:opacity-50">{savingDepartures[child.id] ? text('Enregistrement…', 'جار الحفظ…') : text('Confirmer le départ', 'تأكيد المغادرة')}</button>
+                </>}
+              </div>}
+            </div>;
+          })}</div>}
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between"><button type="button" onClick={skipCurrentStep} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-black text-slate-600">{text('Passer cette étape', 'تجاوز هذه المرحلة')}</button><button type="button" disabled={pendingDepartures.length > 0} onClick={() => goNext('departs')} className="flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50">{text('Tous les départs sont vérifiés', 'تم التحقق من كل المغادرات')}<ArrowRight className="h-4 w-4 rtl:rotate-180" /></button></div>
         </div>
       );
@@ -608,7 +724,7 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
     return (
       <div className="space-y-5">
         <SectionIntro icon={Moon} title={text('Fermeture', 'الإغلاق')} description={text('Un dernier regard sur la journée avant de fermer la crèche.', 'نظرة أخيرة على اليوم قبل إغلاق الحضانة.')} />
-        {closed ? <div className="rounded-[2rem] border border-emerald-200 bg-emerald-50 p-6 text-center sm:p-10"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-600 text-white shadow-lg shadow-emerald-600/20"><CheckCircle2 className="h-8 w-8" /></div><h2 className="mt-5 text-2xl font-black text-emerald-900">{text('Journée clôturée avec succès.', 'تم إنهاء يوم الحضانة بنجاح.')}</h2><p className="mx-auto mt-2 max-w-md text-sm font-semibold leading-6 text-emerald-700">{text('Les présences et les départs ont été vérifiés. Vous pouvez revenir au tableau de bord.', 'تم التحقق من الحضور والمغادرات. يمكنك العودة إلى لوحة التحكم.')}</p><button type="button" onClick={onClose} className="mt-6 rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white">{text('Retour au tableau de bord', 'العودة إلى لوحة التحكم')}</button></div> : <><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><SummaryCard icon={CalendarCheck2} label={text('Présences', 'الحضور')} value={`${pointedCount}/${enfants.length}`} ok={unpointedCount === 0} /><SummaryCard icon={HeartPulse} label={text('Santé', 'الصحة')} value={healthMissingCount === 0 ? text('OK', 'جيدة') : `${healthMissingCount} ${text('à vérifier', 'للمراجعة')}`} ok={healthMissingCount === 0} /><SummaryCard icon={LogOut} label={text('Départs', 'المغادرة')} value={pendingDepartures.length === 0 ? text('OK', 'جيدة') : `${pendingDepartures.length} ${text('en attente', 'معلقة')}`} ok={pendingDepartures.length === 0} /><SummaryCard icon={ShieldCheck} label={text('Sécurité', 'السلامة')} value={text('Contrôlée', 'متحقق منها')} ok /></div><div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-xs sm:p-6"><h3 className="text-base font-black text-slate-900">{text('Avant de fermer', 'قبل الإغلاق')}</h3><div className="mt-4 space-y-3"><CheckRow label={text('Tous les enfants ont un statut de présence', 'لكل طفل حالة حضور')} done={unpointedCount === 0} /><CheckRow label={text('Les départs des enfants présents sont confirmés', 'تم تأكيد مغادرة الأطفال الحاضرين')} done={pendingDepartures.length === 0} /><CheckRow label={text('Les informations de santé prioritaires sont renseignées', 'تم إدخال المعلومات الصحية الأساسية')} done={healthMissingCount === 0} /><CheckRow label={text('Le service quotidien peut être clôturé', 'يمكن إغلاق خدمة اليوم')} done={true} /></div></div><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between"><button type="button" onClick={() => goToStep('presences')} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-black text-slate-600">{text('Revoir les présences', 'مراجعة الحضور')}</button><button type="button" onClick={() => void completeClosing()} className="flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-lg shadow-slate-950/20 disabled:opacity-50">{text('Clôturer la journée', 'إنهاء يوم الحضانة')}<CheckCircle2 className="h-4 w-4" /></button></div></>}
+        {closed && canClose ? <div className="rounded-[2rem] border border-emerald-200 bg-emerald-50 p-6 text-center sm:p-10"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-600 text-white shadow-lg shadow-emerald-600/20"><CheckCircle2 className="h-8 w-8" /></div><h2 className="mt-5 text-2xl font-black text-emerald-900">{text('Parcours terminé sur cet appareil.', 'اكتمل المسار على هذا الجهاز.')}</h2><p className="mx-auto mt-2 max-w-md text-sm font-semibold leading-6 text-emerald-700">{text('Les vérifications saisies sont enregistrées dans les présences. La clôture du parcours reste locale à cet appareil.', 'تم حفظ التحقق المدخل ضمن سجلات الحضور. يظل إنهاء المسار محلياً على هذا الجهاز.')}</p><button type="button" onClick={onClose} className="mt-6 rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white">{text('Retour au tableau de bord', 'العودة إلى لوحة التحكم')}</button></div> : <><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><SummaryCard icon={CalendarCheck2} label={text('Présences', 'الحضور')} value={`${pointedCount}/${enfants.length}`} ok={unpointedCount === 0} /><SummaryCard icon={HeartPulse} label={text('Observations', 'الملاحظات')} value={healthMissingCount === 0 ? text('OK', 'جيدة') : `${healthMissingCount} ${text('à vérifier', 'للمراجعة')}`} ok={healthMissingCount === 0} /><SummaryCard icon={LogOut} label={text('Départs', 'المغادرة')} value={pendingDepartures.length === 0 ? text('OK', 'جيدة') : `${pendingDepartures.length} ${text('en attente', 'معلقة')}`} ok={pendingDepartures.length === 0} /><SummaryCard icon={ShieldCheck} label={text('Sécurité', 'السلامة')} value={text('À vérifier manuellement', 'للتحقق يدوياً')} ok={false} /></div><div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-xs sm:p-6"><h3 className="text-base font-black text-slate-900">{text('Avant de fermer', 'قبل الإغلاق')}</h3><div className="mt-4 space-y-3"><CheckRow label={text('Tous les enfants ont un statut de présence', 'لكل طفل حالة حضور')} done={unpointedCount === 0} /><CheckRow label={text('Les départs des enfants présents sont confirmés', 'تم تأكيد مغادرة الأطفال الحاضرين')} done={pendingDepartures.length === 0} /><CheckRow label={text('Température, humeur et repas sont renseignés', 'تم تسجيل الحرارة والمزاج والوجبة')} done={healthMissingCount === 0} /><CheckRow label={text('Présences et départs prêts pour la fin du parcours', 'الحضور والمغادرات جاهزة لإنهاء المسار')} done={canClose} /></div></div><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between"><button type="button" onClick={() => goToStep('presences')} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-black text-slate-600">{text('Revoir les présences', 'مراجعة الحضور')}</button><button type="button" onClick={() => void completeClosing().catch(() => {})} className="flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-lg shadow-slate-950/20 disabled:opacity-50">{text('Clôturer la journée', 'إنهاء يوم الحضانة')}<CheckCircle2 className="h-4 w-4" /></button></div></>}
       </div>
     );
   };
@@ -619,15 +735,14 @@ export default function DailyRoutine({ onClose, onCompleted }: DailyRoutineProps
     <div className="fixed inset-0 z-[120] isolate overflow-hidden overscroll-none bg-slate-950/70 backdrop-blur-sm" dir={isArabic ? 'rtl' : 'ltr'}>
       {whatsAppDraft && <div className="absolute inset-0 z-[160] grid place-items-center bg-slate-950/55 p-4"><div className="w-full max-w-lg rounded-3xl bg-white p-5 shadow-2xl sm:p-6"><div className="flex items-start gap-3"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-600"><MessageCircle className="h-5 w-5" /></div><div className="min-w-0"><p className="text-lg font-black text-slate-900">{text('Préparer le message WhatsApp', 'تحضير رسالة واتساب')}</p><p className="mt-1 text-xs font-semibold leading-5 text-slate-500">{text(`Message pour ${whatsAppDraft.parentName} au sujet de ${whatsAppDraft.childName}. Vous gardez le contrôle : rien n’est envoyé avant votre validation dans WhatsApp.`, `رسالة إلى ${whatsAppDraft.parentName} بخصوص ${whatsAppDraft.childName}. يبقى الإرسال تحت تحكمكِ داخل واتساب.`)}</p></div></div><textarea value={whatsAppDraft.message} onChange={(event) => setWhatsAppDraft((previous) => previous ? { ...previous, message: event.target.value } : previous)} className="mt-5 min-h-32 w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm font-medium leading-6 text-slate-700 outline-none focus:border-emerald-500" aria-label={text('Message WhatsApp', 'رسالة واتساب')} /><div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={() => setWhatsAppDraft(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-black text-slate-600 hover:bg-slate-50">{text('Annuler', 'إلغاء')}</button><button type="button" onClick={openWhatsApp} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-black text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-700"><MessageCircle className="h-4 w-4" />{text('Ouvrir WhatsApp', 'فتح واتساب')}</button></div></div></div>}
       <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full min-w-0 flex-col overflow-hidden bg-slate-50 text-slate-900">
-        <header className="z-20 shrink-0 border-b border-slate-200 bg-white/95 px-3 py-3 shadow-sm backdrop-blur sm:px-6 sm:py-4">
-          <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2.5"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 sm:h-10 sm:w-10 sm:rounded-2xl"><Zap className="h-4 w-4 sm:h-5 sm:w-5" /></div><div className="min-w-0"><p className="truncate text-[9px] font-black uppercase tracking-[0.16em] text-indigo-600 sm:text-[10px] sm:tracking-[0.2em]">RAWDHA+ • {text('Pilotage quotidien', 'إدارة يوم الحضانة')}</p><h1 className="truncate text-sm font-black sm:text-xl">{text('Pilotage quotidien', 'إدارة يوم الحضانة')}</h1></div></div><div className="flex shrink-0 items-center gap-1.5"><span className="hidden rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-500 sm:block">{dateLabel}</span><button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 sm:h-10 sm:w-10" aria-label={text('Fermer', 'إغلاق')}><X className="h-4 w-4 sm:h-5 sm:w-5" /></button></div></div>
+        <header className="z-20 shrink-0 border-b border-slate-200 bg-white px-3 py-3 sm:px-6">
+          <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-2"><div className="min-w-0"><h1 className="truncate text-sm font-bold text-slate-900 sm:text-lg">{text('Routine du matin & clôture', 'روتين اليوم والإغلاق')}</h1><p className="truncate text-xs text-slate-500">{text(`Étape ${activeStepIndex + 1} sur ${steps.length} · ${isArabic ? activeStepData.ar : activeStepData.fr}`, `المرحلة ${activeStepIndex + 1} من ${steps.length} · ${isArabic ? activeStepData.ar : activeStepData.fr}`)}</p></div><div className="flex shrink-0 items-center gap-1.5"><span className="hidden rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 sm:block">{dateLabel}</span><button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 cursor-pointer" aria-label={text('Fermer', 'إغلاق')}><X className="h-4 w-4" /></button></div></div>
         </header>
-        <div className="z-10 shrink-0 border-b border-slate-200 bg-white px-3 py-3 lg:hidden"><div className="mx-auto flex w-full max-w-[42rem] items-center gap-3 rounded-2xl bg-indigo-600 px-3 py-2.5 text-white shadow-md shadow-indigo-900/10"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15"><>{(() => { const Icon = activeStepData.icon; return completedSteps.includes(activeStep) || (activeStep === 'presences' && isDayValidated) ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />; })()}</></span><span className="min-w-0 flex-1"><span className="block truncate text-[10px] font-black uppercase tracking-wide text-indigo-100">{text(`Étape ${activeStepIndex + 1} sur ${steps.length}`, `المرحلة ${activeStepIndex + 1} من ${steps.length}`)}</span><span className="mt-0.5 block truncate text-sm font-black">{isArabic ? activeStepData.ar : activeStepData.fr}</span><span className="block truncate text-[10px] font-semibold text-indigo-100">{isArabic ? activeStepData.descriptionAr : activeStepData.descriptionFr}</span></span><span className="shrink-0 rounded-lg bg-white/15 px-2 py-1 text-[10px] font-black">{Math.round(((activeStepIndex + 1) / steps.length) * 100)}%</span></div></div>
         <div className="mx-auto flex min-h-0 w-full max-w-[1500px] flex-1">
-          <aside className="hidden w-72 shrink-0 border-r border-slate-200 bg-white p-5 lg:block"><div className="sticky top-0"><p className="px-3 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{text('Parcours du jour', 'مسار اليوم')}</p><nav className="mt-4 space-y-2">{steps.map((step, index) => { const Icon = step.icon; const isActive = step.key === activeStep; const isDone = completedSteps.includes(step.key) || (step.key === 'presences' && isDayValidated); return <button type="button" key={step.key} onClick={() => setActiveStep(step.key)} className={`flex w-full items-center gap-3 rounded-2xl p-3 text-left transition ${isActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/15' : 'text-slate-600 hover:bg-slate-50'}`}><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isActive ? 'bg-white/15' : 'bg-slate-100 text-slate-500'}`}>{isDone ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}</span><span className="min-w-0"><span className="block text-xs font-black">{index + 1}. {isArabic ? step.ar : step.fr}</span><span className={`mt-0.5 block text-[10px] font-semibold ${isActive ? 'text-indigo-100' : 'text-slate-400'}`}>{isArabic ? step.descriptionAr : step.descriptionFr}</span></span></button>; })}</nav><div className="mt-8 rounded-2xl border border-indigo-100 bg-indigo-50 p-4"><p className="text-xs font-black text-indigo-900">{text('Progression', 'التقدم')}</p><div className="mt-2 h-2 overflow-hidden rounded-full bg-indigo-100"><div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: `${Math.round((completedSteps.length / steps.length) * 100)}%` }} /></div><p className="mt-2 text-[10px] font-bold text-indigo-700">{completedSteps.length}/{steps.length} {text('étapes terminées', 'مراحل مكتملة')}</p></div></div></aside>
+          <aside className="hidden w-64 shrink-0 border-e border-slate-200 bg-white p-4 lg:block"><div className="sticky top-0"><p className="px-3 text-[11px] font-semibold text-slate-400">{text('Parcours du jour', 'مسار اليوم')}</p><nav className="mt-3 space-y-1">{steps.map((step, index) => { const Icon = step.icon; const isActive = step.key === activeStep; const isDone = validCompletedSteps.includes(step.key) || (step.key === 'presences' && isDayValidated); return <button type="button" key={step.key} onClick={() => setActiveStep(step.key)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-start transition cursor-pointer ${isActive ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-600 hover:bg-slate-50 font-medium'}`}><span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${isActive ? 'bg-indigo-600 text-white' : isDone ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>{isDone ? <Check className="h-3.5 w-3.5" /> : <Icon className="h-3.5 w-3.5" />}</span><span className="min-w-0 truncate text-xs">{index + 1}. {isArabic ? step.ar : step.fr}</span></button>; })}</nav></div></aside>
           <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain"><div className="mx-auto max-w-5xl p-3 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-12 lg:p-10"><div className="mb-4 flex items-start justify-between gap-3 sm:mb-5"><div className="min-w-0"><p className="hidden text-xs font-black uppercase tracking-widest text-indigo-600 sm:block">{text(`Étape ${activeStepIndex + 1} sur ${steps.length}`, `المرحلة ${activeStepIndex + 1} من ${steps.length}`)}</p><h2 className="text-xl font-black text-slate-900 sm:mt-1 sm:text-2xl">{isArabic ? activeStepData.ar : activeStepData.fr}</h2></div><div className="hidden items-center gap-2 text-xs font-bold text-slate-400 sm:flex"><span>{text('Aujourd’hui', 'اليوم')}</span><ChevronRight className="h-4 w-4 rtl:rotate-180" /><span className="text-slate-700">{dateLabel}</span></div></div>{renderStepContent()}</div></main>
         </div>
-        <footer className="z-20 shrink-0 border-t border-slate-200 bg-white px-3 py-2 shadow-[0_-4px_16px_rgba(15,23,42,0.06)] sm:px-6" style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}><div className="mx-auto flex min-h-14 max-w-[1500px] items-center justify-between gap-2"><button type="button" disabled={activeStepIndex === 0} onClick={() => setActiveStep(steps[activeStepIndex - 1]?.key || 'ouverture')} className="flex min-w-0 flex-1 items-center justify-center gap-1 rounded-xl px-2 py-2.5 text-[11px] font-black text-slate-500 hover:bg-slate-50 disabled:invisible sm:flex-none sm:px-3 sm:text-xs"><ChevronLeft className="h-4 w-4 shrink-0 rtl:rotate-180" />{text('Précédent', 'السابق')}</button><div className="hidden items-center gap-1.5 sm:flex">{steps.map((step) => <span key={step.key} className={`h-1.5 rounded-full transition-all ${step.key === activeStep ? 'w-8 bg-indigo-600' : completedSteps.includes(step.key) ? 'w-3 bg-emerald-500' : 'w-3 bg-slate-200'}`} />)}</div><button type="button" onClick={() => activeStepIndex === steps.length - 1 ? void completeClosing() : goNext(activeStep)} className="flex min-w-0 flex-1 items-center justify-center gap-1 rounded-xl bg-indigo-600 px-2 py-2.5 text-[11px] font-black text-white hover:bg-indigo-700 sm:flex-none sm:px-3 sm:text-xs"><span>{activeStepIndex === steps.length - 1 ? text('Terminer le parcours', 'إنهاء المسار') : text('Suivant', 'التالي')}</span>{activeStepIndex === steps.length - 1 ? <Check className="h-4 w-4" /> : <ChevronRight className="h-4 w-4 rtl:rotate-180" />}</button></div></footer>
+        <footer className="z-20 shrink-0 border-t border-slate-200 bg-white px-3 py-2 shadow-[0_-4px_16px_rgba(15,23,42,0.06)] sm:px-6" style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}><div className="mx-auto flex min-h-14 max-w-[1500px] items-center justify-between gap-2"><button type="button" disabled={activeStepIndex === 0} onClick={() => setActiveStep(steps[activeStepIndex - 1]?.key || 'ouverture')} className="flex min-w-0 flex-1 items-center justify-center gap-1 rounded-xl px-2 py-2.5 text-[11px] font-black text-slate-500 hover:bg-slate-50 disabled:invisible sm:flex-none sm:px-3 sm:text-xs"><ChevronLeft className="h-4 w-4 shrink-0 rtl:rotate-180" />{text('Précédent', 'السابق')}</button><div className="hidden items-center gap-1.5 sm:flex">{steps.map((step) => <span key={step.key} className={`h-1.5 rounded-full transition-all ${step.key === activeStep ? 'w-8 bg-indigo-600' : validCompletedSteps.includes(step.key) ? 'w-3 bg-emerald-500' : 'w-3 bg-slate-200'}`} />)}</div><button type="button" onClick={() => activeStepIndex === steps.length - 1 ? void completeClosing().catch(() => {}) : goNext(activeStep)} className="flex min-w-0 flex-1 items-center justify-center gap-1 rounded-xl bg-indigo-600 px-2 py-2.5 text-[11px] font-black text-white hover:bg-indigo-700 sm:flex-none sm:px-3 sm:text-xs"><span>{activeStepIndex === steps.length - 1 ? text('Terminer le parcours', 'إنهاء المسار') : text('Suivant', 'التالي')}</span>{activeStepIndex === steps.length - 1 ? <Check className="h-4 w-4" /> : <ChevronRight className="h-4 w-4 rtl:rotate-180" />}</button></div></footer>
       </div>
     </div>
   );

@@ -16,6 +16,49 @@ export interface Parent {
   profession?: string;
 }
 
+// An explicit declaration, not proof of identity or legal authorization.
+export interface PickupAuthorization {
+  id: string;
+  enfantId: string;
+  nom: string;
+  lien: string;
+  telephone: string;
+  referenceAutorisation: string;
+  createdBy: string;
+  createdAt: string;
+  revokedBy: string | null;
+  revokedAt: string | null;
+}
+
+export interface PickupAuthorizationDraft {
+  id: string;
+  nom: string;
+  lien: string;
+  telephone: string;
+  referenceAutorisation: string;
+}
+
+export type HealthEventType = 'medicament' | 'incident' | 'soin' | 'visite_medicale' | 'visite_psychologique' | 'rappel_medical' | 'correction';
+export interface ChildHealthEvent {
+  id: string;
+  enfantId: string;
+  type: HealthEventType;
+  date: string;
+  heure: string | null;
+  details: Record<string, string>;
+  correctsId: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+export interface ChildHealthDraft {
+  id: string;
+  type: HealthEventType;
+  date: string;
+  heure: string;
+  details: Record<string, string>;
+  correctsId: string | null;
+}
+
 export interface Enfant {
   id: string;
   crecheId?: string;
@@ -50,6 +93,7 @@ export interface Enfant {
     taille: number;
     contenu: string;
     ajouteLe: string;
+    pages?: number;
   }>>;
   // ✅ Jour du mois (1-31) où la facture mensuelle de cet enfant doit être générée
   // automatiquement + notification envoyée au directeur jusqu'au règlement.
@@ -73,6 +117,11 @@ export interface Presence {
   humeur?: string;
   // Personne ayant récupéré l’enfant lors du départ quotidien.
   personneRecuperation?: string;
+  personneRecuperationId?: string;
+  // Attestation manuelle de l'équipe, pas une preuve automatique d'autorisation.
+  departVerifie?: boolean;
+  departVerifiePar?: string;
+  departVerifieLe?: string;
 }
 
 export interface PresenceJournee {
@@ -88,16 +137,27 @@ export interface Paiement {
   id: string;
   enfantId: string;
   montant: number;
-  statut: 'Payé' | 'En attente' | 'Retard';
+  statut: 'Payé' | 'En attente' | 'Retard' | 'Annulé';
   moisConcerne: string;
   dateEcheance?: string;
   moyenPaiement?: string;
   typeFacture?: string;
+  doublonSuspect?: { targetInvoiceId: string; eventId: string };
+  periodeCle?: string; // M:YYYY-MM or A:YYYY (calendar year); absent on unreviewed legacy rows
   reductionCode?: string;
   notes?: string;
+  motifAnnulation?: string;
+  dateAnnulation?: string;
   // ✅ Marque une facture créée automatiquement à l'échéance (vs. créée manuellement)
   autoGenere?: boolean;
 }
+
+export interface InvoicePeriodReview { invoiceId: string; enfantId: string; periodKey: string; reason: string; originalData: Record<string, unknown>; reviewedBy: string; reviewedAt: string; }
+
+export interface InvoiceReviewEvent { requestId: string; invoiceId: string; action: 'correct_period' | 'flag_duplicate' | 'clear_suspicion' | 'cancel_invoice'; periodKey: string | null; targetInvoiceId: string | null; reason: string; beforeData: Record<string, unknown>; afterData: Record<string, unknown>; targetBefore: Record<string, unknown> | null; createdBy: string; createdAt: string; }
+export interface InvoiceReviewAction { requestId: string; action: InvoiceReviewEvent['action']; expected: Paiement; periodKey?: string; target?: Paiement; reason: string; }
+
+export type PaiementPatch = { [K in keyof Omit<Paiement, 'id'>]?: Paiement[K] | null };
 
 export type AchatCategorie = 'alimentation' | 'hygiene' | 'fournitures' | 'materiel' | 'services' | 'loyer_charges' | 'maintenance' | 'transport' | 'autre';
 export type AchatStatut = 'payé' | 'à_payer';
@@ -115,7 +175,7 @@ export interface Achat {
   montant: number;
   tauxTVA?: number;
   statut: AchatStatut;
-  moyenPaiement?: AchatMoyenPaiement;
+  moyenPaiement?: AchatMoyenPaiement | null;
   numeroPiece?: string;
   notes?: string;
   recurrent: boolean;
@@ -162,7 +222,7 @@ export interface Personnel {
   nom: string;
   prenom: string;
   poste: string;
-  statut: 'Actif' | 'Inactif';
+  statut: 'Actif' | 'En congé' | 'Inactif';
   // ✅ Assurance de l'éducatrice/employé + référence (numéro de police, etc.)
   assuranceActive?: boolean;
   numeroAssurance?: string;
@@ -174,6 +234,7 @@ export interface Classe {
   nom: string;
   niveau: 'Bébés' | 'Moyens' | 'Grands';
   capacite: number;
+  childrenIds?: string[];
 }
 
 export interface Activite {
@@ -187,8 +248,10 @@ export interface Activite {
 export interface Repas {
   id: string;
   crecheId?: string;
-  type: 'Déjeuner' | 'Goûter';
-  date: string;
+  type: 'Petit-déjeuner' | 'Déjeuner' | 'Goûter';
+  date?: string;
+  jour?: string;
+  allergenes?: string;
   menu: string;
 }
 

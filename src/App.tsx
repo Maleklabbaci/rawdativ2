@@ -1,18 +1,40 @@
 // Style shell Rawdha+ : modules métier isolés, navigation mobile compacte et routes explicites pour chaque outil de direction.
-import { useState, useEffect, lazy, Suspense, type ComponentType } from 'react';
-import { ArrowLeft, ArrowRight, School, LogOut, Menu, Bell, MessageCircle, Maximize2, Minimize2, Network } from 'lucide-react';
+import { useState, useEffect, useRef, useTransition, lazy, Suspense, type ComponentType } from 'react';
+import { ArrowLeft, ArrowRight, School, LogOut, Menu, Bell, MessageCircle, Maximize2, Minimize2, Network, Search, Users, WifiOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { DbProvider, useDb } from './contexts/DbContext';
-import SignIn from './components/SignIn';
-import MobileWelcome from './components/MobileWelcome';
-/** Style context — Vitrine officielle Rawdha+: la route `/` présente les modules réels
- * avec l’identité existante; les routes de gestion conservent leur interface opérationnelle. */
-import LandingPage from './components/LandingPage';
-import Dashboard from './components/Dashboard';
+import { WorkspaceProfileProvider, useWorkspaceProfile } from './contexts/WorkspaceProfileContext';
+import ProfileSelectorScreen from './components/ProfileSelectorScreen';
 import Sidebar from './components/Sidebar';
 import SupportBubble from './components/SupportBubble';
+import NotificationBell from './components/NotificationBell';
+import MobileBottomNav from './components/MobileBottomNav';
+import MobileAppHubSheet from './components/MobileAppHubSheet';
+import QuickSearchModal from './components/QuickSearchModal';
+import PageSkeleton from './components/PageSkeleton';
+import CookieConsentBanner from './components/CookieConsentBanner';
+import SubscriptionRenewalModal from './components/SubscriptionRenewalModal';
+import SlickPayFullScreenLock from './components/SlickPayFullScreenLock';
+import { isLegalPathname, LEGAL_CONFIG } from './config/legal';
+import {
+  clearPendingSlickPayOrder,
+  getPendingSlickPayOrder,
+  savePendingSlickPayOrder,
+  SUBSCRIPTION_PROMO_CODES,
+  verifySlickPaySubscriptionOrder,
+  watchSlickPayOrderInBackground,
+  type PendingSlickPayOrder,
+} from './utils/subscriptionRenewal';
+import { prefetchCoreRoutesOnIdle } from './utils/routePrefetch';
+import { initNotificationAudioUnlock, playNotificationChime } from './utils/notificationSound';
+import type { Enfant } from './types';
+
+const LazyDemoProviders =
+  import.meta.env.DEV && import.meta.env.VITE_ARENA_DEMO === 'true'
+    ? lazy(() => import('./demo/DemoProviders').then(mod => ({ default: mod.DemoProviders })))
+    : null;
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { ToastContainer } from './components/ToastContainer';
 import { ConfirmProvider } from './contexts/ConfirmDialogContext';
@@ -47,6 +69,7 @@ const PAGE_PATHS: Record<string, string> = {
   support: '/support',
   rapports: '/reports',
   parametres: '/parametres',
+  abonnement: '/abonnement',
 };
 
 const PAGE_FROM_PATH: Record<string, string> = Object.entries(PAGE_PATHS).reduce(
@@ -95,6 +118,13 @@ const lazyWithRecovery = <T extends ComponentType<any>>(loader: () => Promise<{ 
     }
   });
 
+const Dashboard = lazyWithRecovery(() => import('./components/Dashboard'));
+const LandingPage = lazyWithRecovery(() => import('./components/LandingPage'));
+const SignIn = lazyWithRecovery(() => import('./components/SignIn'));
+const MobileWelcome = lazyWithRecovery(() => import('./components/MobileWelcome'));
+const PublicAdmission = lazyWithRecovery(() => import('./components/PublicAdmission'));
+const PublicParentPortal = lazyWithRecovery(() => import('./components/PublicParentPortal'));
+const PrivacyPolicy = lazyWithRecovery(() => import('./components/PrivacyPolicy'));
 const Enfants = lazyWithRecovery(() => import('./components/Enfants'));
 const Classes = lazyWithRecovery(() => import('./components/Classes'));
 const Presences = lazyWithRecovery(() => import('./components/Presences'));
@@ -116,10 +146,10 @@ const Support = lazyWithRecovery(() => import('./components/Support'));
 const Rapports = lazyWithRecovery(() => import('./components/Rapports'));
 const Admissions = lazyWithRecovery(() => import('./components/Admissions'));
 const Community = lazyWithRecovery(() => import('./components/Community'));
-import PublicAdmission from './components/PublicAdmission';
-import PrivacyPolicy from './components/PrivacyPolicy';
+const AbonnementPaiement = lazyWithRecovery(() => import('./components/AbonnementPaiement'));
+const EnfantDetails = lazyWithRecovery(() => import('./components/EnfantDetails'));
 import SubscriptionStatusBadge from './components/SubscriptionStatusBadge';
-import { AlertCircle, Lock, Check } from 'lucide-react';
+import { AlertCircle, Lock, Check, CreditCard } from 'lucide-react';
 import { hasCompletedOnboarding } from './components/OnboardingCrecheModal';
 
 function AppContent() {
@@ -133,22 +163,49 @@ function AppContent() {
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
   ));
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isMobileHubOpen, setIsMobileHubOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isBrowserFullscreen, setIsBrowserFullscreen] = useState(false);
+  const [isQuickSearchOpen, setIsQuickSearchOpen] = useState(false);
+  const [quickDossierChild, setQuickDossierChild] = useState<Enfant | null>(null);
+  const [isOffline, setIsOffline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine === false : false));
+  const [isRoutePending, startRouteTransition] = useTransition();
   const [couponCode, setCouponCode] = useState('');
   const [showCouponInput, setShowCouponInput] = useState(false); // ✅ champ coupon replié par défaut, pour ne pas distraire du CTA principal // ✅ champ code coupon sur l'écran d'abonnement expiré
+  const [showExpiredRenewalModal, setShowExpiredRenewalModal] = useState(false);
+  const [expiredRenewalSent, setExpiredRenewalSent] = useState(false);
   const { language, setLanguage, t } = useLanguage();
-  const { loading: dbLoading, comptes, communityFeatures } = useDb();
+  const {
+    loading: dbLoading,
+    comptes,
+    communityFeatures,
+    notifications,
+    enfants,
+    demandesAdmission = [],
+    demandesDirecteur = [],
+    messages = [],
+    signalements = [],
+  } = useDb();
+  const { activeProfile, loadingProfiles, requiresProfileSelection, canAccessPage, lockProfile } = useWorkspaceProfile();
   const unreadSocialMessages = communityFeatures.filter(feature => feature.kind === 'private_message' && feature.recipientId === user?.id && feature.payload?.read !== true).length;
   const unreadSocialNotifications = communityFeatures.filter(feature => feature.kind === 'social_notification' && feature.recipientId === user?.id && feature.payload?.read !== true).length;
   const socialUnreadCount = unreadSocialMessages + unreadSocialNotifications;
+  const seenAlertIdsRef = useRef<{ userId: string | null; ids: Set<string> }>({
+    userId: null,
+    ids: new Set(),
+  });
   const { showToast } = useToast();
   // routeVersion est volontairement lu ici : il force le recalcul des routes après
   // toute modification interne de l’historique, sans dépendre d’un PopStateEvent.
   void routeVersion;
   const isPublicAdmission = window.location.pathname.replace(/\/+$/, '') === '/admission';
-  const isPublicPrivacy = window.location.pathname.replace(/\/+$/, '') === '/confidentialite';
+  const isPublicParentSpace = window.location.pathname.replace(/\/+$/, '') === '/espace-parent';
+  const isPublicPrivacy = isLegalPathname(window.location.pathname);
   const normalizedPathname = normalizeAuthPath(window.location.pathname);
+  const isPasswordRecoveryUrl =
+    typeof window !== 'undefined' &&
+    (window.location.hash.includes('type=recovery') ||
+      new URLSearchParams(window.location.search).get('reset') === '1');
   const isPublicLanding = normalizedPathname === '/';
   const isAccessRequest = normalizedPathname === '/signin';
   const isPublicWelcome = normalizedPathname === '/welcome';
@@ -157,13 +214,15 @@ function AppContent() {
   const navigateToPage = (page: string, options?: { replace?: boolean }) => {
     const nextPage = PAGE_PATHS[page] ? page : 'dashboard';
     const nextPath = PAGE_PATHS[nextPage];
-    setCurrentPage(nextPage);
 
     if (typeof window !== 'undefined' && window.location.pathname !== nextPath) {
       const method = options?.replace ? 'replaceState' : 'pushState';
       window.history[method]({}, '', nextPath);
-      setRouteVersion((version) => version + 1);
     }
+    startRouteTransition(() => {
+      setCurrentPage(nextPage);
+      setRouteVersion((version) => version + 1);
+    });
   };
 
   const navigateToPublicPath = (path: '/login/' | '/signin/', options?: { replace?: boolean }) => {
@@ -182,7 +241,9 @@ function AppContent() {
   // ses infos de crèche (existence du doc "parametres/creche_{id}"). null = pas encore vérifié.
   const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
   useEffect(() => {
-    if (user?.role === 'directeur' && user.approvalStatus !== 'pending') {
+    if (import.meta.env.DEV && import.meta.env.VITE_ARENA_DEMO === 'true') {
+      setNeedsOnboarding(false);
+    } else if (user?.role === 'directeur' && user.approvalStatus !== 'pending') {
       hasCompletedOnboarding(user.id).then(done => {
         setNeedsOnboarding(!done);
         if (!done && window.location.pathname !== PAGE_PATHS.demarrage) {
@@ -221,6 +282,33 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
+    const handleOffline = () => setIsOffline(true);
+    const handleOnline = () => {
+      setIsOffline(false);
+      showToast(language === 'ar' ? 'عاد الاتصال بالإنترنت.' : 'Connexion Internet rétablie.', 'success');
+    };
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [language, showToast]);
+
+  useEffect(() => {
+    if (!isAuthenticated || isPendingApproval) return;
+    prefetchCoreRoutesOnIdle(user?.role);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setIsQuickSearchOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isAuthenticated, isPendingApproval, user?.role]);
+
+  useEffect(() => {
     const handlePopState = () => {
       setCurrentPage(pageFromPathname(window.location.pathname));
       setRouteVersion((version) => version + 1);
@@ -232,7 +320,7 @@ function AppContent() {
   // Les notifications natives sont initialisées uniquement après connexion : le jeton
   // Firebase reste ainsi associé au bon compte Rawdha+ et à aucune session anonyme.
   useEffect(() => {
-    if (!isAuthenticated || !user?.id) {
+    if ((import.meta.env.DEV && import.meta.env.VITE_ARENA_DEMO === 'true') || !isAuthenticated || !user?.id) {
       clearPushSessionUser();
       return;
     }
@@ -248,12 +336,291 @@ function AppContent() {
     };
   }, [isAuthenticated, user?.id]);
 
+  // Déverrouillage passif Web Audio au premier geste utilisateur
+  useEffect(() => {
+    initNotificationAudioUnlock();
+  }, []);
+
+  // Capture globale de `?slickpay_order=...` au retour de SATIM (même sur un compte expiré)
+  // + verrouillage plein écran global sur toute la plateforme jusqu'à confirmation du paiement.
+  const [globalPendingSlickPay, setGlobalPendingSlickPay] = useState<PendingSlickPayOrder | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return getPendingSlickPayOrder(user?.id);
+  });
+  const [globalPollAttempt, setGlobalPollAttempt] = useState(0);
+  const [globalRechecking, setGlobalRechecking] = useState(false);
+  const [globalConfirmedEndDate, setGlobalConfirmedEndDate] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user?.id || user.role !== 'directeur') {
+      setGlobalPendingSlickPay(null);
+      return;
+    }
+    const urlOrderId =
+      typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('slickpay_order') : null;
+    if (urlOrderId) {
+      const saved: PendingSlickPayOrder = {
+        orderId: urlOrderId,
+        invoiceId: '',
+        directorId: user.id,
+        paymentUrl: '',
+        amountDzd: LEGAL_CONFIG.monthlyPlanPriceDzd,
+        planMonths: 1,
+        mode: 'live',
+        createdAt: new Date().toISOString(),
+      };
+      savePendingSlickPayOrder(saved);
+      setGlobalPendingSlickPay(saved);
+      setCurrentPage('abonnement');
+    }
+    const syncPending = () => {
+      setGlobalPendingSlickPay(getPendingSlickPayOrder(user.id));
+    };
+    syncPending();
+    window.addEventListener('rawdha-slickpay-pending-changed', syncPending);
+    window.addEventListener('rawdha-subscription-activated', syncPending);
+    return () => {
+      window.removeEventListener('rawdha-slickpay-pending-changed', syncPending);
+      window.removeEventListener('rawdha-subscription-activated', syncPending);
+    };
+  }, [user?.id, user?.role]);
+
+  const liveAccountForWatcher = user ? comptes.find(c => c.id === user.id) || user : null;
+  const isAccountCurrentlyExpired = (() => {
+    if (!liveAccountForWatcher || liveAccountForWatcher.role !== 'directeur') return false;
+    if (!liveAccountForWatcher.abonnementActif) return true;
+    if (liveAccountForWatcher.dateFinAbonnement) {
+      const now = new Date();
+      const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      if (todayIso > liveAccountForWatcher.dateFinAbonnement) return true;
+    }
+    return false;
+  })();
+
+  const abonnementPageMounted = currentPage === 'abonnement' && !isAccountCurrentlyExpired;
+
+  useEffect(() => {
+    if (!user?.id || !globalPendingSlickPay?.orderId || abonnementPageMounted) {
+      setGlobalPollAttempt(0);
+      return;
+    }
+    return watchSlickPayOrderInBackground({
+      orderId: globalPendingSlickPay.orderId,
+      directorId: user.id,
+      intervalMs: 2500,
+      maxAttempts: 36,
+      onTick: attempt => setGlobalPollAttempt(attempt),
+      onResolved: res => {
+        setGlobalPendingSlickPay(null);
+        if (res.status === 'paid') {
+          if (res.newEndDate) {
+            setGlobalConfirmedEndDate(res.newEndDate);
+            setTimeout(() => setGlobalConfirmedEndDate(null), 1300);
+          }
+          playNotificationChime({ urgent: false });
+          showToast(
+            language === 'ar'
+              ? 'تم تأكيد الدفع وتمديد اشتراكك بنجاح!'
+              : 'Paiement CIB / Edahabia confirmé — abonnement prolongé !',
+            'success'
+          );
+        }
+      },
+    });
+  }, [user?.id, globalPendingSlickPay?.orderId, abonnementPageMounted, language, showToast]);
+
+  const handleGlobalRecheckNow = async () => {
+    if (!globalPendingSlickPay?.orderId || globalRechecking) return;
+    setGlobalRechecking(true);
+    try {
+      const res = await verifySlickPaySubscriptionOrder(globalPendingSlickPay.orderId);
+      if (res.status === 'paid') {
+        clearPendingSlickPayOrder(globalPendingSlickPay.orderId);
+        setGlobalPendingSlickPay(null);
+        if (res.newEndDate) {
+          setGlobalConfirmedEndDate(res.newEndDate);
+          setTimeout(() => setGlobalConfirmedEndDate(null), 1300);
+        }
+      } else if (res.status === 'failed') {
+        clearPendingSlickPayOrder(globalPendingSlickPay.orderId);
+        setGlobalPendingSlickPay(null);
+      }
+    } finally {
+      setGlobalRechecking(false);
+    }
+  };
+
+  const globalSlickPayLockOverlay = !abonnementPageMounted ? (
+    <SlickPayFullScreenLock
+      open={Boolean(globalPendingSlickPay) || Boolean(globalConfirmedEndDate)}
+      phase={globalConfirmedEndDate ? 'confirmed' : 'waiting'}
+      isArabic={language === 'ar'}
+      amountDzd={globalPendingSlickPay?.amountDzd}
+      planMonths={globalPendingSlickPay?.planMonths}
+      invoiceId={globalPendingSlickPay?.invoiceId}
+      paymentUrl={globalPendingSlickPay?.paymentUrl}
+      pollAttempt={globalPollAttempt}
+      rechecking={globalRechecking}
+      confirmedEndDate={globalConfirmedEndDate || undefined}
+      onRecheckNow={handleGlobalRecheckNow}
+      onCancelWait={() => {
+        if (globalPendingSlickPay) clearPendingSlickPayOrder(globalPendingSlickPay.orderId);
+        setGlobalPendingSlickPay(null);
+      }}
+      onDismissConfirmed={() => setGlobalConfirmedEndDate(null)}
+    />
+  ) : null;
+
+  // Détection en temps réel des NOUVELLES notifications entrantes -> sonnerie douce + toast
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id || dbLoading || loadingProfiles || isPendingApproval) {
+      seenAlertIdsRef.current = { userId: null, ids: new Set() };
+      return;
+    }
+
+    const currentIds = new Set<string>();
+    let latestToastLabel = '';
+    let isUrgent = false;
+
+    if (user.role === 'directeur') {
+      for (const notif of notifications) {
+        const targeted =
+          notif.recipientRole === 'all_directeurs' ||
+          notif.recipientRole === user.id ||
+          notif.recipientIds?.includes(user.id);
+        if (targeted && !(notif.readBy || []).includes(user.id)) {
+          const key = `notif:${notif.id}`;
+          currentIds.add(key);
+          if (seenAlertIdsRef.current.userId === user.id && !seenAlertIdsRef.current.ids.has(key)) {
+            latestToastLabel =
+              language === 'ar'
+                ? `إشعار جديد: ${notif.title}`
+                : `Nouvelle annonce : ${notif.title}`;
+            if (notif.showAsPopup) isUrgent = true;
+          }
+        }
+      }
+      if (canAccessPage('admissions')) {
+        for (const adm of demandesAdmission) {
+          if (adm.crecheId === user.id && adm.statut === 'en_attente') {
+            const key = `adm:${adm.id}`;
+            currentIds.add(key);
+            if (seenAlertIdsRef.current.userId === user.id && !seenAlertIdsRef.current.ids.has(key)) {
+              latestToastLabel =
+                language === 'ar'
+                  ? `طلب تسجيل QR جديد: ${adm.prenom} ${adm.nom}`
+                  : `Nouvelle pré-inscription QR : ${adm.prenom} ${adm.nom}`;
+            }
+          }
+        }
+      }
+    } else if (user.role === 'admin') {
+      for (const req of demandesDirecteur) {
+        if (req.statut === 'en_attente') {
+          const key = `dir-req:${req.id}`;
+          currentIds.add(key);
+          if (seenAlertIdsRef.current.userId === user.id && !seenAlertIdsRef.current.ids.has(key)) {
+            latestToastLabel =
+              language === 'ar'
+                ? `طلب مديرة جديد: ${req.nomCreche}`
+                : `Nouvelle demande crèche : ${req.nomCreche}`;
+          }
+        }
+      }
+      for (const sig of signalements) {
+        if ((sig as any).statut === 'nouveau') {
+          const key = `sig:${sig.id}`;
+          currentIds.add(key);
+          if (seenAlertIdsRef.current.userId === user.id && !seenAlertIdsRef.current.ids.has(key)) {
+            latestToastLabel =
+              language === 'ar'
+                ? `بلاغ دعم جديد: ${(sig as any).titre || ''}`
+                : `Nouveau ticket support : ${(sig as any).titre || ''}`;
+          }
+        }
+      }
+    }
+
+    for (const msg of messages as any[]) {
+      const forMe =
+        user.role === 'admin'
+          ? msg.recipientId === 'admin' || msg.recipientId === user.id
+          : msg.recipientId === user.id;
+      if (forMe && msg.senderId !== user.id && msg.isRead !== true) {
+        const key = `msg:${msg.id}`;
+        currentIds.add(key);
+        if (seenAlertIdsRef.current.userId === user.id && !seenAlertIdsRef.current.ids.has(key)) {
+          latestToastLabel =
+            language === 'ar'
+              ? `رسالة جديدة من ${msg.senderName || 'الدعم'}`
+              : `Nouveau message de ${msg.senderName || 'Support Rawdha+'}`;
+        }
+      }
+    }
+
+    for (const feat of communityFeatures) {
+      if (
+        (feat.kind === 'private_message' || feat.kind === 'social_notification') &&
+        feat.recipientId === user.id &&
+        feat.payload?.read !== true
+      ) {
+        const key = `social:${feat.id}`;
+        currentIds.add(key);
+        if (seenAlertIdsRef.current.userId === user.id && !seenAlertIdsRef.current.ids.has(key)) {
+          latestToastLabel =
+            language === 'ar'
+              ? 'إشعار جديد على Rawdha Connect'
+              : 'Nouvelle notification Rawdha Connect';
+        }
+      }
+    }
+
+    // Première hydratation pour cet utilisateur : on mémorise sans faire sonner au rechargement
+    if (seenAlertIdsRef.current.userId !== user.id) {
+      seenAlertIdsRef.current = { userId: user.id, ids: currentIds };
+      return;
+    }
+
+    let hasNewArrival = false;
+    for (const key of currentIds) {
+      if (!seenAlertIdsRef.current.ids.has(key)) {
+        hasNewArrival = true;
+        break;
+      }
+    }
+    seenAlertIdsRef.current = { userId: user.id, ids: currentIds };
+
+    if (hasNewArrival) {
+      playNotificationChime({ urgent: isUrgent });
+      if (latestToastLabel) {
+        showToast(latestToastLabel, 'info', 4500);
+      }
+    }
+  }, [
+    isAuthenticated,
+    user?.id,
+    user?.role,
+    dbLoading,
+    loadingProfiles,
+    isPendingApproval,
+    notifications,
+    demandesAdmission,
+    demandesDirecteur,
+    signalements,
+    messages,
+    communityFeatures,
+    canAccessPage,
+    language,
+    showToast,
+  ]);
+
   // Une alerte reçue lorsque l’application est déjà ouverte est rendue visible dans
   // Rawdha+ au lieu d’être silencieusement ignorée par le système Android.
   useEffect(() => {
     const handleForegroundPush = (event: Event) => {
       const notification = (event as CustomEvent<{ title?: string; body?: string }>).detail;
       if (!notification) return;
+      playNotificationChime();
       const content = [notification.title, notification.body].filter(Boolean).join(' — ');
       if (content) showToast(content, 'info', 6500);
     };
@@ -282,7 +649,7 @@ function AppContent() {
     // Ne jamais remplacer une route de gestion par /login pendant que Supabase relit
     // la session persistante de l’appareil. Sans cette garde, un redémarrage pouvait
     // brièvement afficher la connexion alors que le refresh token était encore valide.
-    if (authLoading || isAuthenticated || isPublicAdmission || isPublicPrivacy || isPublicLanding) return;
+    if (authLoading || isAuthenticated || isPublicAdmission || isPublicParentSpace || isPublicPrivacy || isPublicLanding) return;
     const normalizedPath = normalizeAuthPath(window.location.pathname);
     const queryAndHash = `${window.location.search}${window.location.hash}`;
 
@@ -298,15 +665,15 @@ function AppContent() {
     // L’accueil est réservé au téléphone ; sur ordinateur, on ouvre directement le formulaire.
     window.history.replaceState({}, '', `${isDesktopViewport ? '/login/' : '/welcome/'}${queryAndHash}`);
     setRouteVersion((version) => version + 1);
-  }, [authLoading, isAuthenticated, isDesktopViewport, isPublicAdmission, isPublicPrivacy, isPublicLanding]);
+  }, [authLoading, isAuthenticated, isDesktopViewport, isPublicAdmission, isPublicParentSpace, isPublicPrivacy, isPublicLanding]);
 
   useEffect(() => {
-    if (!isAuthenticated || isPublicAdmission || isPublicPrivacy) return;
+    if (!isAuthenticated || isPublicAdmission || isPublicParentSpace || isPublicPrivacy) return;
     const expectedPath = PAGE_PATHS[currentPage] || PAGE_PATHS.dashboard;
     if (window.location.pathname !== expectedPath) {
       window.history.replaceState({}, '', expectedPath);
     }
-  }, [isAuthenticated, isPublicAdmission, currentPage]);
+  }, [isAuthenticated, isPublicAdmission, isPublicParentSpace, isPublicPrivacy, currentPage]);
 
   useEffect(() => {
     if (user?.role === 'admin') {
@@ -315,8 +682,13 @@ function AppContent() {
       }
     } else if (currentPage === 'comptes' || currentPage === 'admin') {
       navigateToPage('dashboard', { replace: true });
+    } else if (user?.role === 'directeur' && activeProfile && !canAccessPage(currentPage)) {
+      const fallbackPage = activeProfile.allowedPages.find(p => PAGE_PATHS[p]) || 'presences';
+      if (fallbackPage !== currentPage) {
+        navigateToPage(fallbackPage, { replace: true });
+      }
     }
-  }, [user?.role, currentPage]);
+  }, [user?.role, currentPage, activeProfile, canAccessPage]);
 
   // ✅ Favicon + titre d'onglet dynamiques : le logo PNG uploadé dans Paramètres
   // remplace l'icône par défaut de RAWDHA+ dans la barre de tâches / onglet du navigateur.
@@ -330,7 +702,7 @@ function AppContent() {
     }
     link.href = faviconHref;
 
-    if (!isAuthenticated && !isPublicAdmission && !isPublicPrivacy) {
+    if (!isAuthenticated && !isPublicAdmission && !isPublicParentSpace && !isPublicPrivacy) {
       if (isPublicLanding) {
         document.title = language === 'ar' ? 'Rawdha+ — منصة تسيير الحضانات' : 'Rawdha+ — La plateforme des crèches';
         return;
@@ -340,6 +712,11 @@ function AppContent() {
         : isAccessRequest
           ? (language === 'ar' ? 'طلب الوصول — RAWDHA+' : 'Demander un accès — RAWDHA+')
           : (language === 'ar' ? 'تسجيل الدخول — RAWDHA+' : 'Connexion — RAWDHA+');
+      return;
+    }
+
+    if (isPublicPrivacy) {
+      document.title = language === 'ar' ? 'المركز القانوني وحماية البيانات — RAWDHA+' : 'Centre légal & confidentialité — RAWDHA+';
       return;
     }
 
@@ -363,23 +740,47 @@ function AppContent() {
       notifications: language === 'ar' ? 'الإشعارات' : 'Notifications',
       communication: language === 'ar' ? 'الرسائل والتقييمات والملاحظات' : 'Messages, Avis & Retours',
       community: 'Rawdha Connect',
+      abonnement: language === 'ar' ? 'الاشتراك والدفع' : 'Abonnement & Paiement',
     };
     const pageName = pageTitleKeys[currentPage]
       ? t(pageTitleKeys[currentPage])
       : fallbackPageTitles[currentPage] || 'RAWDHA+';
     document.title = `${pageName} — RAWDHA+`;
-  }, [creche?.logoUrl, creche?.nom, currentPage, isAccessRequest, isAuthenticated, isMobileWelcomeScreen, isPublicAdmission, isPublicLanding, isPublicPrivacy, language, t]);
+  }, [creche?.logoUrl, creche?.nom, currentPage, isAccessRequest, isAuthenticated, isMobileWelcomeScreen, isPublicAdmission, isPublicParentSpace, isPublicLanding, isPublicPrivacy, language, t]);
 
   if (isPublicPrivacy) {
-    return <PrivacyPolicy />;
+    return (
+      <>
+        <PrivacyPolicy />
+        <CookieConsentBanner />
+      </>
+    );
+  }
+
+  if (isPublicParentSpace) {
+    return (
+      <Suspense fallback={<PageSkeleton />}>
+        <PublicParentPortal />
+      </Suspense>
+    );
   }
 
   if (isPublicAdmission) {
-    return <PublicAdmission />;
+    return (
+      <>
+        <PublicAdmission />
+        <CookieConsentBanner />
+      </>
+    );
   }
 
   if (!isAuthenticated && isPublicLanding) {
-    return <LandingPage onNavigate={(destination) => navigateToPublicPath(destination === 'request' ? '/signin/' : '/login/')} />;
+    return (
+      <>
+        <LandingPage onNavigate={(destination) => navigateToPublicPath(destination === 'request' ? '/signin/' : '/login/')} />
+        <CookieConsentBanner />
+      </>
+    );
   }
 
   // Une route de gestion doit attendre la lecture du stockage persistant avant de
@@ -398,11 +799,16 @@ function AppContent() {
 
   // Les routes publiques restent immédiatement accessibles lorsqu’aucune session
   // persistante n’est disponible sur l’appareil.
-  if (!isAuthenticated) {
-    if (isMobileWelcomeScreen) {
+  if (!isAuthenticated || isPasswordRecoveryUrl) {
+    if (isMobileWelcomeScreen && !isPasswordRecoveryUrl) {
       return <MobileWelcome onContinue={() => navigateToPublicPath('/login/', { replace: true })} />;
     }
-    return <SignIn mode={isAccessRequest ? 'request' : 'signin'} />;
+    return (
+      <>
+        <SignIn mode={isAccessRequest && !isPasswordRecoveryUrl ? 'request' : 'signin'} />
+        <CookieConsentBanner />
+      </>
+    );
   }
 
   // Pour un utilisateur déjà connecté, on attend la restauration de session et des données métier.
@@ -429,7 +835,8 @@ function AppContent() {
     if (!liveUser.abonnementActif) {
       isSubscriptionExpired = true;
     } else if (liveUser.dateFinAbonnement) {
-      const todayStr = new Date().toISOString().split('T')[0]; // e.g. "2026-06-18"
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       expiryDateString = liveUser.dateFinAbonnement;
       if (todayStr > liveUser.dateFinAbonnement) {
         isSubscriptionExpired = true;
@@ -439,13 +846,10 @@ function AppContent() {
 
   // ✅ Codes promo : modifie cette liste pour ajouter/changer tes codes.
   // Format : 'CODE': montant de réduction en DA
-  const COUPON_CODES: Record<string, number> = {
-    'RAWDHA500': 500,
-    'RAWDHA1000': 1000,
-  };
-  const BASE_PLAN_PRICE = 3500;
+  const COUPON_CODES: Record<string, number> = SUBSCRIPTION_PROMO_CODES;
+  const BASE_PLAN_PRICE = LEGAL_CONFIG.monthlyPlanPriceDzd;
   const couponDiscount = COUPON_CODES[couponCode.trim().toUpperCase()] || 0;
-  const finalPrice = BASE_PLAN_PRICE - couponDiscount;
+  const finalPrice = Math.max(0, BASE_PLAN_PRICE - couponDiscount);
 
   const whatsappMessage = language === 'ar'
     ? `مرحباً، أنا ${liveUser?.prenom || ''} ${liveUser?.nom || ''} (${liveUser?.nomCreche || ''}). أرغب في تفعيل خطة Rawdha+ بسعر ${finalPrice} د.ج${couponDiscount > 0 ? ` (باستخدام الكود ${couponCode.trim().toUpperCase()})` : ''}. البريد الإلكتروني: ${liveUser?.email || ''}. شكراً لتفعيل حسابي.`
@@ -490,7 +894,7 @@ if (isSubscriptionExpired && !isPendingApproval) {
                 </span>
                 <div className="flex items-baseline gap-2 mt-1">
                   {couponDiscount > 0 && (
-                    <span className="text-sm text-indigo-200 line-through">3500 DA</span>
+                    <span className="text-sm text-indigo-200 line-through">{BASE_PLAN_PRICE} DA</span>
                   )}
                   <span className="text-3xl font-black">{finalPrice} DA</span>
                   <span className="text-xs text-indigo-200">/{isAr ? 'شهر' : 'mois'}</span>
@@ -515,23 +919,48 @@ if (isSubscriptionExpired && !isPendingApproval) {
             </div>
           </div>
 
-          {/* CTA principal — WhatsApp, plein, mis en avant */}
-          <div className="px-6 pt-5 pb-2">
+          {/* CTA principaux : Carte CIB/Edahabia (SlickPay) OU WhatsApp uniquement */}
+          {globalSlickPayLockOverlay}
+          <div className="px-6 pt-5 pb-2 space-y-2.5">
+            <button
+              type="button"
+              onClick={() => setShowExpiredRenewalModal(true)}
+              className="min-h-11! w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl transition font-bold text-sm tracking-wide flex items-center justify-center gap-2.5 shadow-lg shadow-indigo-500/25 whitespace-nowrap cursor-pointer"
+            >
+              <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white p-0.5">
+                <img src="/payment/edahabia.png" alt="Edahabia" className="h-full w-full object-contain" />
+              </span>
+              <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white p-0.5">
+                <img src="/payment/cib.png" alt="CIB" className="h-full w-full object-contain" />
+              </span>
+              <span className="truncate">
+                {isAr
+                  ? 'الدفع ببطاقة CIB / الذهبية'
+                  : 'Payer par CIB / Edahabia'}
+              </span>
+            </button>
             <a
               href={whatsappLink}
               target="_blank"
               rel="noopener noreferrer"
-              className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl transition font-bold text-sm tracking-wide flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-500/30 cursor-pointer"
+              className="min-h-11! w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl transition font-bold text-sm tracking-wide flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 whitespace-nowrap cursor-pointer"
             >
-              <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" xmlns="http://www.w3.org/2000/svg">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 fill-current" xmlns="http://www.w3.org/2000/svg">
                 <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/>
               </svg>
-              <span>{isAr ? 'تفعيل حسابي الآن' : 'Réactiver mon accès maintenant'}</span>
+              <span className="truncate">{isAr ? 'تواصل معنا عبر واتساب' : 'Contacter sur WhatsApp'}</span>
             </a>
-            <p className="text-center text-[11px] text-slate-400 mt-2">
-              {isAr ? 'رد سريع عبر واتساب، عادة خلال دقائق' : 'Réponse rapide sur WhatsApp, généralement en quelques minutes'}
-            </p>
           </div>
+          {liveUser && (
+            <SubscriptionRenewalModal
+              isOpen={showExpiredRenewalModal}
+              onClose={() => setShowExpiredRenewalModal(false)}
+              isArabic={isAr}
+              director={liveUser}
+              initialCoupon={couponCode}
+              onSubmitted={() => setExpiredRenewalSent(true)}
+            />
+          )}
 
           {/* Coupon — discret, replié par défaut */}
           <div className="px-6 pb-1">
@@ -582,10 +1011,18 @@ if (isSubscriptionExpired && !isPendingApproval) {
     );
   }
 
+  if (requiresProfileSelection && !isPendingApproval) {
+    return <ProfileSelectorScreen />;
+  }
+
   if (currentPage === 'community') {
     const isAr = language === 'ar';
     return (
       <div className="min-h-screen bg-[#f5f7fb]" dir={isAr ? 'rtl' : 'ltr'}>
+        {globalSlickPayLockOverlay}
+        <a href="#main-content" className="rawdha-skip-link">
+          {isAr ? 'الانتقال إلى المحتوى الرئيسي' : 'Aller au contenu principal'}
+        </a>
         <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur">
           <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-2 px-3 py-2.5 sm:gap-4 sm:px-6 sm:py-3">
             <div className="flex min-w-0 items-center gap-2 sm:gap-3">
@@ -618,11 +1055,12 @@ if (isSubscriptionExpired && !isPendingApproval) {
             </div>
           </div>
         </header>
-        <main className="min-h-[calc(100vh-73px)]">
+        <main id="main-content" tabIndex={-1} className="min-h-[calc(100vh-73px)] pb-28 outline-none lg:pb-0 [@media(max-height:430px)]:pb-0">
           <Suspense fallback={<div className="flex min-h-[50vh] items-center justify-center text-sm font-bold text-slate-400">{isAr ? 'جارٍ تحميل Rawdha Connect...' : 'Chargement de Rawdha Connect...'}</div>}>
             <Community />
           </Suspense>
         </main>
+
       </div>
     );
   }
@@ -649,19 +1087,26 @@ if (isSubscriptionExpired && !isPendingApproval) {
         case 'aide': return <Aide onNavigate={navigateToPage} />;
         case 'support': return <Support />;
         case 'rapports': return <Rapports />;
-        case 'parametres': return <Parametres />;
+        case 'parametres': return <Parametres onNavigate={navigateToPage} />;
+        case 'abonnement': return <AbonnementPaiement onNavigate={navigateToPage} />;
         default: return <Dashboard />;
       }
     })();
     return (
-      <Suspense fallback={<div className="flex items-center justify-center h-64 text-slate-400">Chargement...</div>}>
+      <Suspense fallback={<PageSkeleton />}>
         {page}
       </Suspense>
     );
   };
 
   return (
-    <div className="min-h-screen min-w-0 overflow-x-hidden bg-[#f8fafc]" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen min-w-0 overflow-x-hidden bg-transparent" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      <a href="#main-content" className="rawdha-skip-link">
+        {language === 'ar' ? 'الانتقال إلى المحتوى الرئيسي' : 'Aller au contenu principal'}
+      </a>
+      {isRoutePending && (
+        <div className="fixed inset-x-0 top-0 z-50 h-0.5 bg-gradient-to-r from-indigo-500 via-violet-500 to-cyan-500 animate-pulse" />
+      )}
       {/* Sidebar */}
       <Sidebar 
         currentPage={currentPage} 
@@ -686,44 +1131,133 @@ if (isSubscriptionExpired && !isPendingApproval) {
       </AnimatePresence>
 
       {/* Main Content */}
-      <div className={`min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'lg:ltr:pl-20 lg:rtl:pr-20' : 'lg:ltr:pl-72 lg:rtl:pr-72'}`}>
-        {/* Header */}
-        <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 sticky top-0 z-30 shadow-xs">
-          <div className="min-w-0 px-3 sm:px-6 lg:px-10 py-3 sm:py-4">
-            <div className="flex min-w-0 flex-col sm:flex-row gap-3 sm:gap-4 justify-between sm:items-center">
-              <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-                {/* Mobile Menu Button */}
+      {globalSlickPayLockOverlay}
+      <div className={`min-w-0 transition-all duration-200 ${isSidebarCollapsed ? 'lg:ltr:pl-20 lg:rtl:pr-20' : 'lg:ltr:pl-64 lg:rtl:pr-64'}`}>
+        {/* Header — Barre supérieure calme et épurée */}
+        <header className="sticky top-0 z-30 border-b border-slate-200/75 bg-white/95 lg:bg-[#f8fafc]/92 backdrop-blur-md">
+          <div className="min-w-0 px-3 sm:px-6 lg:px-10 py-2 sm:py-3">
+            <div className="flex min-w-0 items-center justify-between gap-2 sm:gap-3">
+              {/* Left: Menu (landscape only) + Crèche Identity */}
+              <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
                 <button
                   id="mobile-sidebar-toggle"
+                  type="button"
                   onClick={() => setIsSidebarOpen(value => !value)}
-                  className="lg:hidden w-11 h-11 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition cursor-pointer flex-shrink-0"
-                  aria-label={isSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+                  className="hidden [@media(max-height:430px)]:flex lg:hidden h-9 w-9 items-center justify-center bg-slate-100 hover:bg-slate-200/80 text-slate-700 rounded-xl transition cursor-pointer flex-shrink-0"
+                  aria-expanded={isSidebarOpen}
+                  aria-label={isSidebarOpen
+                    ? (language === 'ar' ? 'إغلاق القائمة' : 'Fermer le menu')
+                    : (language === 'ar' ? 'فتح القائمة' : 'Ouvrir le menu')}
                 >
-                  <Menu className="w-5 h-5" />
+                  <Menu className="w-4.5 h-4.5" />
                 </button>
 
-                <div className="flex min-w-0 items-center gap-2 sm:gap-4">
-                  <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl hidden sm:flex items-center justify-center flex-shrink-0 w-10 h-10 overflow-hidden">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <div className="hidden sm:flex items-center justify-center flex-shrink-0 w-9 h-9 rounded-xl overflow-hidden bg-indigo-600 text-white p-1.5">
                     {creche?.logoUrl ? (
-                      <img src={creche.logoUrl} alt="Logo" className="w-full h-full object-contain" />
+                      <img src={creche.logoUrl} alt={creche?.nom || (language === 'ar' ? 'شعار الروضة' : 'Logo de la crèche')} className="w-full h-full rounded-lg bg-white p-0.5 object-contain" />
                     ) : (
-                      <School className="w-5 h-5 animate-pulse" />
+                      <School className="w-4.5 h-4.5" aria-hidden="true" />
                     )}
                   </div>
-                  <div>
-                    <h1 className="min-w-0 max-w-[42vw] truncate text-sm sm:max-w-none sm:text-base md:text-lg lg:text-xl font-extrabold text-slate-950 tracking-tight flex items-center gap-1.5 leading-tight">
+                  <div className="min-w-0">
+                    <h1 className="min-w-0 truncate text-sm sm:text-base md:text-lg font-bold text-slate-900 tracking-tight leading-tight">
                       {creche?.nom}
-                      <span className="px-1.5 py-0.5 text-[9px] font-bold bg-indigo-100 text-indigo-700 rounded-md uppercase tracking-wider">PRO</span>
                     </h1>
-                    <p className="max-w-[58vw] truncate text-[10px] sm:max-w-none sm:text-xs text-slate-500 font-medium leading-none mt-0.5">{creche?.adresse}</p>
+                    {creche?.adresse && (
+                      <p className="hidden sm:block max-w-[36vw] truncate text-xs text-slate-500 font-medium leading-none mt-0.5">{creche.adresse}</p>
+                    )}
                   </div>
                 </div>
-                <div className="ml-auto flex shrink-0 gap-0.5 rounded-xl border border-slate-200/70 bg-slate-100/90 p-0.5 sm:hidden" aria-label={language === 'ar' ? 'اختيار اللغة' : 'Choisir la langue'}>
+              </div>
+
+              {/* Right: Status (desktop) + Search + Notifications + Help (?) + Lang + Logout */}
+              <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+                <div className="hidden xl:block">
+                  {isPendingApproval ? (
+                    <div className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-extrabold text-amber-800">
+                      <Lock className="h-3.5 w-3.5 flex-shrink-0" />
+                      {language === 'ar' ? 'في انتظار موافقة الإدارة — وضع القراءة فقط' : 'En attente de validation — lecture seule'}
+                    </div>
+                  ) : user?.role === 'directeur' && (
+                    <SubscriptionStatusBadge
+                      dateFinAbonnement={liveUser?.dateFinAbonnement}
+                      abonnementActif={liveUser?.abonnementActif}
+                      onClick={() => navigateToPage('abonnement')}
+                    />
+                  )}
+                </div>
+
+                {!isPendingApproval && (
+                  <button
+                    type="button"
+                    onClick={() => setIsQuickSearchOpen(true)}
+                    aria-label={language === 'ar' ? 'بحث سريع' : 'Recherche rapide'}
+                    title={language === 'ar' ? 'بحث سريع (Ctrl+K)' : 'Recherche rapide (Ctrl+K)'}
+                    className="flex h-9 w-9 md:w-auto md:min-w-[9rem] xl:min-w-[12.5rem] items-center justify-center md:justify-between gap-2 rounded-xl border border-slate-200/80 bg-slate-50/90 md:px-3 text-xs font-medium text-slate-500 transition hover:bg-slate-100/80 hover:text-slate-900 cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      <Search className="h-4 w-4 shrink-0 text-slate-400" />
+                      <span className="hidden md:inline truncate">{language === 'ar' ? 'بحث سريع…' : 'Rechercher…'}</span>
+                    </span>
+                    <kbd className="hidden lg:inline-block shrink-0 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-400 border border-slate-200/90 shadow-2xs">Ctrl+K</kbd>
+                  </button>
+                )}
+
+                {user?.role === 'directeur' && !isPendingApproval && activeProfile && (
+                  <button
+                    type="button"
+                    onClick={lockProfile}
+                    aria-label={language === 'ar' ? 'تبديل الحساب' : 'Changer de profil'}
+                    title={language === 'ar' ? `تبديل الحساب (${activeProfile.name})` : `Changer de profil (${activeProfile.name})`}
+                    className="flex h-9 items-center gap-1.5 rounded-xl border border-indigo-200/80 bg-indigo-50/70 px-2.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100/80 cursor-pointer"
+                  >
+                    <Users className="h-3.5 w-3.5 shrink-0" />
+                    <span className="hidden sm:inline max-w-[7.5rem] truncate">{activeProfile.name}</span>
+                  </button>
+                )}
+
+                {!isPendingApproval && (user?.role === 'admin' || (user?.role === 'directeur' && canAccessPage('notifications'))) && (
+                  <NotificationBell
+                    onNavigateToPaiements={() => navigateToPage('paiements')}
+                    onNavigate={navigateToPage}
+                  />
+                )}
+                {unreadSocialMessages > 0 && <button type="button" onClick={() => navigateToPage('community')} aria-label={language === 'ar' ? 'رسائل Rawdha Connect الجديدة' : 'Nouveaux messages Rawdha Connect'} title={language === 'ar' ? 'رسائل Rawdha Connect الجديدة' : 'Nouveaux messages Rawdha Connect'} className="hidden sm:flex relative h-9 w-9 items-center justify-center rounded-xl border border-rose-100 bg-rose-50 text-rose-600 transition hover:bg-rose-100 cursor-pointer"><MessageCircle className="w-4 h-4" /><span className="absolute -end-1 -top-1 min-w-4 rounded-full bg-rose-500 px-1 text-center text-[9px] font-bold leading-4 text-white">{unreadSocialMessages > 99 ? '99+' : unreadSocialMessages}</span></button>}
+
+                {user?.role === 'directeur' && !isPendingApproval && (
+                  <SupportBubble currentPage={currentPage} onNavigate={navigateToPage} />
+                )}
+
+                <button
+                  type="button"
+                  onClick={toggleBrowserFullscreen}
+                  aria-label={language === 'ar' ? (isBrowserFullscreen ? 'الخروج من ملء الشاشة' : 'ملء الشاشة') : (isBrowserFullscreen ? 'Quitter le plein écran' : 'Plein écran')}
+                  title={language === 'ar' ? (isBrowserFullscreen ? 'الخروج من ملء الشاشة' : 'ملء الشاشة') : (isBrowserFullscreen ? 'Quitter le plein écran' : 'Plein écran')}
+                  className="hidden md:flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-600 transition hover:bg-slate-50 cursor-pointer"
+                >
+                  {isBrowserFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+
+                {/* Language Selector */}
+                <button
+                  type="button"
+                  onClick={() => setLanguage(language === 'fr' ? 'ar' : 'fr')}
+                  aria-label={language === 'ar' ? 'التبديل إلى الفرنسية' : 'Passer en arabe'}
+                  className="sm:hidden flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-xs font-bold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
+                >
+                  {language === 'fr' ? 'ع' : 'FR'}
+                </button>
+                <div className="hidden sm:flex shrink-0 gap-0.5 rounded-xl border border-slate-200/70 bg-slate-100/85 p-0.5" aria-label={language === 'ar' ? 'اختيار اللغة' : 'Choisir la langue'}>
                   <button
                     type="button"
                     onClick={() => setLanguage('fr')}
                     aria-pressed={language === 'fr'}
-                    className={`min-h-0 rounded-lg px-2 py-1 text-[10px] font-black transition ${language === 'fr' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500'}`}
+                    className={`min-h-0 rounded-lg px-2.5 py-1.5 text-xs font-bold transition cursor-pointer ${
+                      language === 'fr'
+                        ? 'bg-white text-indigo-700 shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
                   >
                     FR
                   </button>
@@ -731,101 +1265,134 @@ if (isSubscriptionExpired && !isPendingApproval) {
                     type="button"
                     onClick={() => setLanguage('ar')}
                     aria-pressed={language === 'ar'}
-                    className={`min-h-0 rounded-lg px-2 py-1 text-[10px] font-black transition ${language === 'ar' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500'}`}
-                  >
-                    عربي
-                  </button>
-                </div>
-              </div>
-              <div className="flex min-w-0 flex-wrap items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto">
-                {/* Statut d’approbation / abonnement — uniquement pour les directeurs */}
-                {isPendingApproval ? (
-                  <div className="min-w-0 max-w-full basis-full sm:basis-auto inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-extrabold text-amber-800">
-                    <Lock className="h-4 w-4 flex-shrink-0" />
-                    {language === 'ar' ? 'في انتظار موافقة الإدارة — وضع القراءة فقط' : 'En attente de validation — lecture seule'}
-                  </div>
-                ) : user?.role === 'directeur' && (
-                  <div className="min-w-0 max-w-full basis-full sm:basis-auto">
-                    <SubscriptionStatusBadge
-                    dateFinAbonnement={liveUser?.dateFinAbonnement}
-                    abonnementActif={liveUser?.abonnementActif}
-                    />
-                  </div>
-                )}
-
-                {/* Notifications : accès à une page classique, sans panneau flottant */}
-                {user?.role === 'directeur' && (
-                  <button type="button" onClick={() => navigateToPage('notifications')} aria-label={language === 'ar' ? 'الإشعارات' : 'Notifications'} title={language === 'ar' ? 'الإشعارات' : 'Notifications'} className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 cursor-pointer">
-                    <Bell className="w-4 h-4" />
-                  </button>
-                )}
-                {unreadSocialMessages > 0 && <button type="button" onClick={() => navigateToPage('community')} aria-label={language === 'ar' ? 'رسائل Rawdha Connect الجديدة' : 'Nouveaux messages Rawdha Connect'} title={language === 'ar' ? 'رسائل Rawdha Connect الجديدة' : 'Nouveaux messages Rawdha Connect'} className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-rose-100 bg-rose-50 text-rose-600 transition hover:bg-rose-100 cursor-pointer"><MessageCircle className="w-4 h-4" /><span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-rose-500 px-1 text-center text-[9px] font-black leading-4 text-white">{unreadSocialMessages > 99 ? '99+' : unreadSocialMessages}</span></button>}
-
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={toggleBrowserFullscreen}
-                    title={language === 'ar' ? (isBrowserFullscreen ? 'الخروج من ملء الشاشة' : 'ملء الشاشة') : (isBrowserFullscreen ? 'Quitter le plein écran' : 'Plein écran')}
-                    className="hidden sm:flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 cursor-pointer"
-                  >
-                    {isBrowserFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                  </button>
-                </div>
-
-                {/* Language Selector */}
-                <div className="hidden shrink-0 gap-1 rounded-xl border border-slate-200/50 bg-slate-100/80 p-1 sm:flex">
-                  <button
-                    onClick={() => setLanguage('fr')}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 cursor-pointer ${
-                      language === 'fr'
-                        ? 'bg-white text-indigo-600 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    FR
-                  </button>
-                  <button
-                    onClick={() => setLanguage('ar')}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 cursor-pointer ${
+                    className={`min-h-0 rounded-lg px-2.5 py-1.5 text-xs font-bold transition cursor-pointer ${
                       language === 'ar'
-                        ? 'bg-white text-indigo-600 shadow-sm'
+                        ? 'bg-white text-indigo-700 shadow-2xs'
                         : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
                     عربي
                   </button>
                 </div>
-                
-                {/* Logout Button */}
+
+                {/* Logout Button: hidden on phones when bottom Menu is available */}
                 <button
+                  type="button"
                   onClick={logout}
-                  className="shrink-0 px-3 sm:px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-all font-bold text-xs flex items-center gap-2 cursor-pointer border border-rose-100/50"
+                  aria-label={t('nav.logout')}
+                  title={t('nav.logout')}
+                  className={`${isPendingApproval ? 'flex' : 'hidden sm:flex [@media(max-height:430px)]:flex'} shrink-0 h-9 w-9 sm:w-auto sm:px-3 bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-600 rounded-xl transition font-semibold text-xs items-center justify-center gap-1.5 cursor-pointer border border-slate-200/80`}
                 >
                   <LogOut className="w-4 h-4" />
                   <span className="hidden sm:inline">{t('nav.logout')}</span>
                 </button>
               </div>
             </div>
+
+            {/* Compact status strip: on mobile only when pending, on tablet/desktop below xl */}
+            {(isPendingApproval || user?.role === 'directeur') && (
+              <div className={`${isPendingApproval ? 'flex' : 'hidden sm:flex'} mt-2 items-center justify-between xl:hidden`}>
+                {isPendingApproval ? (
+                  <div className="min-w-0 max-w-full inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800">
+                    <Lock className="h-3.5 w-3.5 flex-shrink-0" />
+                    <span className="truncate">{language === 'ar' ? 'في انتظار موافقة الإدارة — وضع القراءة فقط' : 'En attente de validation — lecture seule'}</span>
+                  </div>
+                ) : (
+                  <div className="min-w-0 max-w-full">
+                    <SubscriptionStatusBadge
+                      dateFinAbonnement={liveUser?.dateFinAbonnement}
+                      abonnementActif={liveUser?.abonnementActif}
+                      onClick={() => navigateToPage('abonnement')}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </header>
 
         {/* Page Content */}
-        <main className="min-w-0 overflow-x-hidden p-3 sm:p-6 lg:p-10 max-w-[1600px] mx-auto">
+        <main id="main-content" tabIndex={-1} className="min-w-0 overflow-x-hidden outline-none p-3 pb-32 sm:p-6 sm:pb-32 lg:p-10 lg:pb-10 max-w-[1600px] mx-auto">
+          {isOffline && (
+            <div role="alert" className="mb-4 flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs sm:text-sm font-bold text-rose-800 shadow-xs">
+              <WifiOff className="h-5 w-5 shrink-0 text-rose-600" />
+              <span>
+                {language === 'ar'
+                  ? 'انقطع الاتصال بالإنترنت — تحققي من الشبكة قبل حفظ أي تعديل.'
+                  : 'Connexion Internet coupée — vérifiez votre réseau avant d’enregistrer une modification.'}
+              </span>
+            </div>
+          )}
           {isPendingApproval && (
             <div className="mb-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">
               <div className="mt-0.5 rounded-xl bg-amber-100 p-2 text-amber-700"><Lock className="h-5 w-5" /></div>
               <div>
-                <p className="font-black">{language === 'ar' ? 'حسابك في انتظار موافقة الإدارة' : 'Votre compte est en attente de validation'}</p>
+                <h2 className="font-black">{language === 'ar' ? 'حسابك في انتظار موافقة الإدارة' : 'Votre compte est en attente de validation'}</h2>
                 <p className="mt-1 text-sm leading-relaxed text-amber-800">
-                  {language === 'ar' ? 'يمكنك تصفح المنصة، لكن لن تتمكن من إضافة أو تعديل أو حذف أي بيانات حتى يؤكد المسؤول حسابك.' : 'Vous pouvez consulter la plateforme, mais aucun ajout, modification ou suppression ne sera autorisé avant la confirmation manuelle de l’administrateur.'}
+                  {language === 'ar' ? 'بيانات المنصة غير متاحة حتى تؤكد الإدارة حسابك. عدم ظهور ملفات الأطفال والفواتير لا يعني أنها غير موجودة.' : 'Les données de la plateforme ne sont pas affichées avant confirmation. L’absence de dossiers d’enfants ou de factures à l’écran ne signifie pas qu’ils n’existent pas.'}
                 </p>
               </div>
             </div>
           )}
-          {renderPage()}
+          {import.meta.env.DEV && import.meta.env.VITE_ARENA_DEMO === 'true' && (
+            <div role="status" className="mb-3.5 flex items-center justify-between gap-2 rounded-xl border border-amber-200/80 bg-amber-50/90 px-3 py-1.5 text-xs font-semibold text-amber-900">
+              <span className="min-w-0 truncate">
+                {language === 'ar'
+                  ? 'نسخة تجريبية ببيانات وهمية · 60 طفلاً'
+                  : 'Aperçu de démonstration · Crèche pilote (60 enfants)'}
+              </span>
+              {!isPendingApproval && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    window.dispatchEvent(new CustomEvent('rawdha:demo-simulate-notification'))
+                  }
+                  className="min-h-7! shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded-lg border border-amber-300/90 bg-white px-2.5 py-1 text-[11px] font-bold text-amber-900 shadow-2xs transition hover:bg-amber-100/70 cursor-pointer"
+                >
+                  <Bell className="w-3 h-3 text-amber-700 shrink-0" />
+                  <span>{language === 'ar' ? 'إشعار تجريبي' : 'Tester notif'}</span>
+                </button>
+              )}
+            </div>
+          )}
+          {!isPendingApproval && renderPage()}
         </main>
       </div>
-      <SupportBubble currentPage={currentPage} onNavigate={navigateToPage} />
+      <MobileBottomNav
+        currentPage={currentPage}
+        onNavigate={(page) => {
+          setIsSidebarOpen(false);
+          setIsMobileHubOpen(false);
+          navigateToPage(page);
+        }}
+        onOpenMenu={() => setIsMobileHubOpen(value => !value)}
+        isMenuOpen={isMobileHubOpen}
+      />
+      <MobileAppHubSheet
+        isOpen={isMobileHubOpen}
+        currentPage={currentPage}
+        onClose={() => setIsMobileHubOpen(false)}
+        onNavigate={(page) => {
+          setIsSidebarOpen(false);
+          navigateToPage(page);
+        }}
+        onOpenQuickSearch={() => setIsQuickSearchOpen(true)}
+        onLogout={logout}
+      />
+      <QuickSearchModal
+        isOpen={isQuickSearchOpen}
+        onClose={() => setIsQuickSearchOpen(false)}
+        onNavigate={navigateToPage}
+        onOpenChildDossier={(enfant) => setQuickDossierChild(enfant)}
+      />
+      {quickDossierChild && (
+        <Suspense fallback={null}>
+          <EnfantDetails
+            enfant={enfants.find(item => item.id === quickDossierChild.id) || quickDossierChild}
+            onClose={() => setQuickDossierChild(null)}
+          />
+        </Suspense>
+      )}
 
     </div>
   );
@@ -836,12 +1403,13 @@ export default function App() {
     <LanguageProvider>
       <ConfirmProvider>
         <ToastProvider>
-        <AuthProvider>
-          <DbProvider>
-            <AppContent />
-            <ToastContainer />
-          </DbProvider>
-        </AuthProvider>
+        {LazyDemoProviders ? (
+          <Suspense fallback={null}>
+            <LazyDemoProviders><WorkspaceProfileProvider><Suspense fallback={null}><AppContent /></Suspense></WorkspaceProfileProvider><ToastContainer /></LazyDemoProviders>
+          </Suspense>
+        ) : (
+          <AuthProvider><DbProvider><WorkspaceProfileProvider><Suspense fallback={null}><AppContent /></Suspense></WorkspaceProfileProvider><ToastContainer /></DbProvider></AuthProvider>
+        )}
       </ToastProvider>
       </ConfirmProvider>
     </LanguageProvider>

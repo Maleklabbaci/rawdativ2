@@ -1,4 +1,12 @@
-import { useEffect, useState } from 'react';
+import { importBatches } from '../utils/importBatches';
+import {
+  buildChildrenImportTemplateCsv,
+  isXlsxFile,
+  parseDelimitedSpreadsheetText,
+  parseXlsxRows,
+} from '../utils/spreadsheetParser';
+import { updatePrimaryParent } from '../utils/childProfile';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { 
   Baby, 
   Search, 
@@ -31,19 +39,25 @@ import {
   Download,
   ExternalLink,
   FileSpreadsheet,
+  MoreHorizontal,
+  ChevronDown,
 } from 'lucide-react';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Enfant, InscriptionLink } from '../types';
 import EnfantDetails from './EnfantDetails';
 import { useLanguage } from '../contexts/LanguageContext';
-import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
+import { useWorkspaceProfile } from '../contexts/WorkspaceProfileContext';
+import DocumentScannerSlot from './DocumentScannerSlot';
+import type { StoredChildDocument } from '../utils/documentPdf';
 import { motion, AnimatePresence } from 'motion/react';
+import { normalizeTelHref, normalizeWhatsAppNumber, useIsMobileViewport } from '../hooks/useMobileViewport';
 import * as QRCode from 'qrcode';
 
 type DocumentKey = 'certificatMedical' | 'carnetVaccination' | 'justificatifDomicile' | 'photoIdentite';
-type DocumentUpload = { nom: string; type: string; taille: number; contenu: string; ajouteLe: string };
+type DocumentUpload = StoredChildDocument;
 
 const DEFAULT_DOCUMENTS_REQUIS: Record<DocumentKey, boolean> = {
   certificatMedical: false,
@@ -87,6 +101,8 @@ type ImportResult = {
   incomplete: number;
   skipped: number;
   rows: ImportPreviewRow[];
+  failed: ImportPreviewRow[];
+  notAttempted: number;
 };
 
 const normalizeImportHeader = (value: string) => value
@@ -155,62 +171,92 @@ function getDocumentsRequis(enfant?: Partial<Enfant> | null): Record<DocumentKey
   };
 }
 
+const DIRECTORY_PAGE_STEP = 50;
+const DOCUMENT_KEYS: DocumentKey[] = [
+  'certificatMedical',
+  'carnetVaccination',
+  'justificatifDomicile',
+  'photoIdentite',
+];
+
+function getCompletedDocsCount(enfant: Enfant): number {
+  const req = getDocumentsRequis(enfant);
+  const files = enfant.documentsFichiers || {};
+  return DOCUMENT_KEYS.reduce(
+    (acc, key) => acc + (req[key] || Boolean(files[key]?.contenu) ? 1 : 0),
+    0,
+  );
+}
+
 export default function Enfants() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
-  const { confirm } = useConfirmDialog();
   const { showToast } = useToast();
+  const { confirm } = useConfirmDialog();
 
   const {
     enfants: allEnfants,
     addEnfant,
-    deleteEnfant,
     updateEnfant,
     inscriptionLinks,
     demandesAdmission,
     decideAdmission,
   } = useDb();
   const { user } = useAuth();
+  const { hasPagePermission } = useWorkspaceProfile();
+  const canEditChildren = hasPagePermission('enfants', 'edit');
+  const canManageAdmissions = hasPagePermission('admissions', 'links') || hasPagePermission('admissions', 'decide');
   const isDirecteur = user?.role === 'directeur';
-  const enfants = allEnfants
-    .filter((e): e is Enfant => Boolean(e && e.id))
-    .filter(e => !isDirecteur || e.crecheId === user?.id);
+  const enfants = useMemo(
+    () =>
+      allEnfants
+        .filter((e): e is Enfant => Boolean(e && e.id))
+        .filter(e => !isDirecteur || e.crecheId === user?.id),
+    [allEnfants, isDirecteur, user?.id]
+  );
 
-  const handleDeleteEnfant = async (enfant: Enfant) => {
-    const confirmed = await confirm({
-      title: isArabic ? 'تأكيد حذف ملف الطفل' : 'Confirmer la suppression du dossier',
-      message: isArabic
-        ? 'سيتم حذف الطفل وجميع سجلات الحضور والفواتير المرتبطة به. لا يمكن التراجع عن هذا الإجراء.'
-        : 'L’enfant ainsi que ses présences et factures associées seront supprimés. Cette action est irréversible.',
-      confirmLabel: isArabic ? 'حذف نهائياً' : 'Supprimer définitivement',
-      cancelLabel: isArabic ? 'إلغاء' : 'Annuler',
-      variant: 'danger',
-    });
-    if (confirmed) await deleteEnfant(enfant.id);
+  const handleDeleteEnfant = () => {
+    showToast(isArabic
+      ? 'الحذف النهائي متوقف مؤقتاً لحماية السجلات. يمكنك تسجيل خروج الطفل والاحتفاظ بالتاريخ.'
+      : 'La suppression définitive est temporairement désactivée pour protéger les dossiers. Vous pouvez marquer l’enfant comme sorti et conserver son historique.', 'info', 7000);
   };
-  
+
   const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [filterGroupe, setFilterGroupe] = useState('Tous');
   const [showModal, setShowModal] = useState(false);
+  const [isSavingChild, setIsSavingChild] = useState(false);
+  const childSaveInFlight = useRef(false);
+  const childCreationId = useRef<string | null>(null);
+  const [savingExit, setSavingExit] = useState(false);
+  const exitInFlight = useRef(false);
   const [showInactifs, setShowInactifs] = useState(false); // ✅ affiche aussi les enfants sortis
   const [sortieModalEnfant, setSortieModalEnfant] = useState<any | null>(null); // ✅ enfant en cours de "marquer comme sorti"
   const [sortieDate, setSortieDate] = useState(new Date().toISOString().split('T')[0]);
-  const [sortieMotif, setSortieMotif] = useState('Fin d\'année scolaire');
+  const [sortieMotif, setSortieMotif] = useState('');
   const [selectedEnfant, setSelectedEnfant] = useState<Enfant | null>(null);
   const [editingEnfantId, setEditingEnfantId] = useState<string | null>(null);
   const [quickUpdatingEnfantId, setQuickUpdatingEnfantId] = useState<string | null>(null);
-  const isReadOnly = user?.role === 'directeur' && user.approvalStatus === 'pending';
-  
-  // خاصية جديدة: تغيير طريقة العرض بين شبكة (Grid) وقائمة (List)
+  const isAccountPending = user?.role === 'directeur' && user.approvalStatus === 'pending';
+  const isReadOnly = isAccountPending || !canEditChildren;
+  const isMobileViewport = useIsMobileViewport(767);
+
+  // Vue en liste minimaliste par défaut sur téléphone comme sur PC (adaptée à 100+ enfants)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [quickFilter, setQuickFilter] = useState<'all' | 'incomplete_docs' | 'allergy'>('all');
+  const [visibleCount, setVisibleCount] = useState(DIRECTORY_PAGE_STEP);
+  const [actionSheetEnfantId, setActionSheetEnfantId] = useState<string | null>(null);
   const [showAdmissionQr, setShowAdmissionQr] = useState(false);
   const [newAdmissionLink, setNewAdmissionLink] = useState<(InscriptionLink & { token: string }) | null>(null);
   const [admissionQrDataUrl, setAdmissionQrDataUrl] = useState('');
   const [admissionLinkCopied, setAdmissionLinkCopied] = useState(false);
   const [admissionActionId, setAdmissionActionId] = useState<string | null>(null);
   const [importingCsv, setImportingCsv] = useState(false);
+  const importInFlight = useRef(false);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [showImportWizard, setShowImportWizard] = useState(false);
+  const [pasteImportText, setPasteImportText] = useState('');
 
   const [formData, setFormData] = useState({
     nom: '',
@@ -220,7 +266,7 @@ export default function Enfants() {
     groupeAge: 'Bébés' as 'Bébés' | 'Moyens' | 'Grands',
     allergie: '',
     regimeAlimentaire: '',
-    bloodGroup: 'O+',
+    bloodGroup: '',
     weightKg: '',
     pediatricianName: '',
     vaccinations: '',
@@ -244,31 +290,56 @@ export default function Enfants() {
     ? `${window.location.origin}/admission?token=${encodeURIComponent(newAdmissionLink.token)}`
     : '';
 
-  // Le token est conservé dans le lien permanent et le QR est reconstruit après chaque chargement.
+  // Ignore a late QR generation for an older link.
   useEffect(() => {
+    let current = true;
     const persistedLink = inscriptionLinks.find(link => link.active && Boolean(link.token));
+    setAdmissionQrDataUrl('');
+    setAdmissionLinkCopied(false);
     if (!persistedLink?.token) {
       setNewAdmissionLink(null);
-      setAdmissionQrDataUrl('');
-      return;
+      return () => { current = false; };
     }
     const linkWithToken = persistedLink as InscriptionLink & { token: string };
     setNewAdmissionLink(linkWithToken);
     const url = `${window.location.origin}/admission?token=${encodeURIComponent(linkWithToken.token)}`;
     QRCode.toDataURL(url, {
-      width: 440,
-      margin: 2,
-      errorCorrectionLevel: 'M',
+      width: 440, margin: 2, errorCorrectionLevel: 'M',
       color: { dark: '#172554', light: '#ffffff' },
-    }).then(setAdmissionQrDataUrl).catch(error => console.error('Erreur de restauration du QR:', error));
-  }, [inscriptionLinks]);
+    }).then(value => { if (current) setAdmissionQrDataUrl(value); })
+      .catch(() => { if (current) showToast(isArabic ? 'تعذر عرض رمز التسجيل.' : 'Impossible d’afficher le QR d’admission.', 'error'); });
+    return () => { current = false; };
+  }, [inscriptionLinks, isArabic, showToast]);
+
+  const handleAdmissionDecision = async (id: string, name: string, decision: 'acceptee' | 'refusee') => {
+    if (admissionActionId) return;
+    const ok = await confirm({
+      title: decision === 'acceptee' ? (isArabic ? 'قبول وإضافة الطفل؟' : 'Accepter et ajouter cet enfant ?') : (isArabic ? 'رفض طلب التسجيل؟' : 'Refuser cette demande ?'),
+      message: decision === 'acceptee'
+        ? (isArabic ? `سيتم إنشاء ملف للطفل ${name}. تحقق من الطلب قبل التأكيد.` : `Un dossier sera créé pour ${name}. Vérifiez la demande avant de confirmer.`)
+        : (isArabic ? `تأكيد رفض طلب ${name}؟` : `Confirmer le refus de la demande de ${name} ?`),
+      confirmLabel: isArabic ? 'تأكيد' : 'Confirmer',
+      variant: decision === 'refusee' ? 'danger' : 'primary',
+    });
+    if (!ok) return;
+    setAdmissionActionId(id);
+    try { await decideAdmission(id, decision); }
+    catch { showToast(isArabic ? 'تعذر معالجة الطلب. تحقق من الحالة قبل المحاولة مجدداً.' : 'Impossible de traiter la demande. Vérifiez son état avant de réessayer.', 'error', 7000); }
+    finally { setAdmissionActionId(null); }
+  };
 
 
   const copyAdmissionLink = async () => {
     if (!admissionLinkUrl) return;
-    await navigator.clipboard?.writeText(admissionLinkUrl);
-    setAdmissionLinkCopied(true);
-    window.setTimeout(() => setAdmissionLinkCopied(false), 1800);
+    setAdmissionLinkCopied(false);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable');
+      await navigator.clipboard.writeText(admissionLinkUrl);
+      setAdmissionLinkCopied(true);
+      window.setTimeout(() => setAdmissionLinkCopied(false), 1800);
+    } catch {
+      showToast(isArabic ? 'تعذر النسخ. انسخ الرابط المعروض يدوياً.' : 'Copie impossible. Copiez le lien affiché manuellement.', 'error');
+    }
   };
 
   const downloadAdmissionQr = () => {
@@ -279,43 +350,168 @@ export default function Enfants() {
     anchor.click();
   };
 
-  const filteredEnfants = enfants.filter(enfant => {
-    const term = searchTerm.toLowerCase();
-    const nameMatch = `${enfant.prenom} ${enfant.nom}`.toLowerCase().includes(term);
-    const parentMatch = enfant.parents.some(p => `${p.prenom} ${p.nom}`.toLowerCase().includes(term));
-    const matchesSearch = nameMatch || parentMatch;
-    
-    let matchesGroupe = true;
-    if (filterGroupe !== 'Tous' && filterGroupe !== 'الكل') {
-      const normalizedFilter = filterGroupe.includes('Bébés') || filterGroupe.includes('رضع') ? 'Bébés' :
-                               filterGroupe.includes('Moyens') || filterGroupe.includes('متوسطين') ? 'Moyens' : 'Grands';
-      matchesGroupe = enfant.groupeAge === normalizedFilter;
-    }
-    
-    const matchesStatut = showInactifs ? true : enfant.statut === 'Actif';
-    return matchesSearch && matchesGroupe && matchesStatut;
-  });
+  const statusFilteredEnfants = useMemo(
+    () => enfants.filter(enfant => (showInactifs ? true : enfant.statut === 'Actif')),
+    [enfants, showInactifs],
+  );
 
-  // ✅ Marque un enfant comme "sorti" : statut Inactif + date + motif de sortie
-  const handleConfirmerSortie = () => {
-    if (!sortieModalEnfant) return;
-    updateEnfant(sortieModalEnfant.id, {
-      statut: 'Inactif',
-      dateSortie: sortieDate,
-      motifSortie: sortieMotif,
+  const directoryStats = useMemo(() => {
+    let bebes = 0;
+    let moyens = 0;
+    let grands = 0;
+    let incompleteDocs = 0;
+    let allergies = 0;
+    for (const enfant of statusFilteredEnfants) {
+      if (enfant.groupeAge === 'Bébés') bebes += 1;
+      else if (enfant.groupeAge === 'Moyens') moyens += 1;
+      else if (enfant.groupeAge === 'Grands') grands += 1;
+      if (getCompletedDocsCount(enfant) < 4) incompleteDocs += 1;
+      if (enfant.allergie?.trim()) allergies += 1;
+    }
+    return { total: statusFilteredEnfants.length, bebes, moyens, grands, incompleteDocs, allergies };
+  }, [statusFilteredEnfants]);
+
+  const baseFilteredEnfants = useMemo(() => {
+    const term = deferredSearchTerm.trim().toLowerCase();
+    const digitsTerm = term.replace(/\D/g, '');
+    const locale = isArabic ? 'ar' : 'fr';
+
+    return statusFilteredEnfants
+      .filter(enfant => {
+        const fullName = `${enfant.prenom} ${enfant.nom}`.toLowerCase();
+        const reverseName = `${enfant.nom} ${enfant.prenom}`.toLowerCase();
+        const refCode = `raw-${enfant.id.slice(-4)}`.toLowerCase();
+        const matchesSearch =
+          !term ||
+          fullName.includes(term) ||
+          reverseName.includes(term) ||
+          refCode.includes(term) ||
+          enfant.parents.some(p => {
+            const pName = `${p.prenom} ${p.nom}`.toLowerCase();
+            const rawTel = (p.telephone || '').toLowerCase();
+            const cleanTel = rawTel.replace(/\D/g, '');
+            return (
+              pName.includes(term) ||
+              rawTel.includes(term) ||
+              (digitsTerm.length >= 2 && cleanTel.includes(digitsTerm))
+            );
+          });
+
+        let matchesGroupe = true;
+        if (filterGroupe !== 'Tous' && filterGroupe !== 'الكل') {
+          const normalizedFilter =
+            filterGroupe.includes('Bébés') || filterGroupe.includes('رضع')
+              ? 'Bébés'
+              : filterGroupe.includes('Moyens') || filterGroupe.includes('متوسطين')
+                ? 'Moyens'
+                : 'Grands';
+          matchesGroupe = enfant.groupeAge === normalizedFilter;
+        }
+
+        const matchesQuick =
+          quickFilter === 'all'
+            ? true
+            : quickFilter === 'incomplete_docs'
+              ? getCompletedDocsCount(enfant) < 4
+              : Boolean(enfant.allergie?.trim());
+
+        return matchesSearch && matchesGroupe && matchesQuick;
+      })
+      .sort((a, b) => {
+        const nameA = `${a.prenom} ${a.nom}`.trim();
+        const nameB = `${b.prenom} ${b.nom}`.trim();
+        return nameA.localeCompare(nameB, locale, { sensitivity: 'base' });
+      });
+  }, [deferredSearchTerm, filterGroupe, isArabic, quickFilter, statusFilteredEnfants]);
+
+  const filteredEnfants = baseFilteredEnfants;
+
+  useEffect(() => {
+    setVisibleCount(DIRECTORY_PAGE_STEP);
+  }, [deferredSearchTerm, filterGroupe, quickFilter, showInactifs]);
+
+  const displayedEnfants = useMemo(
+    () => filteredEnfants.slice(0, visibleCount),
+    [filteredEnfants, visibleCount],
+  );
+
+  const actionSheetEnfant = useMemo(
+    () => (actionSheetEnfantId ? enfants.find(e => e.id === actionSheetEnfantId) || null : null),
+    [actionSheetEnfantId, enfants],
+  );
+
+  useEffect(() => {
+    if (!actionSheetEnfant) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActionSheetEnfantId(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [actionSheetEnfant]);
+
+  const openEditModalForChild = (enfant: Enfant) => {
+    const req = getDocumentsRequis(enfant);
+    setEditingEnfantId(enfant.id);
+    setFormData({
+      nom: enfant.nom,
+      prenom: enfant.prenom,
+      dateNaissance: enfant.dateNaissance,
+      genre: enfant.genre,
+      groupeAge: enfant.groupeAge,
+      bloodGroup: enfant.groupeSanguin || '',
+      weightKg: enfant.poidsKg ? String(enfant.poidsKg) : '',
+      pediatricianName: enfant.medecinTraitant || '',
+      vaccinations: enfant.vaccinations || '',
+      notesMedicales: enfant.notesMedicales || '',
+      docFiles: enfant.documentsFichiers || {},
+      parentNom: enfant.parents[0]?.nom || '',
+      parentPrenom: enfant.parents[0]?.prenom || '',
+      parentLien: enfant.parents[0]?.lien || 'Mère',
+      parentTelephone: enfant.parents[0]?.telephone || '',
+      parentEmail: enfant.parents[0]?.email || '',
+      parentProfession: enfant.parents[0]?.profession || '',
+      parentAdresse: enfant.parents[0]?.adresse || '',
+      docCertif: req.certificatMedical,
+      docVaccin: req.carnetVaccination,
+      docDomicile: req.justificatifDomicile,
+      docPhoto: req.photoIdentite,
+      jourEcheanceMensuel: String(enfant.jourEcheanceMensuel || 5),
+      allergie: enfant.allergie || '',
+      regimeAlimentaire: enfant.regimeAlimentaire || '',
     });
-    setSortieModalEnfant(null);
-    setSortieDate(new Date().toISOString().split('T')[0]);
-    setSortieMotif('Fin d\'année scolaire');
+    setShowModal(true);
   };
 
-  // ✅ Réintègre un enfant marqué comme sorti par erreur
-  const handleReintegrer = (enfant: any) => {
-    updateEnfant(enfant.id, {
-      statut: 'Actif',
-      dateSortie: undefined,
-      motifSortie: undefined,
-    });
+  // ✅ Marque un enfant comme "sorti" : statut Inactif + date + motif de sortie
+  const handleConfirmerSortie = async () => {
+    if (!sortieModalEnfant || exitInFlight.current) return;
+    if (!sortieDate) {
+      showToast(isArabic ? 'يرجى إدخال تاريخ الخروج.' : 'Veuillez saisir la date de sortie.', 'error');
+      return;
+    }
+    exitInFlight.current = true;
+    setSavingExit(true);
+    try {
+      await updateEnfant(sortieModalEnfant.id, {
+        statut: 'Inactif', dateSortie: sortieDate, motifSortie: sortieMotif || undefined,
+      });
+      setSortieModalEnfant(null);
+      setSortieDate(new Date().toISOString().split('T')[0]);
+      setSortieMotif('');
+    } catch {
+      // Le formulaire reste ouvert et le contexte affiche l'erreur.
+    } finally {
+      exitInFlight.current = false;
+      setSavingExit(false);
+    }
+  };
+
+  const handleReintegrer = async (enfant: Enfant) => {
+    try {
+      await updateEnfant(enfant.id, { statut: 'Actif', dateSortie: undefined, motifSortie: undefined });
+    } catch {
+      // Le contexte affiche l'erreur ; ne pas afficher un statut réintégré fictif.
+    }
   };
 
   const handleQuickGroupChange = async (enfant: Enfant, groupeAge: Enfant['groupeAge']) => {
@@ -329,33 +525,6 @@ export default function Enfants() {
     } finally {
       setQuickUpdatingEnfantId(null);
     }
-  };
-
-  // Les pièces sont limitées à 2 Mo pour rester compatibles avec le stockage
-  // JSONB existant. Le fichier est réellement encodé et enregistré avec le dossier.
-  const handleDocumentFile = (key: DocumentKey, file?: File) => {
-    if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      showToast(
-        isArabic ? 'الملف كبير جداً (الحد الأقصى 2 ميغابايت).' : 'Le fichier est trop volumineux (2 Mo maximum).',
-        'error',
-      );
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const contenu = typeof reader.result === 'string' ? reader.result : '';
-      if (!contenu) return;
-      setFormData(prev => ({
-        ...prev,
-        [key === 'certificatMedical' ? 'docCertif' : key === 'carnetVaccination' ? 'docVaccin' : key === 'justificatifDomicile' ? 'docDomicile' : 'docPhoto']: true,
-        docFiles: {
-          ...prev.docFiles,
-          [key]: { nom: file.name, type: file.type || 'application/octet-stream', taille: file.size, contenu, ajouteLe: new Date().toISOString() }
-        }
-      }));
-    };
-    reader.readAsDataURL(file);
   };
 
   const parseCsvLine = (line: string, separator: string) => {
@@ -386,26 +555,25 @@ export default function Enfants() {
     const normalizedAliases = aliases.map(normalizeImportHeader);
     const exactIndex = headers.findIndex(header => normalizedAliases.includes(header));
     if (exactIndex >= 0) return exactIndex;
-    return headers.findIndex(header => normalizedAliases.some(alias => alias.length >= 4 && (header.includes(alias) || alias.includes(header))));
+    return headers.findIndex(header => normalizedAliases.some(alias => alias.length >= 3 && (header.includes(alias) || alias.includes(header))));
   };
 
-  const buildImportPreview = (fileName: string, text: string): ImportPreview => {
-    const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-    if (lines.length < 2) throw new Error('empty');
-    if (lines.length > 10001) throw new Error('too_many_rows');
-    const separator = (lines[0].match(/;/g) || []).length > (lines[0].match(/,/g) || []).length ? ';' : ',';
-    const rawHeaders = parseCsvLine(lines[0], separator);
+  const buildImportPreviewFromRows = (fileName: string, separatorLabel: string, matrix: string[][]): ImportPreview => {
+    const nonEmptyRows = matrix.filter(r => r.some(cell => normalizeImportValue(cell).length > 0));
+    if (nonEmptyRows.length < 2) throw new Error('empty');
+    if (nonEmptyRows.length > 10001) throw new Error('too_many_rows');
+    const rawHeaders = nonEmptyRows[0].map(cell => cell.trim());
     const headers = rawHeaders.map(normalizeImportHeader);
     const columns = {
-      nom: findImportColumn(headers, ['nom', 'lastname', 'surname', 'nomenfant', 'nomdelenfant']),
-      prenom: findImportColumn(headers, ['prenom', 'firstname', 'givenname', 'prenomenfant', 'prenomenfant']),
-      dateNaissance: findImportColumn(headers, ['datenaissance', 'datebirth', 'birthdate', 'naissance', 'ddn']),
-      genre: findImportColumn(headers, ['genre', 'sexe', 'gender']),
-      groupeAge: findImportColumn(headers, ['groupeage', 'groupe', 'section', 'classe', 'niveau']),
-      parentNom: findImportColumn(headers, ['parentnom', 'nomparent', 'nompere', 'nommere', 'nomresponsable']),
-      parentPrenom: findImportColumn(headers, ['parentprenom', 'prenomparent', 'prenomresponsable']),
-      parentTelephone: findImportColumn(headers, ['parenttelephone', 'telephoneparent', 'telephone', 'tel', 'mobile', 'gsm']),
-      parentEmail: findImportColumn(headers, ['parentemail', 'emailparent', 'email', 'courriel']),
+      nom: findImportColumn(headers, ['nom', 'lastname', 'surname', 'nomenfant', 'nomdelenfant', 'اللقب', 'لقبالطفل', 'عائلة']),
+      prenom: findImportColumn(headers, ['prenom', 'firstname', 'givenname', 'prenomenfant', 'الاسم', 'اسمالطفل']),
+      dateNaissance: findImportColumn(headers, ['datenaissance', 'datebirth', 'birthdate', 'naissance', 'ddn', 'تاريخالميلاد', 'الميلاد', 'تاريخالازدياد']),
+      genre: findImportColumn(headers, ['genre', 'sexe', 'gender', 'الجنس']),
+      groupeAge: findImportColumn(headers, ['groupeage', 'groupe', 'section', 'classe', 'niveau', 'الفئة', 'القسم', 'الفوج']),
+      parentNom: findImportColumn(headers, ['parentnom', 'nomparent', 'nompere', 'nommere', 'nomresponsable', 'لقبالولي', 'الولي']),
+      parentPrenom: findImportColumn(headers, ['parentprenom', 'prenomparent', 'prenomresponsable', 'اسمالولي']),
+      parentTelephone: findImportColumn(headers, ['parenttelephone', 'telephoneparent', 'telephone', 'tel', 'mobile', 'gsm', 'الهاتف', 'رقمالولي', 'رقمهاتف']),
+      parentEmail: findImportColumn(headers, ['parentemail', 'emailparent', 'email', 'courriel', 'البريدالالكتروني', 'البريد', 'ايميل']),
     };
     const labelByField: Record<string, string> = {
       nom: 'Nom',
@@ -420,14 +588,14 @@ export default function Enfants() {
     };
     const columnMap = Object.entries(columns).map(([field, index]) => `${labelByField[field]} : ${index >= 0 ? rawHeaders[index] : 'colonne absente'}`);
     const rows: ImportPreviewRow[] = [];
-    for (let rowIndex = 1; rowIndex < lines.length; rowIndex += 1) {
-      const row = parseCsvLine(lines[rowIndex], separator).map(normalizeImportValue);
-      const valueAt = (index: number) => index >= 0 ? (row[index] || '') : '';
+    for (let rowIndex = 1; rowIndex < nonEmptyRows.length; rowIndex += 1) {
+      const row = nonEmptyRows[rowIndex].map(normalizeImportValue);
+      const valueAt = (index: number) => (index >= 0 ? (row[index] || '') : '');
       const rawDate = valueAt(columns.dateNaissance);
       const dateNaissance = normalizeImportDate(rawDate);
       const nom = valueAt(columns.nom);
       const prenom = valueAt(columns.prenom);
-      const parentNom = valueAt(columns.parentNom);
+      const parentNom = valueAt(columns.parentNom) || nom;
       const parentPrenom = valueAt(columns.parentPrenom);
       const parentTelephone = valueAt(columns.parentTelephone);
       const parentEmail = valueAt(columns.parentEmail);
@@ -458,7 +626,7 @@ export default function Enfants() {
       };
       rows.push({ rowNumber: rowIndex + 1, draft, missing, warnings, invalid });
     }
-    return { fileName, separator, totalRows: rows.length, headers: rawHeaders, columnMap, rows };
+    return { fileName, separator: separatorLabel, totalRows: rows.length, headers: rawHeaders, columnMap, rows };
   };
 
   const handleCsvImport = async (file?: File) => {
@@ -466,67 +634,105 @@ export default function Enfants() {
     setImportingCsv(true);
     setImportResult(null);
     try {
-      const text = (await file.text()).replace(/^\uFEFF/, '');
-      setImportPreview(buildImportPreview(file.name, text));
+      const ab = await file.arrayBuffer();
+      const bytes = new Uint8Array(ab);
+      if (isXlsxFile(file, bytes)) {
+        const xlsxRows = await parseXlsxRows(bytes);
+        setShowImportWizard(false);
+        setImportPreview(buildImportPreviewFromRows(file.name, 'Excel (.xlsx)', xlsxRows));
+      } else {
+        const text = new TextDecoder('utf-8').decode(bytes).replace(/^\uFEFF/, '');
+        const parsed = parseDelimitedSpreadsheetText(text);
+        setShowImportWizard(false);
+        setImportPreview(
+          buildImportPreviewFromRows(
+            file.name,
+            parsed.separator === '\t' ? 'Tabulation' : parsed.separator,
+            parsed.rows,
+          ),
+        );
+      }
     } catch (error) {
       const message = error instanceof Error && error.message === 'too_many_rows'
         ? (isArabic ? 'الملف يحتوي على أكثر من 10000 سطر.' : 'Le fichier dépasse la limite de 10 000 lignes.')
-        : (isArabic ? 'تعذر قراءة الملف. استخدم CSV مفصولاً بفاصلة أو فاصلة منقوطة.' : 'Impossible de lire ce fichier. Utilisez un CSV séparé par une virgule ou un point-virgule.');
+        : (isArabic ? 'تعذر قراءة الملف. استخدم ملف Excel (.xlsx) أو CSV.' : 'Impossible de lire ce fichier. Utilisez un fichier Excel (.xlsx) ou CSV.');
       showToast(message, 'error');
     } finally {
       setImportingCsv(false);
     }
   };
 
+  const handlePasteSpreadsheetImport = () => {
+    if (!pasteImportText.trim()) return;
+    try {
+      const parsed = parseDelimitedSpreadsheetText(pasteImportText);
+      const preview = buildImportPreviewFromRows(
+        isArabic ? 'نسخ من Excel' : 'Collage Excel',
+        parsed.separator === '\t' ? 'Excel (Tab)' : parsed.separator,
+        parsed.rows,
+      );
+      setShowImportWizard(false);
+      setPasteImportText('');
+      setImportPreview(preview);
+    } catch {
+      showToast(
+        isArabic
+          ? 'تأكد من نسخ سطر العناوين مع سطر طفل واحد على الأقل.'
+          : 'Copiez la ligne des titres avec au moins un enfant.',
+        'error',
+      );
+    }
+  };
+
+  const handleDownloadImportTemplate = () => {
+    const csv = buildChildrenImportTemplateCsv(isArabic);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = isArabic ? 'modele-enfants-rawdha-ar.csv' : 'modele-enfants-rawdha.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const confirmCsvImport = async () => {
-    if (!importPreview) return;
+    if (!importPreview || importInFlight.current) return;
+    importInFlight.current = true;
     setImportingCsv(true);
     try {
       const rowsToImport = importPreview.rows.filter(row => !row.invalid);
-      let imported = 0;
-      for (let start = 0; start < rowsToImport.length; start += 10) {
-        const batch = rowsToImport.slice(start, start + 10);
-        await Promise.all(batch.map(async row => {
+      const { saved, unconfirmed: failed, notAttempted } = await importBatches<ImportPreviewRow>(rowsToImport, async row => {
           const draft = row.draft;
           const parentDisplayName = `${draft.parentPrenom} ${draft.parentNom}`.trim();
           const enfant = {
-            id: createImportId('csv_child', row.rowNumber),
-            crecheId: isDirecteur ? user?.id : undefined,
-            nom: draft.nom,
-            prenom: draft.prenom,
-            dateNaissance: draft.dateNaissance,
-            genre: draft.genre,
-            groupeAge: draft.groupeAge,
-            dateInscription: new Date().toISOString().split('T')[0],
-            statut: 'Actif',
+            id: createImportId('csv_child', row.rowNumber), crecheId: isDirecteur ? user?.id : undefined,
+            nom: draft.nom, prenom: draft.prenom, dateNaissance: draft.dateNaissance,
+            genre: draft.genre, groupeAge: draft.groupeAge,
+            dateInscription: new Date().toISOString().split('T')[0], statut: 'Actif',
             contactsUrgence: [{ id: createImportId('csv_contact', row.rowNumber), nom: parentDisplayName, telephone: draft.parentTelephone, lien: 'Mère' }],
             parents: [{ id: createImportId('csv_parent', row.rowNumber), nom: draft.parentNom, prenom: draft.parentPrenom, lien: 'Mère', telephone: draft.parentTelephone, email: draft.parentEmail || undefined }],
             documentsRequis: { ...DEFAULT_DOCUMENTS_REQUIS },
           } as Omit<Enfant, 'id'>;
           await addEnfant(enfant);
-        }));
-        imported += batch.length;
-      }
-      const importResultData: ImportResult = {
-        fileName: importPreview.fileName,
-        imported,
-        incomplete: rowsToImport.filter(row => row.missing.length > 0).length,
+      });
+      setImportResult({ fileName: importPreview.fileName, imported: saved.length,
+        incomplete: saved.filter(row => row.missing.length > 0).length,
         skipped: importPreview.rows.filter(row => row.invalid).length,
-        rows: rowsToImport,
-      };
-      setImportResult(importResultData);
+        rows: saved, failed, notAttempted: notAttempted.length });
       setImportPreview(null);
+      if (failed.length) showToast(isArabic ? 'توقف الاستيراد. تحقق من الملفات المحفوظة قبل إعادة المحاولة لتجنب التكرار.' : 'Import interrompu. Vérifiez les dossiers enregistrés avant de réessayer pour éviter les doublons.', 'error', 8000);
     } catch {
-      showToast(
-        isArabic ? 'تعذر حفظ بعض السجلات. يرجى المحاولة مرة أخرى.' : 'L’import a rencontré un problème. Vérifiez votre connexion puis réessayez.',
-        'error',
-      );
+      showToast(isArabic ? 'تعذر إكمال الاستيراد. تحقق من الملفات قبل إعادة المحاولة.' : 'Import interrompu. Vérifiez les dossiers avant de réessayer.', 'error');
     } finally {
+      importInFlight.current = false;
       setImportingCsv(false);
     }
   };
 
-  const handleAjouter = () => {
+  const handleAjouter = async () => {
+    if (childSaveInFlight.current) return;
     if (!formData.nom || !formData.prenom || !formData.dateNaissance || 
         !formData.parentNom || !formData.parentTelephone) {
       showToast(
@@ -536,8 +742,15 @@ export default function Enfants() {
       return;
     }
 
+    childSaveInFlight.current = true;
+    setIsSavingChild(true);
+    try {
     if (editingEnfantId) {
       const existing = enfants.find(item => item.id === editingEnfantId);
+      if (!existing) {
+        showToast(isArabic ? 'ملف الطفل غير متاح. أعد تحميل البيانات قبل التعديل.' : 'Le dossier enfant n’est plus disponible. Rechargez les données avant de le modifier.', 'error');
+        return;
+      }
       const updatedEnfant: Partial<Enfant> = {
         nom: formData.nom,
         prenom: formData.prenom,
@@ -551,26 +764,19 @@ export default function Enfants() {
         medecinTraitant: formData.pediatricianName || undefined,
         vaccinations: formData.vaccinations || undefined,
         notesMedicales: formData.notesMedicales || undefined,
-        contactsUrgence: [
-          {
-            id: existing?.contactsUrgence[0]?.id || `${Date.now()}-contact`,
-            nom: `${formData.parentPrenom} ${formData.parentNom}`,
-            telephone: formData.parentTelephone,
-            lien: formData.parentLien
-          }
-        ],
-        parents: [
-          {
-            id: existing?.parents[0]?.id || `${Date.now()}-parent`,
-            nom: formData.parentNom,
-            prenom: formData.parentPrenom,
-            lien: formData.parentLien,
-            telephone: formData.parentTelephone,
-            email: formData.parentEmail || undefined,
-            adresse: formData.parentAdresse || undefined,
-            profession: formData.parentProfession || undefined
-          }
-        ],
+        // Ce formulaire ne modifie que le parent principal ; les autres
+        // parents et les contacts d'urgence ne doivent jamais être écrasés.
+        parents: updatePrimaryParent(existing?.parents || [], {
+          ...existing?.parents[0],
+          id: existing?.parents[0]?.id || `${Date.now()}-parent`,
+          nom: formData.parentNom,
+          prenom: formData.parentPrenom,
+          lien: formData.parentLien,
+          telephone: formData.parentTelephone,
+          email: formData.parentEmail || undefined,
+          adresse: formData.parentAdresse || undefined,
+          profession: formData.parentProfession || undefined,
+        }),
         documentsRequis: {
           certificatMedical: formData.docCertif,
           carnetVaccination: formData.docVaccin,
@@ -580,11 +786,11 @@ export default function Enfants() {
         documentsFichiers: formData.docFiles,
         jourEcheanceMensuel: formData.jourEcheanceMensuel ? Number(formData.jourEcheanceMensuel) : undefined
       };
-      updateEnfant(editingEnfantId, updatedEnfant);
+      await updateEnfant(editingEnfantId, updatedEnfant);
       setEditingEnfantId(null);
     } else {
       const nouvelEnfant: Enfant = {
-        id: `${Date.now()}`,
+        id: childCreationId.current || (childCreationId.current = `child_${crypto.randomUUID()}`),
         crecheId: isDirecteur ? user!.id : undefined,
         nom: formData.nom,
         prenom: formData.prenom,
@@ -629,7 +835,8 @@ export default function Enfants() {
         documentsFichiers: formData.docFiles,
         jourEcheanceMensuel: formData.jourEcheanceMensuel ? Number(formData.jourEcheanceMensuel) : undefined
       };
-      addEnfant(nouvelEnfant);
+      await addEnfant(nouvelEnfant);
+      childCreationId.current = null;
     }
 
     setShowModal(false);
@@ -641,9 +848,11 @@ export default function Enfants() {
       groupeAge: 'Bébés',
       allergie: '',
       regimeAlimentaire: '',
-      bloodGroup: 'O+',
-      weightKg: '12',
-      pediatricianName: 'Dr. Belkacem',
+      bloodGroup: '',
+      weightKg: '',
+      pediatricianName: '',
+      vaccinations: '',
+      notesMedicales: '',
       parentNom: '',
       parentPrenom: '',
       parentTelephone: '',
@@ -658,6 +867,12 @@ export default function Enfants() {
       docFiles: {},
       jourEcheanceMensuel: '5',
     });
+    } catch {
+      showToast(isArabic ? 'تعذر حفظ الملف. تحقق من البيانات المحفوظة قبل إعادة المحاولة.' : 'Le dossier n’a pas pu être confirmé. Vérifiez les données enregistrées avant de réessayer.', 'error');
+    } finally {
+      childSaveInFlight.current = false;
+      setIsSavingChild(false);
+    }
   };
 
   const calculerAge = (dateString: string) => {
@@ -676,60 +891,155 @@ export default function Enfants() {
     return isArabic ? `${ans} سنة و ${mois} شهر` : `${ans} an(s) et ${mois} mois`;
   };
 
+  const calculerAgeCourt = (dateString: string) => {
+    if (!dateString) return '—';
+    const birth = new Date(dateString);
+    if (Number.isNaN(birth.getTime())) return '—';
+    const now = new Date();
+    let ans = now.getFullYear() - birth.getFullYear();
+    let mois = now.getMonth() - birth.getMonth();
+    if (mois < 0 || (mois === 0 && now.getDate() < birth.getDate())) {
+      ans--;
+      mois += 12;
+    }
+    if (ans <= 0) return isArabic ? `${Math.max(0, mois)} ش` : `${Math.max(0, mois)} mois`;
+    if (mois === 0) return isArabic ? `${ans} س` : `${ans} ${ans > 1 ? 'ans' : 'an'}`;
+    return isArabic ? `${ans} س و${mois} ش` : `${ans} ${ans > 1 ? 'ans' : 'an'} ${mois} m.`;
+  };
+
+  const pendingAdmissionCount = demandesAdmission.filter(item => item.statut === 'en_attente').length;
+  const hasActiveDirectoryFilter =
+    Boolean(deferredSearchTerm.trim()) ||
+    (filterGroupe !== 'Tous' && filterGroupe !== 'الكل') ||
+    quickFilter !== 'all';
+
   return (
-    <div className="space-y-4 sm:space-y-8 font-sans">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <Baby className="w-6 h-6 sm:w-8 sm:h-8 text-rose-500 animate-pulse" />
-            {t('children.title')}
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5 font-bold">
-            {filteredEnfants.length} {t('children.enrolled')}
-          </p>
+    <div className="space-y-3 sm:space-y-5">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3">
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg sm:text-2xl font-bold text-slate-900 tracking-tight truncate">
+                {t('children.title')}
+              </h1>
+              <span className="shrink-0 rounded-lg bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700 tabular-nums">
+                {hasActiveDirectoryFilter
+                  ? `${filteredEnfants.length} / ${directoryStats.total}`
+                  : directoryStats.total}
+              </span>
+            </div>
+            <p
+              className={`text-xs text-slate-500 mt-0.5 font-medium tabular-nums ${
+                hasActiveDirectoryFilter ? 'block' : 'hidden sm:block'
+              }`}
+            >
+              {hasActiveDirectoryFilter
+                ? isArabic
+                  ? `${filteredEnfants.length} نتيجة مطابقة من أصل ${directoryStats.total}`
+                  : `${filteredEnfants.length} résultat(s) sur ${directoryStats.total} ${t('children.enrolled')}`
+                : `${directoryStats.total} ${t('children.enrolled')}`}
+            </p>
+          </div>
         </div>
-        <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 sm:w-auto">
-          <FileSpreadsheet size={16} />
-          <span>{importingCsv ? (isArabic ? 'جاري الاستيراد...' : 'Import...') : (isArabic ? 'استيراد CSV' : 'Importer CSV')}</span>
-          <input type="file" accept=".csv,text/csv" className="hidden" disabled={importingCsv} onChange={event => { const file = event.target.files?.[0]; void handleCsvImport(file); event.currentTarget.value = ''; }} />
-        </label>
-        <button 
-          onClick={() => {
-            setEditingEnfantId(null);
-            setFormData({
-              nom: '',
-              prenom: '',
-              dateNaissance: '',
-              genre: 'Garçon',
-              groupeAge: 'Bébés',
-              allergie: '',
-              regimeAlimentaire: '',
-              bloodGroup: 'O+',
-              weightKg: '12',
-              pediatricianName: 'Dr. Belkacem',
-              vaccinations: '',
-              notesMedicales: '',
-              docFiles: {},
-              parentNom: '',
-              parentPrenom: '',
-              parentTelephone: '',
-              parentEmail: '',
-              parentAdresse: '',
-              parentProfession: '',
-              parentLien: 'Mère',
-              docCertif: true,
-              docVaccin: true,
-              docDomicile: false,
-              docPhoto: false,
-              jourEcheanceMensuel: '5',
-            });
-            setShowModal(true);
-          }}
-          className="flex items-center justify-center gap-2 bg-gradient-to-r from-rose-500 to-pink-600 text-white px-4 py-2.5 sm:px-6 sm:py-3.5 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-rose-500/10 hover:shadow-rose-500/20 transition-all cursor-pointer border border-transparent w-full sm:w-auto"
-        >
-          <Plus size={16} className="stroke-[3]" />
-          <span>{t('children.add')}</span>
-        </button>
+
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-1.5 sm:gap-2">
+          {canEditChildren && (
+            <button
+              disabled={isReadOnly}
+              onClick={() => {
+                setEditingEnfantId(null);
+                childCreationId.current = null;
+                setFormData({
+                  nom: '',
+                  prenom: '',
+                  dateNaissance: '',
+                  genre: 'Garçon',
+                  groupeAge: 'Bébés',
+                  allergie: '',
+                  regimeAlimentaire: '',
+                  bloodGroup: '',
+                  weightKg: '',
+                  pediatricianName: '',
+                  vaccinations: '',
+                  notesMedicales: '',
+                  docFiles: {},
+                  parentNom: '',
+                  parentPrenom: '',
+                  parentTelephone: '',
+                  parentEmail: '',
+                  parentAdresse: '',
+                  parentProfession: '',
+                  parentLien: 'Mère',
+                  docCertif: false,
+                  docVaccin: false,
+                  docDomicile: false,
+                  docPhoto: false,
+                  jourEcheanceMensuel: '5',
+                });
+                setShowModal(true);
+              }}
+              className="min-h-9! w-full sm:w-auto inline-flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <Plus size={15} className="stroke-[2.5]" />
+              <span>{t('children.add')}</span>
+            </button>
+          )}
+
+          {(canManageAdmissions || canEditChildren) && (
+            <div
+              className={`grid gap-1.5 sm:flex sm:items-center sm:gap-2 ${
+                canManageAdmissions && canEditChildren ? 'grid-cols-2' : 'grid-cols-1'
+              }`}
+            >
+              {canManageAdmissions && (
+                <button
+                  type="button"
+                  onClick={() => setShowAdmissionQr(value => !value)}
+                  className="min-h-9! inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
+                >
+                  {showAdmissionQr ? (
+                    <X className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                  ) : (
+                    <QrCode className="h-3.5 w-3.5 shrink-0 text-indigo-600" />
+                  )}
+                  <span className="truncate">
+                    {showAdmissionQr
+                      ? isArabic
+                        ? 'إغلاق QR'
+                        : 'Fermer QR'
+                      : isArabic
+                        ? 'عرض QR الدائم'
+                        : 'Afficher mon QR'}
+                  </span>
+                  {pendingAdmissionCount > 0 && (
+                    <span className="shrink-0 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white tabular-nums">
+                      {pendingAdmissionCount}
+                    </span>
+                  )}
+                </button>
+              )}
+              {canEditChildren && (
+                <button
+                  type="button"
+                  disabled={importingCsv || isReadOnly}
+                  onClick={() => setShowImportWizard(true)}
+                  className="min-h-9! inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-semibold text-slate-700 whitespace-nowrap transition hover:bg-slate-50 disabled:opacity-50"
+                >
+                  <FileSpreadsheet size={14} className="shrink-0 text-emerald-600" />
+                  <span className="truncate">
+                    {importingCsv
+                      ? isArabic
+                        ? 'جاري الاستيراد...'
+                        : 'Import...'
+                      : isArabic
+                        ? 'استيراد Excel / CSV'
+                        : 'Importer Excel'}
+                  </span>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {importResult && (
@@ -738,11 +1048,12 @@ export default function Enfants() {
             <div className="flex items-start gap-3">
               <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
               <div>
-                <p className="text-sm font-black">{isArabic ? 'اكتمل استيراد الأطفال' : 'Import terminé'}</p>
+                <p className="text-sm font-black">{importResult.failed.length ? (isArabic ? 'توقف الاستيراد جزئياً' : 'Import partiellement interrompu') : (isArabic ? 'اكتمل استيراد الأطفال' : 'Import terminé')}</p>
                 <p className="mt-1 text-xs font-semibold text-emerald-800">
                   {isArabic ? `${importResult.imported} ملف مستورد` : `${importResult.imported} fiche(s) importée(s)`}
                   {importResult.incomplete > 0 && (isArabic ? ` • ${importResult.incomplete} تحتاج إلى استكمال` : ` • ${importResult.incomplete} avec des informations manquantes`)}
                   {importResult.skipped > 0 && (isArabic ? ` • ${importResult.skipped} سطر فارغ تم تجاهله` : ` • ${importResult.skipped} ligne(s) vide(s) ignorée(s)`)}
+                  {importResult.failed.length > 0 && (isArabic ? ` • ${importResult.failed.length} تعذر تأكيدها • ${importResult.notAttempted} لم تُرسل` : ` • ${importResult.failed.length} non confirmée(s) • ${importResult.notAttempted} non tentée(s)`)}
                 </p>
                 {importResult.incomplete > 0 && (
                   <p className="mt-2 text-xs font-bold text-amber-700">{isArabic ? 'تم حفظ السجلات الناقصة ويمكن استكمالها من قائمة الأطفال.' : 'Les fiches incomplètes sont enregistrées et peuvent être complétées depuis la liste des enfants.'}</p>
@@ -751,6 +1062,10 @@ export default function Enfants() {
             </div>
             <button type="button" onClick={() => setImportResult(null)} className="self-end rounded-lg p-1 text-emerald-700 hover:bg-emerald-100 sm:self-start" aria-label={isArabic ? 'إغلاق' : 'Fermer'}><X className="h-4 w-4" /></button>
           </div>
+          {importResult.failed.length > 0 && <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-800">
+            <p>{isArabic ? 'تحقق من الملفات قبل إعادة الاستيراد؛ قد يكون الرد فُقد بعد الحفظ.' : 'Vérifiez les dossiers avant de réimporter : une réponse peut avoir été perdue après enregistrement.'}</p>
+            <p>{isArabic ? 'الأسطر غير المؤكدة:' : 'Lignes non confirmées :'} {importResult.failed.map(row => row.rowNumber).join(', ')}</p>
+          </div>}
           {importResult.incomplete > 0 && (
             <div className="mt-3 max-h-40 space-y-1.5 overflow-y-auto rounded-xl border border-amber-200 bg-amber-50 p-3">
               {importResult.rows.filter(row => row.missing.length > 0).slice(0, 30).map(row => (
@@ -762,479 +1077,834 @@ export default function Enfants() {
         </section>
       )}
 
-      <section className="min-w-0 overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-950 via-indigo-900 to-violet-800 p-4 text-white shadow-xl shadow-indigo-900/10 sm:p-7">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="rounded-2xl bg-white/10 p-3"><QrCode className="h-6 w-6 text-indigo-200" /></div>
+      {showAdmissionQr && (
+        <section className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-2xs">
+          <div className="grid gap-4 xl:grid-cols-[1fr_auto]">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-200">RAWDHA+ • {isArabic ? 'قبول الأطفال' : 'Admission enfant'}</p>
-              <h2 className="mt-1 break-words text-lg sm:text-xl font-black">{isArabic ? 'رمز QR داخل صفحة الأطفال' : 'Admission par QR, directement dans Enfants'}</h2>
-              <p className="mt-1 max-w-2xl text-xs leading-5 text-indigo-100/75">{isArabic ? 'رمز QR دائم يتم إنشاؤه تلقائياً لهذه الروضة. يمكن للأولياء فتحه لعرض استمارة التسجيل فقط، ولا يمنحهم أي وصول إلى بياناتكم الداخلية.' : 'Un seul QR permanent est créé automatiquement pour cette crèche. Il ouvre uniquement le formulaire public d’admission et ne donne aucun accès à vos données internes.'}</p>
-            </div>
-          </div>
-          <button type="button" onClick={() => setShowAdmissionQr(value => !value)} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-xs font-black text-indigo-800 shadow-lg transition hover:bg-indigo-50">
-            {showAdmissionQr ? <X className="h-4 w-4" /> : <QrCode className="h-4 w-4" />}
-            {showAdmissionQr ? (isArabic ? 'إغلاق' : 'Fermer') : (isArabic ? 'عرض QR الدائم' : 'Afficher mon QR permanent')}
-          </button>
-        </div>
-
-        {showAdmissionQr && (
-          <div className="mt-6 grid gap-5 border-t border-white/10 pt-5 xl:grid-cols-[1fr_auto]">
-            <div>
-              <div className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-sm font-bold text-emerald-100">
-                {isArabic ? 'هذا هو رمز الروضة الوحيد والدائم. شاركوه مع الأولياء لاستقبال الطلبات، ثم راجعوا كل ملف قبل الإضافة.' : 'Ce QR est le seul QR permanent de votre crèche. Partagez-le, puis vérifiez chaque dossier avant de l’ajouter à votre gestion.'}
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-indigo-100/75">
-                <span className="rounded-full bg-white/10 px-3 py-1.5">{inscriptionLinks.filter(link => link.active).length} {isArabic ? 'روابط نشطة' : 'lien(s) actif(s)'}</span>
-                <span className="rounded-full bg-white/10 px-3 py-1.5">{demandesAdmission.filter(item => item.statut === 'en_attente').length} {isArabic ? 'طلبات معلقة' : 'demande(s) en attente'}</span>
-              </div>
+              <h2 className="text-sm font-bold text-slate-900">
+                {isArabic ? 'رمز QR الدائم لقبول الأطفال' : 'QR permanent d’admission'}
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                {isArabic
+                  ? 'شاركوا هذا الرابط أو رمز QR مع الأولياء لملء استمارة التسجيل، ثم راجعوا كل طلب قبل الإضافة.'
+                  : 'Partagez ce lien ou ce QR avec les parents pour recevoir leurs pré-inscriptions.'}
+              </p>
               {newAdmissionLink && admissionLinkUrl && (
-                <div className="mt-4 rounded-2xl bg-white p-4 text-slate-900">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600">{isArabic ? 'رمز QR الدائم لروضتك' : 'QR permanent de votre crèche'}</p>
-                  <p className="mt-2 break-all rounded-xl bg-slate-50 p-3 text-[11px] font-semibold text-slate-600">{admissionLinkUrl}</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button type="button" onClick={copyAdmissionLink} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-100"><Copy className="h-3.5 w-3.5" />{admissionLinkCopied ? (isArabic ? 'تم النسخ' : 'Copié') : (isArabic ? 'نسخ' : 'Copier')}</button>
-                    <button type="button" onClick={downloadAdmissionQr} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 hover:bg-emerald-100"><Download className="h-3.5 w-3.5" />{isArabic ? 'تحميل QR' : 'Télécharger QR'}</button>
-                    <a href={admissionLinkUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200"><ExternalLink className="h-3.5 w-3.5" />{isArabic ? 'فتح الرابط' : 'Ouvrir le lien'}</a>
+                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="break-all text-[11px] font-medium text-slate-600">{admissionLinkUrl}</p>
+                  <div className="mt-2.5 flex flex-wrap gap-2">
+                    <button type="button" onClick={copyAdmissionLink} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"><Copy className="h-3.5 w-3.5" />{admissionLinkCopied ? (isArabic ? 'تم النسخ' : 'Copié') : (isArabic ? 'نسخ' : 'Copier')}</button>
+                    <button type="button" disabled={!admissionQrDataUrl} onClick={downloadAdmissionQr} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"><Download className="h-3.5 w-3.5" />{isArabic ? 'تحميل QR' : 'Télécharger QR'}</button>
+                    <a href={admissionLinkUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"><ExternalLink className="h-3.5 w-3.5" />{isArabic ? 'فتح الرابط' : 'Ouvrir le lien'}</a>
                   </div>
                 </div>
               )}
             </div>
             {demandesAdmission.some(item => item.statut === 'en_attente') && (
-              <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
+              <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3.5">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs font-black text-white">{isArabic ? 'طلبات وصلت عبر هذا QR' : 'Demandes reçues via ce QR'}</p>
-                  <span className="rounded-full bg-amber-300/20 px-2.5 py-1 text-[10px] font-black text-amber-100">{demandesAdmission.filter(item => item.statut === 'en_attente').length}</span>
+                  <p className="text-xs font-bold text-slate-900">{isArabic ? 'طلبات وصلت عبر هذا QR' : 'Demandes reçues via ce QR'}</p>
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">{pendingAdmissionCount}</span>
                 </div>
-                <div className="mt-3 grid gap-2">
+                <div className="mt-2.5 grid gap-2">
                   {demandesAdmission.filter(item => item.statut === 'en_attente').map(demande => (
-                    <div key={demande.id} className="rounded-xl bg-white p-3 text-slate-900">
+                    <div key={demande.id} className="rounded-xl border border-slate-200 bg-white p-3 text-slate-900">
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div>
-                          <p className="text-sm font-black">{demande.prenom} {demande.nom}</p>
-                          <p className="mt-1 text-[11px] text-slate-500">{demande.parentPrenom} {demande.parentNom} · {demande.parentTelephone}</p>
+                          <p className="text-sm font-bold">{demande.prenom} {demande.nom}</p>
+                          <p className="mt-0.5 text-[11px] text-slate-500">{demande.parentPrenom} {demande.parentNom} · {demande.parentTelephone}</p>
                         </div>
-                        <span className="text-[10px] font-bold text-slate-400">{new Date(demande.dateDemande).toLocaleDateString(isArabic ? 'ar-DZ' : 'fr-DZ')}</span>
+                        <span className="text-[10px] font-medium text-slate-400">{new Date(demande.dateDemande).toLocaleDateString(isArabic ? 'ar-DZ' : 'fr-DZ')}</span>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        <button type="button" disabled={admissionActionId === demande.id} onClick={async () => { setAdmissionActionId(demande.id); try { await decideAdmission(demande.id, 'acceptee'); } finally { setAdmissionActionId(null); } }} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-black text-white disabled:opacity-60">{isArabic ? 'قبول وإضافة' : 'Accepter et ajouter'}</button>
-                        <button type="button" disabled={admissionActionId === demande.id} onClick={async () => { setAdmissionActionId(demande.id); try { await decideAdmission(demande.id, 'refusee'); } finally { setAdmissionActionId(null); } }} className="rounded-lg bg-rose-50 px-3 py-1.5 text-[11px] font-black text-rose-700 disabled:opacity-60">{isArabic ? 'رفض' : 'Refuser'}</button>
+                        <button type="button" disabled={!!admissionActionId} onClick={() => void handleAdmissionDecision(demande.id, `${demande.prenom} ${demande.nom}`, 'acceptee')} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-60 cursor-pointer">{isArabic ? 'قبول وإضافة' : 'Accepter et ajouter'}</button>
+                        <button type="button" disabled={!!admissionActionId} onClick={() => void handleAdmissionDecision(demande.id, `${demande.prenom} ${demande.nom}`, 'refusee')} className="rounded-lg bg-rose-50 px-3 py-1.5 text-[11px] font-bold text-rose-700 disabled:opacity-60 cursor-pointer">{isArabic ? 'رفض' : 'Refuser'}</button>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
             )}
-            {admissionQrDataUrl && <img src={admissionQrDataUrl} alt={isArabic ? 'رمز قبول QR' : 'QR admission enfant'} className="mx-auto h-40 w-40 rounded-2xl border-4 border-white bg-white p-2 shadow-lg" />}
+            {admissionQrDataUrl && <img src={admissionQrDataUrl} alt={isArabic ? 'رمز قبول QR' : 'QR admission enfant'} className="mx-auto h-36 w-36 rounded-xl border border-slate-200 bg-white p-2" />}
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
-      <div className="min-w-0 bg-white p-3 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex flex-col md:flex-row gap-3 items-center">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder={t('children.search')}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-rose-500 focus:bg-white transition-all text-xs sm:text-sm font-medium text-slate-800"
-          />
+      <div className="min-w-0 rounded-2xl border border-slate-200/80 bg-white p-2.5 sm:p-3.5 shadow-2xs space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 min-w-0">
+            <Search className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+            <input
+              type="text"
+              placeholder={t('children.search')}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full ps-8.5 pe-8 py-1.5 sm:py-2 bg-slate-50/90 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition-all text-xs sm:text-sm font-medium text-slate-800"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                aria-label={isArabic ? 'مسح البحث' : 'Effacer la recherche'}
+                className="min-h-6! absolute end-1.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:bg-slate-200/70 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Bascule Liste minimaliste / Cartes disponible sur téléphone et ordinateur */}
+          <div
+            className="flex shrink-0 rounded-xl bg-slate-100 p-0.5 border border-slate-200/70"
+            role="group"
+            aria-label={isArabic ? 'طريقة العرض' : 'Mode d’affichage'}
+          >
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              aria-pressed={viewMode === 'list'}
+              className={`min-h-7! inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold transition cursor-pointer ${
+                viewMode === 'list'
+                  ? 'bg-white text-slate-900 shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+              title={isArabic ? 'عرض كقائمة' : 'Vue en liste compacte'}
+            >
+              <List className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{isArabic ? 'قائمة' : 'Liste'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              aria-pressed={viewMode === 'grid'}
+              className={`min-h-7! inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold transition cursor-pointer ${
+                viewMode === 'grid'
+                  ? 'bg-white text-slate-900 shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+              title={isArabic ? 'عرض كبطاقات' : 'Vue en cartes détaillées'}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{isArabic ? 'بطاقات' : 'Cartes'}</span>
+            </button>
+          </div>
         </div>
 
-        <div className="mobile-scroll-x flex items-center gap-2 w-full md:w-auto pb-1 md:pb-0 scrollbar-none flex-nowrap shrink-0">
-          {/* Toggle View Mode Buttons */}
-          <div className="flex bg-slate-100 p-1 rounded-xl mr-2 rtl:ml-2">
-            <button
-              onClick={() => setViewMode('list')}
-              className={`p-1.5 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400 hover:text-slate-700'}`}
-              title={isArabic ? 'عرض كقائمة' : 'Vue en liste'}
-            >
-              <List className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400 hover:text-slate-700'}`}
-              title={isArabic ? 'عرض كبطاقات' : 'Vue en grille'}
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </button>
-          </div>
-
+        {/* Barre de sections symétrique (4 colonnes fixes sur mobile, zéro slide horizontal) */}
+        <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100/90 p-1 sm:inline-flex sm:w-auto sm:flex-wrap">
           {[
-            { key: 'Tous', label: t('children.all') },
-            { key: 'Bébés', label: t('children.babies') },
-            { key: 'Moyens', label: t('children.middle') },
-            { key: 'Grands', label: t('children.seniors') }
-          ].map(grp => (
-            <button
-              key={grp.key}
-              onClick={() => setFilterGroupe(grp.key)}
-              className={`flex-grow sm:flex-none px-3.5 py-2 text-[11px] sm:text-xs font-bold rounded-xl transition whitespace-nowrap shrink-0 ${
-                filterGroupe === grp.key
-                  ? 'bg-rose-500 text-white shadow-xs'
-                  : 'bg-slate-50 text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              {grp.label}
-            </button>
-          ))}
+            { key: 'Tous', short: isArabic ? 'الكل' : 'Tous', full: t('children.all'), count: directoryStats.total },
+            { key: 'Bébés', short: isArabic ? 'رضع' : 'Bébés', full: t('children.babies'), count: directoryStats.bebes },
+            { key: 'Moyens', short: isArabic ? 'متوسطون' : 'Moyens', full: t('children.middle'), count: directoryStats.moyens },
+            { key: 'Grands', short: isArabic ? 'كبار' : 'Grands', full: t('children.seniors'), count: directoryStats.grands },
+          ].map(grp => {
+            const active = filterGroupe === grp.key;
+            return (
+              <button
+                key={grp.key}
+                type="button"
+                onClick={() => setFilterGroupe(grp.key)}
+                className={`min-h-8! inline-flex items-center justify-center gap-1 px-1.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold rounded-lg transition cursor-pointer min-w-0 ${
+                  active
+                    ? 'bg-white text-slate-900 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span className="truncate sm:hidden">{grp.short}</span>
+                <span className="hidden sm:inline">{grp.full}</span>
+                {directoryStats.total >= 6 && (
+                  <span
+                    className={`hidden sm:inline-block shrink-0 rounded px-1.5 py-0.2 text-[10px] font-extrabold tabular-nums ${
+                      active ? 'bg-slate-900 text-white' : 'bg-slate-200/80 text-slate-600'
+                    }`}
+                  >
+                    {grp.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
 
-          {/* ✅ Toggle : afficher aussi les enfants sortis */}
+        {/* Filtres rapides compacts sur 1 seule ligne sans troncature */}
+        <div className="flex items-center gap-1.5 sm:flex-wrap">
           <button
-            onClick={() => setShowInactifs(prev => !prev)}
-            className={`flex-grow sm:flex-none px-3.5 py-2 text-[11px] sm:text-xs font-bold rounded-xl transition whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-              showInactifs
-                ? 'bg-slate-800 text-white shadow-xs'
-                : 'bg-slate-50 text-slate-500 hover:text-slate-800'
+            type="button"
+            onClick={() => setQuickFilter(prev => (prev === 'incomplete_docs' ? 'all' : 'incomplete_docs'))}
+            aria-pressed={quickFilter === 'incomplete_docs'}
+            className={`min-h-8! flex-1 sm:flex-initial inline-flex items-center justify-center gap-1 px-2 py-1 text-[11px] font-bold rounded-lg whitespace-nowrap transition cursor-pointer min-w-0 ${
+              quickFilter === 'incomplete_docs'
+                ? 'bg-amber-600 text-white shadow-2xs'
+                : 'bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-200/80 hover:bg-amber-50 hover:text-amber-800'
             }`}
           >
-            <LogOut className="w-3.5 h-3.5" />
-            {isArabic ? 'الأطفال المغادرون' : 'Enfants sortis'}
+            <FileText className="w-3 h-3 shrink-0" />
+            <span className="truncate">{isArabic ? 'ملف ناقص' : 'À compléter'}</span>
+            {directoryStats.incompleteDocs > 0 && (
+              <span
+                className={`shrink-0 rounded px-1 py-0.2 text-[10px] font-extrabold tabular-nums ${
+                  quickFilter === 'incomplete_docs' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                {directoryStats.incompleteDocs}
+              </span>
+            )}
+          </button>
+
+          {directoryStats.allergies > 0 && (
+            <button
+              type="button"
+              onClick={() => setQuickFilter(prev => (prev === 'allergy' ? 'all' : 'allergy'))}
+              aria-pressed={quickFilter === 'allergy'}
+              className={`min-h-8! shrink-0 inline-flex items-center justify-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg whitespace-nowrap transition cursor-pointer ${
+                quickFilter === 'allergy'
+                  ? 'bg-rose-600 text-white shadow-2xs'
+                  : 'bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-200/80 hover:bg-rose-50 hover:text-rose-800'
+              }`}
+            >
+              <ShieldAlert className="w-3 h-3 shrink-0" />
+              <span>{isArabic ? 'حساسية' : 'Allergies'}</span>
+              <span
+                className={`shrink-0 rounded px-1 py-0.2 text-[10px] font-extrabold tabular-nums ${
+                  quickFilter === 'allergy' ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-800'
+                }`}
+              >
+                {directoryStats.allergies}
+              </span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setShowInactifs(prev => !prev)}
+            aria-label={isArabic ? 'الأطفال المغادرون' : 'Enfants sortis'}
+            className={`min-h-8! shrink-0 px-2.5 py-1 text-[11px] font-bold rounded-lg whitespace-nowrap transition inline-flex items-center justify-center gap-1 cursor-pointer ${
+              showInactifs
+                ? 'bg-slate-800 text-white shadow-2xs'
+                : 'bg-slate-50 text-slate-500 ring-1 ring-inset ring-slate-200/80 hover:bg-slate-100 hover:text-slate-800'
+            }`}
+          >
+            <LogOut className="w-3 h-3 shrink-0" />
+            <span className="sm:hidden">{isArabic ? 'مغادرون' : 'Sortis'}</span>
+            <span className="hidden sm:inline">{isArabic ? 'الأطفال المغادرون' : 'Enfants sortis'}</span>
           </button>
         </div>
       </div>
 
       {filteredEnfants.length > 0 ? (
-        viewMode === 'list' ? (
-          /* ================= LIST VIEW ================= */
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden animate-slide-up">
-            <div className="mobile-scroll-x">
-              <table className="min-w-[680px] w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50/70 border-b border-slate-100 text-[11px] font-black uppercase tracking-wider text-slate-400">
-                    <th className="p-4">{isArabic ? 'الطفل' : 'Enfant'}</th>
-                    <th className="p-4">{isArabic ? 'العمر' : 'Âge'}</th>
-                    <th className="p-4">{isArabic ? 'القسم' : 'Classe'}</th>
-                    <th className="p-4">{isArabic ? 'ولي الأمر' : 'Parents'}</th>
-                    <th className="p-4 text-center">{isArabic ? 'إجراءات' : 'Actions'}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-sm font-medium text-slate-700">
-                  {filteredEnfants.map((enfant) => (
-                    <tr key={enfant.id} className="hover:bg-slate-50/50 transition">
-                      <td className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-xl font-black text-white flex items-center justify-center shadow-xs ${
-                            enfant.genre === 'Fille' ? 'bg-gradient-to-tr from-pink-500 to-rose-400' : 'bg-gradient-to-tr from-sky-500 to-indigo-400'
-                          }`}>
-                            {enfant.prenom[0]}{enfant.nom[0]}
+        <div className="space-y-3">
+          {viewMode === 'list' ? (
+            isMobileViewport ? (
+              /* ================= VERSION PHONE : LISTE MINIMALISTE HAUTE DENSITÉ (100+ ENFANTS) ================= */
+              <div
+                data-directory-mode="mobile-minimal-list"
+                className="overflow-hidden rounded-2xl border border-slate-200/85 bg-white shadow-2xs"
+              >
+                <ul className="divide-y divide-slate-100">
+                  {displayedEnfants.map(enfant => {
+                        const primaryParent = enfant.parents[0];
+                        const telHref = normalizeTelHref(primaryParent?.telephone);
+                        const docsCount = getCompletedDocsCount(enfant);
+                        const isInactive = enfant.statut !== 'Actif';
+                        const hasAllergy = Boolean(enfant.allergie?.trim());
+                        const sectionDot =
+                          enfant.groupeAge === 'Bébés'
+                            ? 'bg-indigo-500'
+                            : enfant.groupeAge === 'Moyens'
+                              ? 'bg-amber-500'
+                              : 'bg-emerald-500';
+                        const sectionLabel =
+                          enfant.groupeAge === 'Bébés'
+                            ? isArabic
+                              ? 'رضع'
+                              : 'Bébés'
+                            : enfant.groupeAge === 'Moyens'
+                              ? isArabic
+                                ? 'متوسطون'
+                                : 'Moyens'
+                              : isArabic
+                                ? 'كبار'
+                                : 'Grands';
+
+                        return (
+                          <li
+                            key={enfant.id}
+                            data-mobile-child-row={enfant.id}
+                            className={`flex items-center gap-2 px-3 transition hover:bg-slate-50/80 active:bg-slate-50 ${
+                              isInactive ? 'opacity-65' : ''
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => setSelectedEnfant(enfant)}
+                              aria-label={isArabic ? 'عرض ملف الطفل' : 'Ouvrir le dossier de l’enfant'}
+                              className="min-h-0! flex min-w-0 flex-1 items-center gap-2.5 overflow-hidden py-2 text-start cursor-pointer"
+                            >
+                              <div
+                                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-extrabold tracking-tight ring-1 ring-inset ${
+                                  isInactive
+                                    ? 'bg-slate-100 text-slate-500 ring-slate-200'
+                                    : enfant.genre === 'Fille'
+                                      ? 'bg-rose-50 text-rose-700 ring-rose-200/75'
+                                      : 'bg-sky-50 text-sky-700 ring-sky-200/75'
+                                }`}
+                              >
+                                {(enfant.prenom?.[0] || '').toUpperCase()}
+                                {(enfant.nom?.[0] || '').toUpperCase()}
+                              </div>
+
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="truncate text-[13.5px] font-bold text-slate-900">
+                                    {enfant.prenom} {enfant.nom}
+                                  </span>
+                                  {hasAllergy && (
+                                    <span
+                                      title={enfant.allergie}
+                                      className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-extrabold text-rose-700 ring-1 ring-inset ring-rose-200/80"
+                                    >
+                                      <ShieldAlert className="h-2.5 w-2.5" />
+                                      <span className="hidden min-[370px]:inline">
+                                        {isArabic ? 'حساسية' : 'Allergie'}
+                                      </span>
+                                    </span>
+                                  )}
+                                  {isInactive && (
+                                    <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+                                      {isArabic ? 'مغادر' : 'Sorti'}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500 min-w-0">
+                                  <span className="inline-flex shrink-0 items-center gap-1 font-semibold text-slate-700">
+                                    <span className={`h-1.5 w-1.5 rounded-full ${sectionDot}`} />
+                                    {sectionLabel}
+                                  </span>
+                                  <span className="text-slate-300" aria-hidden="true">·</span>
+                                  <span className="shrink-0 tabular-nums">{calculerAgeCourt(enfant.dateNaissance)}</span>
+                                  {primaryParent?.prenom && (
+                                    <>
+                                      <span className="text-slate-300" aria-hidden="true">·</span>
+                                      <span className="truncate">{primaryParent.prenom}</span>
+                                    </>
+                                  )}
+                                  <span
+                                    className={`ms-auto shrink-0 rounded px-1.5 py-0.2 text-[10px] font-bold tabular-nums ${
+                                      docsCount === 4
+                                        ? 'bg-emerald-50 text-emerald-700'
+                                        : 'bg-amber-50 text-amber-700'
+                                    }`}
+                                    title={isArabic ? 'الوثائق الإدارية' : 'Pièces du dossier'}
+                                  >
+                                    {docsCount}/4
+                                  </span>
+                                </div>
+                              </div>
+                            </button>
+
+                            <div className="flex shrink-0 items-center gap-1">
+                              {telHref && (
+                                <a
+                                  href={telHref}
+                                  aria-label={isArabic ? 'اتصال بالولي' : 'Appeler le parent'}
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-50 text-slate-600 transition hover:bg-indigo-50 hover:text-indigo-600"
+                                >
+                                  <Phone className="h-3.5 w-3.5" />
+                                </a>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setActionSheetEnfantId(enfant.id)}
+                                aria-label={
+                                  isArabic
+                                    ? `إجراءات ${enfant.prenom} ${enfant.nom}`
+                                    : `Actions pour ${enfant.prenom} ${enfant.nom}`
+                                }
+                                className="min-h-8! inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      })}
+                </ul>
+              </div>
+            ) : (
+              /* ================= VERSION TABLETTE & PC : TABLEAU DE GESTION STRUCTURÉ ================= */
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
+                <p className="px-4 pt-3 text-xs text-slate-500 xl:hidden">
+                  {isArabic
+                    ? 'مرر الجدول أفقياً لرؤية كل الأعمدة.'
+                    : 'Faites défiler le tableau horizontalement pour voir toutes les colonnes.'}
+                </p>
+                <div
+                  className="mobile-scroll-x focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+                  role="region"
+                  tabIndex={0}
+                  aria-label={isArabic ? 'جدول الأطفال' : 'Tableau des enfants'}
+                >
+                  <table className="min-w-[680px] w-full text-start border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50/80 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        <th className="py-3 px-4">{isArabic ? 'الطفل' : 'Enfant'}</th>
+                        <th className="py-3 px-4">{isArabic ? 'العمر' : 'Âge'}</th>
+                        <th className="py-3 px-4">{isArabic ? 'القسم' : 'Classe'}</th>
+                        <th className="py-3 px-4">{isArabic ? 'ولي الأمر' : 'Parents'}</th>
+                        <th className="py-3 px-4">{isArabic ? 'الملف' : 'Dossier'}</th>
+                        <th className="py-3 px-4 text-center">{isArabic ? 'إجراءات' : 'Actions'}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-sm font-medium text-slate-700">
+                      {displayedEnfants.map(enfant => {
+                        const docsCount = getCompletedDocsCount(enfant);
+                        return (
+                          <tr key={enfant.id} className="hover:bg-slate-50/60 transition">
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className={`w-9 h-9 rounded-xl text-xs font-extrabold flex items-center justify-center ring-1 ring-inset ${
+                                    enfant.genre === 'Fille'
+                                      ? 'bg-rose-50 text-rose-700 ring-rose-200/80'
+                                      : 'bg-sky-50 text-sky-700 ring-sky-200/80'
+                                  }`}
+                                >
+                                  {(enfant.prenom?.[0] || '').toUpperCase()}
+                                  {(enfant.nom?.[0] || '').toUpperCase()}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedEnfant(enfant)}
+                                      className="text-slate-900 font-bold hover:text-indigo-600 transition text-start cursor-pointer"
+                                    >
+                                      {enfant.prenom} {enfant.nom}
+                                    </button>
+                                    {enfant.allergie?.trim() && (
+                                      <span
+                                        title={enfant.allergie}
+                                        className="inline-flex items-center gap-0.5 rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-700 ring-1 ring-inset ring-rose-200/80"
+                                      >
+                                        <ShieldAlert className="h-3 w-3" />
+                                        {isArabic ? 'حساسية' : 'Allergie'}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 font-semibold uppercase tabular-nums">
+                                    RAW-{enfant.id.slice(-4)}
+                                  </p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <p className="text-slate-800 font-semibold text-xs">{calculerAge(enfant.dateNaissance)}</p>
+                              <p className="text-[10px] text-slate-400 font-medium tabular-nums">
+                                {new Date(enfant.dateNaissance).toLocaleDateString(isArabic ? 'ar' : 'fr-FR')}
+                              </p>
+                            </td>
+                            <td className="py-3 px-4">
+                              <select
+                                value={enfant.groupeAge}
+                                disabled={isReadOnly || quickUpdatingEnfantId !== null}
+                                onChange={event =>
+                                  void handleQuickGroupChange(enfant, event.target.value as Enfant['groupeAge'])
+                                }
+                                aria-label={isArabic ? 'تعديل قسم الطفل' : 'Modifier le groupe de l’enfant'}
+                                className={`cursor-pointer rounded-lg border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                  enfant.groupeAge === 'Bébés'
+                                    ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
+                                    : enfant.groupeAge === 'Moyens'
+                                      ? 'bg-amber-50 text-amber-700 border-amber-100'
+                                      : 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                }`}
+                              >
+                                <option value="Bébés">{isArabic ? 'رضع' : 'Bébés'}</option>
+                                <option value="Moyens">{isArabic ? 'متوسطين' : 'Moyens'}</option>
+                                <option value="Grands">{isArabic ? 'كبار' : 'Grands'}</option>
+                              </select>
+                            </td>
+                            <td className="py-3 px-4">
+                              {enfant.parents.slice(0, 1).map(parent => (
+                                <div key={parent.id}>
+                                  <p className="text-xs font-bold text-slate-800">
+                                    {parent.prenom} {parent.nom}{' '}
+                                    <span className="text-[9px] text-indigo-600 bg-indigo-50 px-1 rounded">
+                                      {parent.lien}
+                                    </span>
+                                  </p>
+                                  <p className="text-[10px] text-slate-500 mt-0.5 tabular-nums">{parent.telephone || '—'}</p>
+                                </div>
+                              ))}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span
+                                className={`inline-flex items-center rounded-lg px-2 py-0.5 text-[11px] font-bold tabular-nums ${
+                                  docsCount === 4
+                                    ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200/70'
+                                    : 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200/70'
+                                }`}
+                              >
+                                {docsCount}/4
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedEnfant(enfant)}
+                                  className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
+                                  title={isArabic ? 'عرض الملف' : 'Ouvrir le dossier'}
+                                  aria-label={isArabic ? 'عرض ملف الطفل' : 'Ouvrir le dossier de l’enfant'}
+                                >
+                                  <FileText size={16} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openEditModalForChild(enfant)}
+                                  className="inline-flex items-center gap-1.5 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-indigo-600 transition cursor-pointer"
+                                  title={isArabic ? 'تعديل ملف الطفل' : 'Modifier le dossier de l’enfant'}
+                                  aria-label={isArabic ? 'تعديل ملف الطفل' : 'Modifier le dossier de l’enfant'}
+                                >
+                                  <Pencil size={16} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    enfant.statut === 'Actif' ? setSortieModalEnfant(enfant) : handleReintegrer(enfant)
+                                  }
+                                  className={`p-1.5 rounded-lg transition cursor-pointer ${
+                                    enfant.statut === 'Actif'
+                                      ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'
+                                      : 'text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50'
+                                  }`}
+                                  title={
+                                    enfant.statut === 'Actif'
+                                      ? isArabic
+                                        ? 'تسجيل خروج'
+                                        : 'Marquer comme sorti'
+                                      : isArabic
+                                        ? 'إعادة التسجيل'
+                                        : 'Réintégrer'
+                                  }
+                                  aria-label={
+                                    enfant.statut === 'Actif'
+                                      ? isArabic
+                                        ? 'تسجيل خروج الطفل'
+                                        : 'Marquer l’enfant comme sorti'
+                                      : isArabic
+                                        ? 'إعادة تسجيل الطفل'
+                                        : 'Réintégrer l’enfant'
+                                  }
+                                >
+                                  {enfant.statut === 'Actif' ? <LogOut size={16} /> : <RotateCcw size={16} />}
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label={
+                                    isArabic ? 'معلومات عن الحذف النهائي' : 'Information sur la suppression définitive'
+                                  }
+                                  title={
+                                    isArabic
+                                      ? 'الحذف النهائي متوقف مؤقتاً'
+                                      : 'Suppression définitive temporairement désactivée'
+                                  }
+                                  onClick={() => {
+                                    handleDeleteEnfant();
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          ) : (
+            /* ================= GRID VIEW (CARTES DÉTAILLÉES SUR DEMANDE) ================= */
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+              {displayedEnfants.map(enfant => {
+                const birthDate = new Date(enfant.dateNaissance).toLocaleDateString(isArabic ? 'ar' : 'fr-FR');
+                const req = getDocumentsRequis(enfant);
+                const files = enfant.documentsFichiers || {};
+
+                return (
+                  <div
+                    key={enfant.id}
+                    className="rawdha-card-modern bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 shadow-2xs flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between mb-3.5">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div
+                            className={`w-11 h-11 shrink-0 rounded-xl text-sm font-extrabold flex items-center justify-center ring-1 ring-inset ${
+                              enfant.genre === 'Fille'
+                                ? 'bg-rose-50 text-rose-700 ring-rose-200/80'
+                                : 'bg-sky-50 text-sky-700 ring-sky-200/80'
+                            }`}
+                          >
+                            {(enfant.prenom?.[0] || '').toUpperCase()}
+                            {(enfant.nom?.[0] || '').toUpperCase()}
                           </div>
-                          <div>
-                            <p className="text-slate-900 font-extrabold">{enfant.prenom} {enfant.nom}</p>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase">RAW-{enfant.id.slice(-4)}</p>
+                          <div className="min-w-0">
+                            <h3 className="text-sm sm:text-base font-bold text-slate-900 leading-snug truncate">
+                              {enfant.prenom} {enfant.nom}
+                            </h3>
+                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mt-0.5 tabular-nums">
+                              Ref: RAW-{enfant.id.slice(-4)}
+                            </span>
                           </div>
                         </div>
-                      </td>
-                      <td className="p-4">
-                        <p className="text-slate-800 font-bold">{calculerAge(enfant.dateNaissance)}</p>
-                        <p className="text-[10px] text-slate-400 font-semibold">{new Date(enfant.dateNaissance).toLocaleDateString(isArabic ? 'ar' : 'fr-FR')}</p>
-                      </td>
-                      <td className="p-4">
+
                         <select
                           value={enfant.groupeAge}
                           disabled={isReadOnly || quickUpdatingEnfantId !== null}
-                          onChange={event => void handleQuickGroupChange(enfant, event.target.value as Enfant['groupeAge'])}
+                          onChange={event =>
+                            void handleQuickGroupChange(enfant, event.target.value as Enfant['groupeAge'])
+                          }
                           aria-label={isArabic ? 'تعديل قسم الطفل' : 'Modifier le groupe de l’enfant'}
-                          className={`cursor-pointer rounded-lg border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                          enfant.groupeAge === 'Bébés' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' :
-                          enfant.groupeAge === 'Moyens' ? 'bg-amber-50 text-amber-700 border-amber-100' :
-                          'bg-rose-50 text-rose-700 border-rose-100'
-                        }`}>
+                          className={`cursor-pointer rounded-lg border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                            enfant.groupeAge === 'Bébés'
+                              ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
+                              : enfant.groupeAge === 'Moyens'
+                                ? 'bg-amber-50 text-amber-700 border-amber-100'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                          }`}
+                        >
                           <option value="Bébés">{isArabic ? 'رضع' : 'Bébés'}</option>
                           <option value="Moyens">{isArabic ? 'متوسطين' : 'Moyens'}</option>
                           <option value="Grands">{isArabic ? 'كبار' : 'Grands'}</option>
                         </select>
-                      </td>
-                      <td className="p-4">
-                        {enfant.parents.slice(0, 1).map((parent) => (
-                          <div key={parent.id}>
-                            <p className="text-xs font-extrabold text-slate-800">{parent.prenom} {parent.nom} <span className="text-[9px] text-indigo-600 bg-indigo-50 px-1 rounded">{parent.lien}</span></p>
-                            <p className="text-[10px] text-slate-500 mt-0.5">{parent.telephone}</p>
-                          </div>
-                        ))}
-                      </td>
-                      <td className="p-4 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <button 
-                            onClick={() => setSelectedEnfant(enfant)}
-                            className="p-1.5 text-indigo-500 hover:bg-indigo-50 rounded-lg transition"
-                            title={isArabic ? 'عرض الملف' : 'Ouvrir le dossier'}
-                            aria-label={isArabic ? 'عرض ملف الطفل' : 'Ouvrir le dossier de l’enfant'}
-                          >
-                            <FileText size={16} />
-                          </button>
-                          <button 
-                            onClick={() => {
-                              setEditingEnfantId(enfant.id);
-                              setFormData({
-                                nom: enfant.nom,
-                                prenom: enfant.prenom,
-                                dateNaissance: enfant.dateNaissance,
-                                genre: enfant.genre,
-                                groupeAge: enfant.groupeAge,
-                                bloodGroup: enfant.groupeSanguin || 'O+',
-                                weightKg: enfant.poidsKg ? String(enfant.poidsKg) : '',
-                                                          pediatricianName: enfant.medecinTraitant || '',
-                          vaccinations: enfant.vaccinations || '',
-                                notesMedicales: enfant.notesMedicales || '',
+                      </div>
 
-                                parentNom: enfant.parents[0]?.nom || '',
-                                parentPrenom: enfant.parents[0]?.prenom || '',
-                                parentLien: enfant.parents[0]?.lien || 'Mère',
-                                parentTelephone: enfant.parents[0]?.telephone || '',
-                                parentEmail: enfant.parents[0]?.email || '',
-                                parentProfession: enfant.parents[0]?.profession || '',
-                                parentAdresse: enfant.parents[0]?.adresse || '',
-                                docCertif: getDocumentsRequis(enfant)?.certificatMedical ?? false,
-                                docVaccin: getDocumentsRequis(enfant)?.carnetVaccination ?? false,
-                                docDomicile: getDocumentsRequis(enfant)?.justificatifDomicile ?? false,
-                                docFiles: enfant.documentsFichiers || {},
-                                jourEcheanceMensuel: String(enfant.jourEcheanceMensuel || 5),
-                                docPhoto: getDocumentsRequis(enfant)?.photoIdentite ?? false,
-                                allergie: enfant.allergie || '',
-                                regimeAlimentaire: enfant.regimeAlimentaire || ''
-                              });
-                              setShowModal(true);
-                            }}
-                            className="inline-flex items-center gap-1.5 rounded-lg p-1.5 text-slate-400 hover:bg-slate-50 hover:text-indigo-600 transition"
-                            title={isArabic ? 'تعديل ملف الطفل' : 'Modifier le dossier de l’enfant'}
-                            aria-label={isArabic ? 'تعديل ملف الطفل' : 'Modifier le dossier de l’enfant'}
-                          >
-                            <Pencil size={16} />
-                          </button>
-                          <button
-                            onClick={() => enfant.statut === 'Actif'
-                              ? setSortieModalEnfant(enfant)
-                              : handleReintegrer(enfant)}
-                            className={`p-1.5 rounded-lg transition ${
-                              enfant.statut === 'Actif'
-                                ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'
-                                : 'text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50'
-                            }`}
-                            title={enfant.statut === 'Actif'
-                              ? (isArabic ? 'تسجيل خروج' : 'Marquer comme sorti')
-                              : (isArabic ? 'إعادة التسجيل' : 'Réintégrer')}
-                            aria-label={enfant.statut === 'Actif'
-                              ? (isArabic ? 'تسجيل خروج الطفل' : 'Marquer l’enfant comme sorti')
-                              : (isArabic ? 'إعادة تسجيل الطفل' : 'Réintégrer l’enfant')}
-                          >
-                            {enfant.statut === 'Actif' ? <LogOut size={16} /> : <RotateCcw size={16} />}
-                          </button>
-                          <button 
-                            aria-label={isArabic ? 'حذف ملف الطفل' : 'Supprimer le dossier de l’enfant'}
-                            title={isArabic ? 'حذف ملف الطفل' : 'Supprimer le dossier de l’enfant'}
-                            onClick={() => { void handleDeleteEnfant(enfant); }}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                      <div className="space-y-2 mt-3 text-xs font-semibold text-slate-500">
+                        <div className="flex items-center gap-2 p-1 border-b border-dashed border-slate-100">
+                          <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                          <span>
+                            {t('children.born')}:{' '}
+                            <strong className="text-slate-800">
+                              {birthDate} ({calculerAge(enfant.dateNaissance)})
+                            </strong>
+                          </span>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+                        {enfant.allergie?.trim() ? (
+                          <div className="flex items-center gap-2 text-rose-700 bg-rose-50 px-2.5 py-1.5 border border-rose-100 rounded-xl">
+                            <ShieldAlert className="w-4 h-4 text-rose-500 shrink-0" />
+                            <span className="font-bold text-[11px] truncate">
+                              {t('children.allergy')}: <strong className="font-extrabold text-rose-900">{enfant.allergie}</strong>
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-slate-400 px-2.5 py-1 bg-slate-50 border border-slate-100 rounded-xl text-[11px]">
+                            <span>
+                              {isArabic
+                                ? 'الحساسية غير مسجلة — تحقق قبل تقديم الطعام'
+                                : 'Allergies non renseignées — à vérifier avant le repas'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mt-4 bg-slate-50/60 rounded-xl p-2.5 border border-slate-100">
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                          {isArabic ? 'الملف الإداري والتراخيص' : 'Dossier administratif et autorisations'}
+                        </p>
+                        <div className="grid grid-cols-4 gap-2 text-center text-[10px] font-bold text-slate-500">
+                          {[
+                            { k: 'certificatMedical' as DocumentKey, lbl: isArabic ? 'طبي' : 'Médic' },
+                            { k: 'carnetVaccination' as DocumentKey, lbl: isArabic ? 'لقاح' : 'Vaccin' },
+                            { k: 'justificatifDomicile' as DocumentKey, lbl: isArabic ? 'سكن' : 'Domi' },
+                            { k: 'photoIdentite' as DocumentKey, lbl: isArabic ? 'صورة' : 'Photo' },
+                          ].map(item => {
+                            const ok = req[item.k] || Boolean(files[item.k]?.contenu);
+                            return (
+                              <div key={item.k} className="space-y-1">
+                                <div
+                                  className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
+                                    ok ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
+                                  }`}
+                                >
+                                  {ok ? '✓' : '✗'}
+                                </div>
+                                <span className="block text-[9px] truncate">{item.lbl}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 border-t border-slate-100 pt-3">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                          {t('children.parents')}:
+                        </p>
+                        {enfant.parents.map(parent => {
+                          const waNum = normalizeWhatsAppNumber(parent.telephone);
+                          return (
+                            <div key={parent.id} className="text-xs text-slate-600 flex items-center gap-1.5 mb-2 last:mb-0">
+                              <User className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                              <span className="truncate font-bold text-slate-800">
+                                {parent.prenom} {parent.nom}
+                              </span>
+                              <span className="shrink-0 text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded leading-none">
+                                {parent.lien}
+                              </span>
+                              <div className="ms-auto flex shrink-0 items-center gap-1.5">
+                                {parent.telephone && (
+                                  <a
+                                    href={`tel:${parent.telephone}`}
+                                    aria-label={isArabic ? 'اتصال بالولي' : 'Appeler le parent'}
+                                    className="rounded-lg bg-indigo-50 p-1.5 text-indigo-600 hover:bg-indigo-100 transition"
+                                  >
+                                    <Phone className="w-3.5 h-3.5" />
+                                  </a>
+                                )}
+                                {waNum && (
+                                  <a
+                                    href={`https://wa.me/${waNum}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    aria-label={isArabic ? 'واتساب الولي' : 'WhatsApp du parent'}
+                                    className="rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100 transition"
+                                  >
+                                    WA
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-slate-100 flex gap-2">
+                      <button
+                        type="button"
+                        aria-label={isArabic ? 'عرض ملف الطفل' : 'Ouvrir le dossier de l’enfant'}
+                        onClick={() => setSelectedEnfant(enfant)}
+                        className="flex-1 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl font-bold text-xs transition cursor-pointer"
+                      >
+                        {isArabic ? 'عرض الملف' : 'Dossier'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEditModalForChild(enfant)}
+                        className="p-2.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl font-bold text-xs transition cursor-pointer"
+                        title={isArabic ? 'تعديل' : 'Modifier'}
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          enfant.statut === 'Actif' ? setSortieModalEnfant(enfant) : handleReintegrer(enfant)
+                        }
+                        className={`p-2.5 rounded-xl font-bold text-xs transition cursor-pointer ${
+                          enfant.statut === 'Actif'
+                            ? 'bg-slate-50 hover:bg-amber-100 text-slate-600 hover:text-amber-700'
+                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-600'
+                        }`}
+                        title={
+                          enfant.statut === 'Actif'
+                            ? isArabic
+                              ? 'تسجيل خروج'
+                              : 'Marquer comme sorti'
+                            : isArabic
+                              ? 'إعادة التسجيل'
+                              : 'Réintégrer'
+                        }
+                      >
+                        {enfant.statut === 'Actif' ? <LogOut size={15} /> : <RotateCcw size={15} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleDeleteEnfant();
+                        }}
+                        className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl font-bold text-xs transition cursor-pointer"
+                        title={
+                          isArabic
+                            ? 'الحذف النهائي متوقف مؤقتاً'
+                            : 'Suppression définitive temporairement désactivée'
+                        }
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          </div>
-        ) : (
-          /* ================= GRID VIEW ================= */
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-slide-up">
-            {filteredEnfants.map((enfant) => {
-              const birthDate = new Date(enfant.dateNaissance).toLocaleDateString(isArabic ? 'ar' : 'fr-FR');
-              
-              return (
-                <div 
-                  key={enfant.id} 
-                  className="bg-white rounded-2xl border border-slate-100 p-6 shadow-xs hover:shadow-lg hover:-translate-y-1 transition-all duration-200 flex flex-col justify-between"
+          )}
+
+          {/* Pagination progressive fluide pour 100 à 500+ enfants */}
+          {filteredEnfants.length > displayedEnfants.length && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-2xs">
+              <p className="text-xs font-semibold text-slate-500 tabular-nums">
+                {isArabic
+                  ? `عرض ${displayedEnfants.length} من أصل ${filteredEnfants.length} طفل`
+                  : `${displayedEnfants.length} sur ${filteredEnfants.length} enfants affichés`}
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setVisibleCount(prev => Math.min(filteredEnfants.length, prev + DIRECTORY_PAGE_STEP))
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-bold text-white transition hover:bg-slate-800 cursor-pointer"
                 >
-                  <div>
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-12 h-12 rounded-2xl font-black text-white flex items-center justify-center shadow-md ${
-                          enfant.genre === 'Fille' ? 'bg-gradient-to-tr from-pink-500 to-rose-400' : 'bg-gradient-to-tr from-sky-500 to-indigo-400'
-                        }`}>
-                          {enfant.prenom[0]}{enfant.nom[0]}
-                        </div>
-                        <div>
-                          <h3 className="text-base font-extrabold text-slate-900 leading-snug">{enfant.prenom} {enfant.nom}</h3>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mt-1">
-                            Ref: RAW-{enfant.id.slice(-4)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <select
-                        value={enfant.groupeAge}
-                        disabled={isReadOnly || quickUpdatingEnfantId !== null}
-                        onChange={event => void handleQuickGroupChange(enfant, event.target.value as Enfant['groupeAge'])}
-                        aria-label={isArabic ? 'تعديل قسم الطفل' : 'Modifier le groupe de l’enfant'}
-                        className={`cursor-pointer rounded-lg border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                        enfant.groupeAge === 'Bébés' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' :
-                        enfant.groupeAge === 'Moyens' ? 'bg-amber-50 text-amber-700 border-amber-100' :
-                        'bg-rose-50 text-rose-700 border-rose-100'
-                      }`}>
-                        <option value="Bébés">{isArabic ? 'رضع' : 'Bébés'}</option>
-                        <option value="Moyens">{isArabic ? 'متوسطين' : 'Moyens'}</option>
-                        <option value="Grands">{isArabic ? 'كبار' : 'Grands'}</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-2 mt-4 text-xs font-semibold text-slate-500">
-                      <div className="flex items-center gap-2 p-1 border-b border-dashed border-slate-50">
-                        <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                        <span>{t('children.born')}: <strong className="text-slate-800">{birthDate} ({calculerAge(enfant.dateNaissance)})</strong></span>
-                      </div>
-
-                      {enfant.allergie ? (
-                        <div className="flex items-center gap-2 text-rose-600 bg-rose-50 px-2.5 py-1.5 border border-rose-100 rounded-xl">
-                          <ShieldAlert className="w-4 h-4 text-rose-500" />
-                          <span className="font-extrabold text-[11px] truncate">
-                            {t('children.allergy')}: <strong className="font-black text-rose-800">{enfant.allergie}</strong>
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 text-slate-400 italic px-2.5 py-1 bg-slate-50 border border-slate-100 rounded-xl text-[11px]">
-                          <span>Aucune allergie signalée</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="mt-5 bg-slate-50/50 rounded-2xl p-3 border border-slate-100/50">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">
-                        {isArabic ? 'الملف الإداري والتراخيص' : 'Dossier administratif et autorisations'}
-                      </p>
-                      <div className="grid grid-cols-4 gap-2 text-center text-[10px] font-bold text-slate-500">
-                        <div className="space-y-1">
-                          <div className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
-                            getDocumentsRequis(enfant)?.certificatMedical ?? false ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
-                          }`}>
-                            {getDocumentsRequis(enfant)?.certificatMedical ?? false ? '✓' : '✗'}
-                          </div>
-                          <span className="block text-[9px] truncate">Médic</span>
-                        </div>
-                        <div className="space-y-1">
-                          <div className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
-                            getDocumentsRequis(enfant)?.carnetVaccination ?? false ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
-                          }`}>
-                            {getDocumentsRequis(enfant)?.carnetVaccination ?? false ? '✓' : '✗'}
-                          </div>
-                          <span className="block text-[9px] truncate">Vaccin</span>
-                        </div>
-                        <div className="space-y-1">
-                          <div className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
-                            getDocumentsRequis(enfant)?.justificatifDomicile ?? false ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
-                          }`}>
-                            {getDocumentsRequis(enfant)?.justificatifDomicile ?? false ? '✓' : '✗'}
-                          </div>
-                          <span className="block text-[9px] truncate">Domi</span>
-                        </div>
-                        <div className="space-y-1">
-                          <div className={`mx-auto w-5 h-5 rounded-md flex items-center justify-center font-bold ${
-                            getDocumentsRequis(enfant)?.photoIdentite ?? false ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
-                          }`}>
-                            {getDocumentsRequis(enfant)?.photoIdentite ?? false ? '✓' : '✗'}
-                          </div>
-                          <span className="block text-[9px] truncate pointer-events-none">Photo</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 border-t border-slate-100 pt-3">
-                      <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">{t('children.parents')}:</p>
-                      {enfant.parents.map((parent) => (
-                        <div key={parent.id} className="text-xs text-slate-600 flex items-center gap-1.5 mb-1.5 last:mb-0">
-                          <User className="w-3.5 h-3.5 text-slate-400" />
-                          <span className="font-extrabold text-slate-800">{parent.prenom} {parent.nom}</span>
-                          <span className="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded leading-none">
-                            {parent.lien}
-                          </span>
-                          <a href={`tel:${parent.telephone}`} className="text-slate-400 hover:text-indigo-600 ml-auto transition">
-                            <Phone className="w-3 h-3" />
-                          </a>
-                        </div>
-                      ))}
-                    </div>
-
-                  </div>
-
-                  <div className="mt-6 pt-4 border-t border-slate-50 flex gap-2">
-                    <button 
-                      onClick={() => setSelectedEnfant(enfant)}
-                      className="flex-1 py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl font-bold text-xs transition cursor-pointer"
-                    >
-                      {isArabic ? 'عرض الملف' : 'Dossier'}
-                    </button>
-                    <button 
-                      onClick={() => {
-                        setEditingEnfantId(enfant.id);
-                        setFormData({
-                          nom: enfant.nom,
-                          prenom: enfant.prenom,
-                          dateNaissance: enfant.dateNaissance,
-                          genre: enfant.genre,
-                          groupeAge: enfant.groupeAge,
-                          bloodGroup: enfant.groupeSanguin || 'O+',
-                          weightKg: enfant.poidsKg ? String(enfant.poidsKg) : '',
-                          pediatricianName: enfant.medecinTraitant || '',
-                          vaccinations: enfant.vaccinations || '',
-                          notesMedicales: enfant.notesMedicales || '',
-                          docFiles: enfant.documentsFichiers || {},
-                          parentNom: enfant.parents[0]?.nom || '',
-                          parentPrenom: enfant.parents[0]?.prenom || '',
-                          parentLien: enfant.parents[0]?.lien || 'Mère',
-                          parentTelephone: enfant.parents[0]?.telephone || '',
-                          parentEmail: enfant.parents[0]?.email || '',
-                          parentProfession: enfant.parents[0]?.profession || '',
-                          parentAdresse: enfant.parents[0]?.adresse || '',
-                          docCertif: getDocumentsRequis(enfant)?.certificatMedical ?? false,
-                          docVaccin: getDocumentsRequis(enfant)?.carnetVaccination ?? false,
-                          docDomicile: getDocumentsRequis(enfant).justificatifDomicile,
-                          jourEcheanceMensuel: String(enfant.jourEcheanceMensuel || 5),
-                          docPhoto: getDocumentsRequis(enfant).photoIdentite,
-                          allergie: enfant.allergie || '',
-                          regimeAlimentaire: enfant.regimeAlimentaire || ''
-                        });
-                        setShowModal(true);
-                      }}
-                      className="p-3 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl font-bold text-xs transition cursor-pointer"
-                      title={isArabic ? 'تعديل' : 'Modifier'}
-                    >
-                      <Pencil size={15} />
-                    </button>
-                    <button
-                      onClick={() => enfant.statut === 'Actif'
-                        ? setSortieModalEnfant(enfant)
-                        : handleReintegrer(enfant)}
-                      className={`p-3 rounded-xl font-bold text-xs transition cursor-pointer ${
-                        enfant.statut === 'Actif'
-                          ? 'bg-slate-50 hover:bg-amber-100 text-slate-600 hover:text-amber-700'
-                          : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-600'
-                      }`}
-                      title={enfant.statut === 'Actif'
-                        ? (isArabic ? 'تسجيل خروج' : 'Marquer comme sorti')
-                        : (isArabic ? 'إعادة التسجيل' : 'Réintégrer')}
-                    >
-                      {enfant.statut === 'Actif' ? <LogOut size={15} /> : <RotateCcw size={15} />}
-                    </button>
-                    <button 
-                      onClick={() => { void handleDeleteEnfant(enfant); }}
-                      className="p-3 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl font-bold text-xs transition cursor-pointer"
-                      title={isArabic ? 'حذف' : 'Supprimer'}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )
+                  <ChevronDown className="h-3.5 w-3.5" />
+                  <span>
+                    {isArabic
+                      ? `عرض ${Math.min(DIRECTORY_PAGE_STEP, filteredEnfants.length - displayedEnfants.length)} إضافي`
+                      : `Afficher ${Math.min(DIRECTORY_PAGE_STEP, filteredEnfants.length - displayedEnfants.length)} de plus`}
+                  </span>
+                </button>
+                {filteredEnfants.length - displayedEnfants.length > DIRECTORY_PAGE_STEP && (
+                  <button
+                    type="button"
+                    onClick={() => setVisibleCount(filteredEnfants.length)}
+                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-100 cursor-pointer"
+                  >
+                    {isArabic ? `عرض الكل (${filteredEnfants.length})` : `Tout afficher (${filteredEnfants.length})`}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       ) : (
-        <div className="col-span-full p-12 bg-white rounded-2xl border border-slate-100 text-center text-slate-400">
-          <HelpCircle className="w-10 h-10 mx-auto text-slate-300 stroke-[1.5] mb-2" />
-          <p className="font-extrabold">{isArabic ? 'لا توجد تطابقات للبحث' : 'Aucun dossier actif'}</p>
-          <p className="text-xs text-slate-400 mt-0.5">{isArabic ? 'تأكد من الحروف أو أضف طفلاً جديداً.' : 'Changez vos termes de recherche ou créez un premier enfant.'}</p>
+        <div className="col-span-full p-10 sm:p-12 bg-white rounded-2xl border border-slate-200/80 text-center text-slate-400">
+          <HelpCircle className="w-9 h-9 mx-auto text-slate-300 stroke-[1.5] mb-2" />
+          <p className="font-bold text-slate-700 text-sm">
+            {isArabic ? 'لا توجد تطابقات للبحث' : 'Aucun dossier correspondant'}
+          </p>
+          <p className="text-xs text-slate-400 mt-1">
+            {isArabic
+              ? 'جرّب تعديل الفلاتر أو البحث، أو أضف طفلاً جديداً.'
+              : 'Ajustez vos filtres ou votre recherche, ou créez un nouveau dossier enfant.'}
+          </p>
+          {hasActiveDirectoryFilter && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm('');
+                setFilterGroupe('Tous');
+                setQuickFilter('all');
+              }}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 cursor-pointer"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span>{isArabic ? 'إعادة ضبط الفلاتر' : 'Réinitialiser les filtres'}</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -1242,7 +1912,7 @@ export default function Enfants() {
         {showModal && (
           <div 
             className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[9999] flex items-start justify-center p-2 sm:p-4 pt-2 sm:pt-24 font-sans overflow-y-auto"
-            onClick={() => setShowModal(false)}
+            onClick={() => { if (!isSavingChild) setShowModal(false); }}
           >
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
@@ -1265,7 +1935,7 @@ export default function Enfants() {
                   </p>
                 </div>
                 <button 
-                  onClick={() => setShowModal(false)}
+                  onClick={() => { if (!isSavingChild) setShowModal(false); }}
                   className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
                 >
                   <X size={20} />
@@ -1352,19 +2022,22 @@ export default function Enfants() {
 
                     <div>
                       <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
-                        {isArabic ? 'فصيلة الدم *' : 'Groupe Sanguin *'}
+                        {isArabic ? 'فصيلة الدم (اختياري)' : 'Groupe sanguin (facultatif)'}
                       </label>
                       <select 
                         className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800"
                         value={formData.bloodGroup}
                         onChange={e => setFormData({...formData, bloodGroup: e.target.value})}
                       >
+                        <option value="">{isArabic ? 'غير مسجل' : 'Non renseigné'}</option>
                         <option value="O+">O+</option>
                         <option value="A+">A+</option>
                         <option value="B+">B+</option>
                         <option value="AB+">AB+</option>
                         <option value="O-">O-</option>
                         <option value="A-">A-</option>
+                        <option value="B-">B-</option>
+                        <option value="AB-">AB-</option>
                       </select>
                     </div>
                   </div>
@@ -1582,7 +2255,7 @@ export default function Enfants() {
                     {isArabic ? 'ثالثاً: الملف الإداري والتصاريح' : '3. Liste des documents remis à l\'admission'}
                   </h4>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 rounded-2xl p-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 bg-slate-50 rounded-2xl p-3.5 sm:p-4">
                     {([
                       ['certificatMedical', isArabic ? 'الشهادة الطبية' : 'Certificat médical', 'docCertif'],
                       ['carnetVaccination', isArabic ? 'دفتر التلقيح' : 'Carnet de vaccination', 'docVaccin'],
@@ -1592,26 +2265,39 @@ export default function Enfants() {
                       const attached = formData.docFiles[key];
                       const legacyDeclared = formData[legacyFlag];
                       return (
-                        <div key={key} className="rounded-xl border border-slate-200 bg-white p-3">
-                          <label className="block text-xs font-bold text-slate-700 mb-2">{label}</label>
-                          <input
-                            type="file"
-                            accept="image/*,.pdf"
-                            onChange={e => handleDocumentFile(key, e.target.files?.[0])}
-                            className="w-full text-[11px] text-slate-500 file:mr-2 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-2.5 file:py-1.5 file:text-[11px] file:font-bold file:text-indigo-700 hover:file:bg-indigo-100"
-                          />
-                          {attached ? (
-                            <p className="mt-2 text-[10px] font-bold text-emerald-700">✓ {attached.nom} ({Math.ceil(attached.taille / 1024)} Ko)</p>
-                          ) : legacyDeclared ? (
-                            <p className="mt-2 text-[10px] font-semibold text-amber-700">{isArabic ? 'حالة قديمة مسجلة، بدون ملف مرفق' : 'Statut historique déclaré, sans fichier joint'}</p>
-                          ) : (
-                            <p className="mt-2 text-[10px] font-semibold text-slate-400">{isArabic ? 'لم يتم إرفاق ملف' : 'Aucun fichier joint'}</p>
-                          )}
-                        </div>
+                        <DocumentScannerSlot
+                          key={key}
+                          docKey={key}
+                          label={label}
+                          isArabic={isArabic}
+                          childName={`${formData.prenom} ${formData.nom}`.trim()}
+                          value={attached}
+                          declaredWithoutFile={Boolean(legacyDeclared && !attached)}
+                          onError={msg => showToast(msg, 'error')}
+                          onChange={nextDoc => {
+                            setFormData(prev => {
+                              const nextFiles = { ...prev.docFiles };
+                              if (nextDoc) {
+                                nextFiles[key] = nextDoc;
+                              } else {
+                                delete nextFiles[key];
+                              }
+                              return {
+                                ...prev,
+                                [legacyFlag]: Boolean(nextDoc),
+                                docFiles: nextFiles,
+                              };
+                            });
+                          }}
+                        />
                       );
                     })}
                   </div>
-                  <p className="mt-2 text-[10px] font-semibold text-slate-400">{isArabic ? 'الحد الأقصى للملف: 2 ميغابايت. الصيغ: PDF أو صورة.' : 'Un vrai fichier est enregistré avec le dossier. Limite : 2 Mo, PDF ou image.'}</p>
+                  <p className="mt-2 text-[10px] font-semibold text-slate-500">
+                    {isArabic
+                      ? 'تحويل محلي تلقائي للصور (صفحة أو عدة صفحات مثل دفتر التلقيح) إلى ملف PDF مضغوط وأقل من 2 ميغابايت.'
+                      : 'Conversion locale automatique de vos photos (1 ou plusieurs pages pour le carnet de vaccination) en PDF propre < 2 Mo.'}
+                  </p>
                 </div>
 
               </div>
@@ -1620,14 +2306,15 @@ export default function Enfants() {
                 <button 
                   type="button"
                   className="flex-1 p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer text-sm"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => { if (!isSavingChild) setShowModal(false); }}
                 >
                   {t('common.cancel')}
                 </button>
                 <button 
                   type="button"
                   className="flex-1 p-3 bg-gradient-to-r from-pink-500 to-rose-600 text-white font-bold rounded-xl transition cursor-pointer text-sm shadow-md"
-                  onClick={handleAjouter}
+                  disabled={isSavingChild}
+                  onClick={() => void handleAjouter()}
                 >
                   {t('common.save')}
                 </button>
@@ -1675,6 +2362,7 @@ export default function Enfants() {
                 onChange={e => setSortieMotif(e.target.value)}
                 className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-amber-500 text-sm font-semibold text-slate-800 mb-6"
               >
+                <option value="">{isArabic ? 'غير مسجل' : 'Non renseigné'}</option>
                 {[
                   { fr: 'Fin d\'année scolaire', ar: 'نهاية السنة الدراسية' },
                   { fr: 'Déménagement', ar: 'انتقال / تغيير السكن' },
@@ -1689,17 +2377,118 @@ export default function Enfants() {
 
               <div className="flex gap-2.5">
                 <button
+                  disabled={savingExit}
                   onClick={() => setSortieModalEnfant(null)}
                   className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-sm transition cursor-pointer"
                 >
                   {isArabic ? 'إلغاء' : 'Annuler'}
                 </button>
                 <button
-                  onClick={handleConfirmerSortie}
+                  disabled={savingExit}
+                  onClick={() => void handleConfirmerSortie()}
                   className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold text-sm transition cursor-pointer"
                 >
                   {isArabic ? 'تأكيد' : 'Confirmer'}
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showImportWizard && (
+          <div
+            className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-slate-950/60 p-0 sm:p-4 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-label={isArabic ? 'استيراد قائمة الأطفال' : 'Importer une liste Excel / CSV'}
+            onClick={() => !importingCsv && setShowImportWizard(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 18, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 18, scale: 0.98 }}
+              onClick={e => e.stopPropagation()}
+              className="flex max-h-[90dvh] w-full sm:max-w-lg flex-col overflow-hidden rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl"
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3.5 sm:px-5 shrink-0">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700">
+                    <FileSpreadsheet className="h-4.5 w-4.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <h2 className="truncate text-sm sm:text-base font-black text-slate-900">
+                      {isArabic ? 'استيراد قائمة الأطفال' : 'Importer ma liste Excel'}
+                    </h2>
+                    <p className="truncate text-[11px] text-slate-500">
+                      {isArabic ? 'ملف Excel (.xlsx) أو CSV أو لصق مباشر' : 'Fichier .xlsx, .csv ou collage direct'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowImportWizard(false)}
+                  aria-label={isArabic ? 'إغلاق' : 'Fermer'}
+                  className="min-h-8! grid h-8 w-8 shrink-0 place-items-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <label className="min-h-10! inline-flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-indigo-600 hover:bg-indigo-700 px-3.5 py-2.5 text-xs font-black text-white whitespace-nowrap transition">
+                    <FileSpreadsheet className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{isArabic ? 'اختيار ملف Excel / CSV' : 'Choisir un fichier .xlsx / .csv'}</span>
+                    <input
+                      type="file"
+                      accept=".xlsx,.csv,.tsv,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                      className="hidden"
+                      disabled={importingCsv || isReadOnly}
+                      onChange={event => {
+                        const file = event.target.files?.[0];
+                        void handleCsvImport(file);
+                        event.currentTarget.value = '';
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleDownloadImportTemplate}
+                    className="min-h-10! inline-flex items-center justify-center gap-1.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3.5 py-2.5 text-xs font-bold text-slate-700 whitespace-nowrap transition cursor-pointer"
+                  >
+                    <Download className="h-4 w-4 shrink-0 text-indigo-600" />
+                    <span className="truncate">{isArabic ? 'تحميل نموذج Excel' : 'Télécharger le modèle'}</span>
+                  </button>
+                </div>
+
+                <div className="border-t border-slate-100 pt-3 space-y-2">
+                  <label className="block text-xs font-bold text-slate-700">
+                    {isArabic ? 'أو الصق الجدول مباشرة من Excel :' : 'Ou collez directement vos lignes depuis Excel :'}
+                    <textarea
+                      rows={4}
+                      value={pasteImportText}
+                      onChange={e => setPasteImportText(e.target.value)}
+                      placeholder={
+                        isArabic
+                          ? 'اللقب\tالاسم\tتاريخ الميلاد\tالجنس\tالفئة\tالهاتف\nبن عيسى\tآدم\t15/03/2023\tذكر\tمتوسطون\t0555123456'
+                          : 'Nom\tPrénom\tDate de naissance\tGenre\tGroupe\tTéléphone\nBenaissa\tAdam\t15/03/2023\tGarçon\tMoyens\t0555123456'
+                      }
+                      className="mt-1.5 w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 p-3 font-mono text-[11px] text-slate-800 outline-none focus:border-indigo-500 focus:bg-white"
+                    />
+                  </label>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      disabled={!pasteImportText.trim()}
+                      onClick={handlePasteSpreadsheetImport}
+                      className="min-h-9! inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-3.5 py-2 text-xs font-black text-white whitespace-nowrap transition disabled:opacity-40 cursor-pointer"
+                    >
+                      <span>{isArabic ? 'معاينة الجدول الملصق' : 'Analyser le collage'}</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </motion.div>
           </div>
@@ -1770,9 +2559,206 @@ export default function Enfants() {
         )}
       </AnimatePresence>
 
+      {actionSheetEnfant && (() => {
+        const sheetParent = actionSheetEnfant.parents[0];
+        const sheetTel = normalizeTelHref(sheetParent?.telephone);
+        const sheetWa = normalizeWhatsAppNumber(sheetParent?.telephone);
+        const sheetDocs = getCompletedDocsCount(actionSheetEnfant);
+        return (
+          <div
+            className="fixed inset-0 z-[130] flex items-end sm:items-center justify-center bg-slate-950/45 p-0 sm:p-4 backdrop-blur-[2px]"
+            role="dialog"
+            aria-modal="true"
+            aria-label={
+              isArabic
+                ? `إجراءات ${actionSheetEnfant.prenom} ${actionSheetEnfant.nom}`
+                : `Gestion rapide — ${actionSheetEnfant.prenom} ${actionSheetEnfant.nom}`
+            }
+            onClick={() => setActionSheetEnfantId(null)}
+          >
+            <div
+              className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl border border-slate-200/80 bg-white p-4 sm:p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl space-y-3.5"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="mx-auto h-1 w-10 rounded-full bg-slate-200 sm:hidden" aria-hidden="true" />
+
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div
+                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-extrabold ring-1 ring-inset ${
+                      actionSheetEnfant.genre === 'Fille'
+                        ? 'bg-rose-50 text-rose-700 ring-rose-200/80'
+                        : 'bg-sky-50 text-sky-700 ring-sky-200/80'
+                    }`}
+                  >
+                    {(actionSheetEnfant.prenom?.[0] || '').toUpperCase()}
+                    {(actionSheetEnfant.nom?.[0] || '').toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="truncate text-base font-bold text-slate-900">
+                      {actionSheetEnfant.prenom} {actionSheetEnfant.nom}
+                    </h3>
+                    <p className="mt-0.5 text-xs text-slate-500 tabular-nums">
+                      {calculerAge(actionSheetEnfant.dateNaissance)} ·{' '}
+                      <span className={sheetDocs === 4 ? 'font-bold text-emerald-700' : 'font-bold text-amber-700'}>
+                        {isArabic ? `الملف ${sheetDocs}/4` : `Dossier ${sheetDocs}/4`}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActionSheetEnfantId(null)}
+                  aria-label={isArabic ? 'إغلاق' : 'Fermer'}
+                  className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {actionSheetEnfant.allergie?.trim() && (
+                <div className="flex items-center gap-2 rounded-xl border border-rose-200/80 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800">
+                  <ShieldAlert className="h-4 w-4 shrink-0 text-rose-600" />
+                  <span className="truncate">
+                    {isArabic ? 'حساسية مسجلة:' : 'Allergie :'}{' '}
+                    <strong className="font-bold">{actionSheetEnfant.allergie}</strong>
+                  </span>
+                </div>
+              )}
+
+              {(sheetTel || sheetWa) && (
+                <div className="grid grid-cols-2 gap-2">
+                  {sheetTel ? (
+                    <a
+                      href={sheetTel}
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800 transition hover:bg-slate-100"
+                    >
+                      <Phone className="h-3.5 w-3.5 text-indigo-600" />
+                      <span className="truncate">
+                        {isArabic ? 'اتصال بالولي' : `Appeler ${sheetParent?.prenom || 'parent'}`}
+                      </span>
+                    </a>
+                  ) : (
+                    <div />
+                  )}
+                  {sheetWa && (
+                    <a
+                      href={`https://wa.me/${sheetWa}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100"
+                    >
+                      <MessageCircle className="h-3.5 w-3.5 text-emerald-600" />
+                      <span>WhatsApp</span>
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {!isReadOnly && (
+                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-2.5">
+                  <p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                    {isArabic ? 'تغيير القسم سريعاً' : 'Section / Groupe'}
+                  </p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(
+                      [
+                        { key: 'Bébés', label: isArabic ? 'رضع' : 'Bébés' },
+                        { key: 'Moyens', label: isArabic ? 'متوسطون' : 'Moyens' },
+                        { key: 'Grands', label: isArabic ? 'كبار' : 'Grands' },
+                      ] as const
+                    ).map(sec => {
+                      const active = actionSheetEnfant.groupeAge === sec.key;
+                      return (
+                        <button
+                          key={sec.key}
+                          type="button"
+                          disabled={quickUpdatingEnfantId !== null}
+                          onClick={() => void handleQuickGroupChange(actionSheetEnfant, sec.key)}
+                          className={`min-h-9 rounded-xl px-2 py-1.5 text-xs font-bold transition cursor-pointer disabled:opacity-60 ${
+                            active
+                              ? 'bg-slate-900 text-white shadow-2xs'
+                              : 'bg-white text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          {sec.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200/80 bg-white">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = actionSheetEnfant;
+                    setActionSheetEnfantId(null);
+                    setSelectedEnfant(target);
+                  }}
+                  className="flex w-full items-center gap-3 px-3.5 py-3 text-xs font-bold text-slate-800 transition hover:bg-slate-50 cursor-pointer"
+                >
+                  <FileText className="h-4 w-4 shrink-0 text-indigo-600" />
+                  <span>{isArabic ? 'فتح الملف الكامل والوثائق PDF' : 'Ouvrir le dossier complet & pièces PDF'}</span>
+                </button>
+
+                {!isReadOnly && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = actionSheetEnfant;
+                        setActionSheetEnfantId(null);
+                        openEditModalForChild(target);
+                      }}
+                      className="flex w-full items-center gap-3 px-3.5 py-3 text-xs font-bold text-slate-800 transition hover:bg-slate-50 cursor-pointer"
+                    >
+                      <Pencil className="h-4 w-4 shrink-0 text-slate-500" />
+                      <span>{isArabic ? 'تعديل معلومات الطفل' : 'Modifier la fiche de l’enfant'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = actionSheetEnfant;
+                        setActionSheetEnfantId(null);
+                        if (target.statut === 'Actif') {
+                          setSortieModalEnfant(target);
+                        } else {
+                          void handleReintegrer(target);
+                        }
+                      }}
+                      className={`flex w-full items-center gap-3 px-3.5 py-3 text-xs font-bold transition hover:bg-slate-50 cursor-pointer ${
+                        actionSheetEnfant.statut === 'Actif' ? 'text-amber-700' : 'text-emerald-700'
+                      }`}
+                    >
+                      {actionSheetEnfant.statut === 'Actif' ? (
+                        <LogOut className="h-4 w-4 shrink-0" />
+                      ) : (
+                        <RotateCcw className="h-4 w-4 shrink-0" />
+                      )}
+                      <span>
+                        {actionSheetEnfant.statut === 'Actif'
+                          ? isArabic
+                            ? 'تسجيل خروج الطفل من الروضة'
+                            : 'Marquer l’enfant comme sorti'
+                          : isArabic
+                            ? 'إعادة تسجيل الطفل'
+                            : 'Réintégrer l’enfant'}
+                      </span>
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {selectedEnfant && (
         <EnfantDetails
-          enfant={selectedEnfant}
+          enfant={enfants.find(e => e.id === selectedEnfant.id) || selectedEnfant}
           onClose={() => setSelectedEnfant(null)}
         />
       )}

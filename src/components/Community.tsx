@@ -22,6 +22,7 @@ import {
   MapPin,
   MessageCircle,
   MoreHorizontal,
+  Pencil,
   Pin,
   UserCheck,
   UserPlus,
@@ -283,21 +284,21 @@ function fullName(user?: Pick<UserAccount, 'prenom' | 'nom' | 'email'> | null) {
   return `${user.prenom || ''} ${user.nom || ''}`.trim() || user.email || 'Directeur';
 }
 
-function compressProfileImage(file: File, maxSide = 720): Promise<string> {
+function compressProfileImage(file: File, maxSide = 720, isAr = false): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith('image/')) {
-      reject(new Error('Choisissez une image JPG, PNG ou WEBP.'));
+      reject(new Error(isAr ? 'اختر صورة بصيغة JPG أو PNG أو WEBP.' : 'Choisissez une image JPG, PNG ou WEBP.'));
       return;
     }
     if (file.size > 8 * 1024 * 1024) {
-      reject(new Error('L’image doit faire moins de 8 Mo.'));
+      reject(new Error(isAr ? 'يجب أن يكون حجم الصورة أقل من 8 ميغابايت.' : 'L’image doit faire moins de 8 Mo.'));
       return;
     }
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Impossible de lire cette image.'));
+    reader.onerror = () => reject(new Error(isAr ? 'تعذرت قراءة هذه الصورة.' : 'Impossible de lire cette image.'));
     reader.onload = () => {
       const image = new Image();
-      image.onerror = () => reject(new Error('Cette image ne peut pas être utilisée.'));
+      image.onerror = () => reject(new Error(isAr ? 'لا يمكن استخدام هذه الصورة.' : 'Cette image ne peut pas être utilisée.'));
       image.onload = () => {
         const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
         const canvas = document.createElement('canvas');
@@ -305,7 +306,7 @@ function compressProfileImage(file: File, maxSide = 720): Promise<string> {
         canvas.height = Math.max(1, Math.round(image.height * scale));
         const context = canvas.getContext('2d');
         if (!context) {
-          reject(new Error('Votre navigateur ne permet pas de préparer cette image.'));
+          reject(new Error(isAr ? 'متصفحك لا يسمح بتجهيز هذه الصورة.' : 'Votre navigateur ne permet pas de préparer cette image.'));
           return;
         }
         context.drawImage(image, 0, 0, canvas.width, canvas.height);
@@ -406,9 +407,10 @@ export default function Community() {
   const certificationChildrenCount = isAdmin ? 30 : Math.max(registeredChildrenCount, user?.certificationEnfants || 0);
   const isCurrentUserCertified = isAdmin || Boolean(user?.estCertifie) || certificationChildrenCount >= 30;
   const [activeCategory, setActiveCategory] = useState<CommunityPostCategory | 'tous'>('tous');
-  const [activeView, setActiveView] = useState<'feed' | 'profile' | 'reposts' | 'saved' | 'notifications' | 'messages'>('feed');
+  const [activeView, setActiveView] = useState<'feed' | 'profile' | 'reposts' | 'saved' | 'notifications' | 'messages' | 'discover'>('feed');
   const [search, setSearch] = useState('');
   const [profileSearch, setProfileSearch] = useState('');
+  const [locationFilter, setLocationFilter] = useState('');
   const [composerMode, setComposerMode] = useState<'post' | 'album' | 'poll'>('post');
   const [pollQuestion, setPollQuestion] = useState('');
   const [pollOptions, setPollOptions] = useState(['', '']);
@@ -420,6 +422,9 @@ export default function Community() {
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState({ titre: '', contenu: '', ville: '', contact: '' });
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [showProfileEditor, setShowProfileEditor] = useState(false);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
@@ -560,16 +565,18 @@ export default function Community() {
   const filteredProfiles = useMemo(() => {
     const normalized = profileSearch.trim().toLowerCase();
     return profiles.filter(profile => {
+      if (locationFilter && profile.ville !== locationFilter) return false;
       if (!normalized) return true;
       return [profile.name, profile.nomCreche, profile.ville, profile.bio].filter(Boolean).some(value => String(value).toLowerCase().includes(normalized));
     });
-  }, [profiles, profileSearch]);
+  }, [profiles, profileSearch, locationFilter]);
 
   const filteredPosts = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return [...communityPosts]
       .filter(post => isAdmin || post.statut !== 'masquee')
       .filter(post => activeCategory === 'tous' || post.categorie === activeCategory)
+      .filter(post => !locationFilter || (post.ville || post.authorVille) === locationFilter)
       .filter(post => activeView !== 'profile' || post.authorId === (selectedProfileId || user?.id))
       .filter(post => activeView !== 'reposts' || (Boolean(post.originalPostId) && post.authorId === user?.id))
       .filter(post => {
@@ -579,7 +586,7 @@ export default function Community() {
           .some(value => String(value).toLowerCase().includes(normalizedSearch));
       })
       .sort((a, b) => Number(pinnedPostIds.has(b.id)) - Number(pinnedPostIds.has(a.id)) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [communityPosts, activeCategory, activeView, search, selectedProfileId, user?.id, isAdmin, pinnedPostIds]);
+  }, [communityPosts, activeCategory, activeView, search, selectedProfileId, user?.id, isAdmin, pinnedPostIds, locationFilter]);
 
   useEffect(() => {
     if (!user || (!isAdmin && user.role !== 'directeur') || user.approvalStatus === 'pending' || activeView !== 'feed') return;
@@ -629,7 +636,7 @@ export default function Community() {
     }
     try {
       const selectedFiles = files.slice(0, remainingSlots);
-      const dataUrls = await Promise.all(selectedFiles.map(file => compressProfileImage(file, 1280)));
+      const dataUrls = await Promise.all(selectedFiles.map(file => compressProfileImage(file, 1280, isAr)));
       setPostImageUrls(current => [...current, ...dataUrls].slice(0, 6));
       if (files.length > selectedFiles.length) setPostImageError(isAr ? 'تم الاحتفاظ بأول 6 صور فقط.' : 'Seules les 6 premières photos ont été conservées.');
     } catch (error) {
@@ -644,10 +651,10 @@ export default function Community() {
     setProfileImageError('');
     setProfileImageUploading(field === 'avatarUrl' ? 'avatar' : 'logo');
     try {
-      const dataUrl = await compressProfileImage(file, field === 'avatarUrl' ? 720 : 640);
+      const dataUrl = await compressProfileImage(file, field === 'avatarUrl' ? 720 : 640, isAr);
       setProfileForm(current => ({ ...current, [field]: dataUrl }));
     } catch (error) {
-      setProfileImageError(error instanceof Error ? error.message : 'Impossible de charger cette image.');
+      setProfileImageError(error instanceof Error ? error.message : (isAr ? 'تعذر تحميل هذه الصورة.' : 'Impossible de charger cette image.'));
     } finally {
       setProfileImageUploading(null);
     }
@@ -655,7 +662,8 @@ export default function Community() {
 
   const handleSaveProfile = async (event: FormEvent) => {
     event.preventDefault();
-    if (profileSaving || isCommunityReadOnly) return;
+    if (profileSaving || submittingRef.current || isCommunityReadOnly) return;
+    submittingRef.current = true;
     setProfileSaving(true);
     try {
       await updateProfile({
@@ -675,6 +683,7 @@ export default function Community() {
       });
       setActiveView('profile');
     } finally {
+      submittingRef.current = false;
       setProfileSaving(false);
     }
   };
@@ -683,11 +692,12 @@ export default function Community() {
     event.preventDefault();
     if (isCommunityReadOnly) return;
     const validPollOptions = pollOptions.map(option => option.trim()).filter(Boolean);
-    if (!form.contenu.trim() || submitting) return;
+    if (!form.contenu.trim() || submitting || submittingRef.current) return;
     if (composerMode === 'poll' && (!pollQuestion.trim() || validPollOptions.length < 2)) {
       setPostImageError(isAr ? 'أضف السؤال وخيارين على الأقل.' : 'Ajoutez une question et au moins deux options.');
       return;
     }
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       const hashtags = Array.from(new Set(form.contenu.match(/#[\\p{L}\\p{N}_-]+/gu) || [])).slice(0, 8);
@@ -724,6 +734,7 @@ export default function Community() {
       setPostImageError('');
       setShowComposer(false);
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -736,12 +747,14 @@ export default function Community() {
       cancelLabel: ui.cancel,
       variant: 'danger',
     });
-    if (!accepted || submitting) return;
+    if (!accepted || submitting || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await deleteCommunityPost(post.id);
       setOpenMenu(null);
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -754,11 +767,13 @@ export default function Community() {
       cancelLabel: ui.cancel,
       variant: 'danger',
     });
-    if (!accepted || submitting) return;
+    if (!accepted || submitting || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await deleteCommunityComment(comment.id);
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -766,7 +781,8 @@ export default function Community() {
   const handleComment = async (post: CommunityPost) => {
     if (isCommunityReadOnly) return;
     const content = (commentDrafts[post.id] || '').trim();
-    if (!content || submitting) return;
+    if (!content || submitting || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await addCommunityComment({
@@ -787,12 +803,14 @@ export default function Community() {
       setCommentDrafts(current => ({ ...current, [post.id]: '' }));
       setExpandedComments(current => ({ ...current, [post.id]: true }));
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
 
   const handleRepost = async (post: CommunityPost) => {
-    if (isCommunityReadOnly || submitting) return;
+    if (isCommunityReadOnly || submitting || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await repostCommunityPost(post);
@@ -800,6 +818,7 @@ export default function Community() {
         void addCommunityFeature({ kind: 'social_notification', actorId: user.id, recipientId: post.authorId, visibility: 'private', targetId: post.id, createdAt: new Date().toISOString(), payload: { type: 'repost', actorName: authorName, message: isAr ? 'أعاد نشر منشورك' : 'a republié votre publication' } }).catch(() => undefined);
       }
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -862,12 +881,16 @@ export default function Community() {
     event.preventDefault();
     if (isCommunityReadOnly) return;
     const content = messageDraft.trim();
-    if (!content || !messageRecipientId || submitting) return;
+    if (!content || !messageRecipientId || submitting || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await addCommunityFeature({ kind: 'private_message', actorId: user.id, recipientId: messageRecipientId, visibility: 'private', createdAt: new Date().toISOString(), payload: { content, read: false } });
       setMessageDraft('');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : (isAr ? 'لم يتأكد الإرسال. تحقق من المحادثة قبل المحاولة مجدداً.' : 'Envoi non confirmé. Vérifiez la conversation avant de réessayer.'), 'error');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -878,6 +901,19 @@ export default function Community() {
     await toggleCommunityReaction(post.id);
     if (!wasLiked && post.authorId !== user.id) {
       void addCommunityFeature({ kind: 'social_notification', actorId: user.id, recipientId: post.authorId, visibility: 'private', targetId: post.id, createdAt: new Date().toISOString(), payload: { type: 'reaction', actorName: authorName, message: isAr ? 'أعجب بمنشورك' : 'a aimé votre publication' } }).catch(() => undefined);
+    }
+  };
+
+  const savePostEdit = async (post: CommunityPost) => {
+    if (post.authorId !== user.id || isCommunityReadOnly || submittingRef.current || !editDraft.contenu.trim()) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      await updateCommunityPost(post.id, { titre: editDraft.titre.trim() || undefined, contenu: editDraft.contenu.trim(), ville: editDraft.ville.trim() || undefined, contact: editDraft.contact.trim() || undefined });
+      setEditingPostId(null);
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -909,13 +945,13 @@ export default function Community() {
     const hasVoted = Boolean(featureFor('poll_vote', post.id));
     const postViewCount = featuresFor('post_view', post.id).length;
     return (
-      <article key={post.id} className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
-        {pinnedPostIds.has(post.id) && <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-5 py-2.5 text-xs font-black text-amber-700"><Pin className="h-3.5 w-3.5" />{ui.pinned}</div>}
-        {post.originalPostId && <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-5 py-3 text-xs font-semibold text-slate-500"><Repeat2 className="h-4 w-4 text-indigo-600" />{post.authorName} {isAr ? 'أعاد النشر' : 'a republié une publication'}</div>}
-        <div className="p-4 sm:p-5">
+      <article key={post.id} className="min-w-0 max-w-full overflow-hidden rounded-xl border border-slate-200 bg-white">
+        {pinnedPostIds.has(post.id) && <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-3 py-2 text-xs font-black text-amber-700"><Pin className="h-3.5 w-3.5" />{ui.pinned}</div>}
+        {post.originalPostId && <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500"><Repeat2 className="h-4 w-4 text-indigo-600" />{post.authorName} {isAr ? 'أعاد النشر' : 'a republié une publication'}</div>}
+        <div className="p-3 sm:p-4">
           <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3">
-            <button type="button" onClick={() => { setSelectedProfileId(profile.id); setActiveView('profile'); }} className="flex min-w-0 items-center gap-3 text-left">
-              <Avatar profile={profile} size="md" />
+            <button type="button" onClick={() => { setSelectedProfileId(profile.id); setActiveView('profile'); }} className="flex min-w-0 items-center gap-2 text-start">
+              <Avatar profile={profile} size="sm" />
               <span className="min-w-0">
                 <span className="flex min-w-0 flex-wrap items-center gap-1.5 break-words text-sm font-black text-slate-900 hover:text-indigo-700">{profile.name}{profile.estCertifie ? <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black text-emerald-700"><Check className="h-3 w-3" />{profile.isPlatform ? ui.officialAccount : ui.verifiedBadge}</span> : <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-black text-slate-500">{isAr ? 'قيد التحقق' : 'En cours'}</span>}</span>
                 <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1 text-xs font-semibold text-slate-500"><Building2 className="h-3.5 w-3.5 shrink-0" /><span className="break-words">{profile.nomCreche || (isAr ? 'حضانة' : 'Crèche')}{profile.ville ? ` · ${profile.ville}` : ''}</span></span>
@@ -925,38 +961,50 @@ export default function Community() {
             <div className="relative" data-community-menu>
               <button type="button" onClick={() => setOpenMenu(openMenu === post.id ? null : post.id)} aria-haspopup="menu" aria-expanded={openMenu === post.id} aria-label={isAr ? 'خيارات المنشور' : 'Options de la publication'} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><MoreHorizontal className="h-5 w-5" /></button>
               {openMenu === post.id && <div role="menu" aria-label={isAr ? 'خيارات المنشور' : 'Options de la publication'} className={`absolute top-10 z-20 w-44 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl ${isAr ? 'left-0' : 'right-0'}`}>
-                {canManagePost(post) && <button type="button" onClick={() => runCommunityAction(() => handleDeletePost(post))} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" />{isAr ? 'حذف' : 'Supprimer'}</button>}
-                <button type="button" disabled={isCommunityReadOnly} onClick={() => { runCommunityAction(() => handleToggleSave(post)); setOpenMenu(null); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-600 hover:bg-slate-50"><Bookmark className={`h-4 w-4 ${savedPostIds.has(post.id) ? 'fill-current text-indigo-600' : ''}`} />{savedPostIds.has(post.id) ? ui.saved : (isAr ? 'حفظ المنشور' : 'Enregistrer')}</button>
-                {isAdmin && <button type="button" onClick={() => runCommunityAction(() => handlePin(post))} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-600 hover:bg-slate-50"><Pin className="h-4 w-4" />{pinnedPostIds.has(post.id) ? ui.unpin : ui.pin}</button>}
-                {!isAdmin && post.authorId !== user.id && <button type="button" onClick={() => runCommunityAction(() => handleReport(post))} disabled={isCommunityReadOnly || Boolean(featureFor('report', post.id))} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"><Flag className="h-4 w-4" />{featureFor('report', post.id) ? ui.reportSent : ui.report}</button>}
-                {isAdmin && <button type="button" onClick={() => runCommunityAction(() => handleTogglePostVisibility(post))} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-600 hover:bg-slate-50"><ShieldCheck className="h-4 w-4" />{post.statut === 'masquee' ? ui.restore : ui.hide}</button>}
+                {post.authorId === user.id && !post.originalPostId && !isCommunityReadOnly && <button type="button" onClick={() => { setEditDraft({ titre: post.titre || '', contenu: post.contenu || '', ville: post.ville || '', contact: post.contact || '' }); setEditingPostId(post.id); setOpenMenu(null); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-xs font-bold text-slate-700 hover:bg-slate-50"><Pencil className="h-4 w-4" />{isAr ? 'تعديل' : 'Modifier'}</button>}
+                {canManagePost(post) && <button type="button" onClick={() => runCommunityAction(() => handleDeletePost(post))} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-xs font-bold text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" />{isAr ? 'حذف' : 'Supprimer'}</button>}
+                <button type="button" disabled={isCommunityReadOnly} onClick={() => { runCommunityAction(() => handleToggleSave(post)); setOpenMenu(null); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-xs font-bold text-slate-600 hover:bg-slate-50"><Bookmark className={`h-4 w-4 ${savedPostIds.has(post.id) ? 'fill-current text-indigo-600' : ''}`} />{savedPostIds.has(post.id) ? ui.saved : (isAr ? 'حفظ المنشور' : 'Enregistrer')}</button>
+                {isAdmin && <button type="button" onClick={() => runCommunityAction(() => handlePin(post))} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-xs font-bold text-slate-600 hover:bg-slate-50"><Pin className="h-4 w-4" />{pinnedPostIds.has(post.id) ? ui.unpin : ui.pin}</button>}
+                {!isAdmin && post.authorId !== user.id && <button type="button" onClick={() => runCommunityAction(() => handleReport(post))} disabled={isCommunityReadOnly || Boolean(featureFor('report', post.id))} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"><Flag className="h-4 w-4" />{featureFor('report', post.id) ? ui.reportSent : ui.report}</button>}
+                {isAdmin && <button type="button" onClick={() => runCommunityAction(() => handleTogglePostVisibility(post))} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-xs font-bold text-slate-600 hover:bg-slate-50"><ShieldCheck className="h-4 w-4" />{post.statut === 'masquee' ? ui.restore : ui.hide}</button>}
               </div>}
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${category?.color || 'bg-slate-100 text-slate-700'}`}><Tag className="mr-1 inline h-3 w-3" />{categoryLabel(post.categorie, language)}</span>{post.statut === 'masquee' && <span className="rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-black text-rose-700">{ui.masked}</span>}</div>
-          {post.titre && <h3 className="mt-3 break-words text-lg font-black text-slate-900">{post.titre}</h3>}
-          {post.contenu && <p className="mt-2 break-words whitespace-pre-wrap text-sm leading-7 text-slate-700">{post.contenu}</p>}
+          {editingPostId === post.id && <form onSubmit={event => { event.preventDefault(); runCommunityAction(() => savePostEdit(post)); }} className="mt-3 grid gap-2 rounded-xl border border-indigo-100 bg-slate-50 p-3">
+            <label className="text-xs font-bold text-slate-600">{isAr ? 'العنوان' : 'Titre'}<input value={editDraft.titre} onChange={event => setEditDraft(current => ({ ...current, titre: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" /></label>
+            <label className="text-xs font-bold text-slate-600">{isAr ? 'رسالتك' : 'Votre message'}<textarea required maxLength={3000} rows={4} value={editDraft.contenu} onChange={event => setEditDraft(current => ({ ...current, contenu: event.target.value }))} className="mt-1 w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" /></label>
+            <div className="grid gap-2 sm:grid-cols-2"><label className="text-xs font-bold text-slate-600">{ui.city}<input value={editDraft.ville} onChange={event => setEditDraft(current => ({ ...current, ville: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" /></label><label className="text-xs font-bold text-slate-600">{ui.contact}<input value={editDraft.contact} onChange={event => setEditDraft(current => ({ ...current, contact: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" /></label></div>
+            <div className="flex justify-end gap-2"><button type="button" disabled={submitting} onClick={() => setEditingPostId(null)} className="rounded-lg px-3 py-2 text-xs font-bold text-slate-600">{ui.cancel}</button><button type="submit" disabled={submitting || !editDraft.contenu.trim()} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{isAr ? 'حفظ' : 'Enregistrer'}</button></div>
+          </form>}
+          <div className="mt-3 flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${category?.color || 'bg-slate-100 text-slate-700'}`}><Tag className="me-1 inline h-3 w-3" />{categoryLabel(post.categorie, language)}</span>{post.statut === 'masquee' && <span className="rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-black text-rose-700">{ui.masked}</span>}</div>
+          {post.titre && <h3 className="mt-2 break-words text-sm font-bold text-slate-900">{post.titre}</h3>}
+          {post.contenu && <p className="mt-2 break-words whitespace-pre-wrap text-sm leading-6 text-slate-700">{post.contenu}</p>}
           {post.hashtags?.length ? <div className="mt-3 flex flex-wrap gap-1.5">{post.hashtags.map(tag => <span key={tag} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-[11px] font-black text-indigo-700"><Hash className="h-3 w-3" />{tag}</span>)}</div> : null}
-          {post.imageUrls?.length ? <div className={`mt-4 grid gap-2 overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 p-1 ${post.imageUrls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>{post.imageUrls.slice(0, 6).map((url, index) => <img key={`${url.slice(0, 24)}-${index}`} src={url} alt={`${post.titre || (isAr ? 'صورة المنشور' : 'Image de la publication')} ${index + 1}`} className={`w-full object-cover ${post.imageUrls && post.imageUrls.length === 1 ? 'max-h-[520px]' : 'h-48'}`} loading="lazy" />)}</div> : null}
-          {post.poll && <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4"><div className="flex items-center gap-2 text-xs font-black text-indigo-700"><BarChart3 className="h-4 w-4" />{ui.poll}</div><p className="mt-2 text-sm font-black text-slate-800">{post.poll.question}</p><div className="mt-3 space-y-2">{post.poll.options.map((option, optionIndex) => { const votes = pollVoteCounts[optionIndex] || 0; const totalVotes = pollVoteCounts.reduce((sum, count) => sum + count, 0); const percentage = totalVotes ? Math.round((votes / totalVotes) * 100) : 0; return <button key={`${post.id}-poll-${optionIndex}`} type="button" disabled={hasVoted || isCommunityReadOnly} onClick={() => runCommunityAction(() => handlePollVote(post, optionIndex))} className="relative w-full overflow-hidden rounded-xl border border-indigo-100 bg-white px-3 py-2.5 text-left text-xs font-black text-slate-700 disabled:cursor-default"><span className="absolute inset-y-0 left-0 bg-indigo-100/70 transition-all" style={{ width: `${percentage}%` }} /><span className="relative flex items-center justify-between gap-2"><span>{option}</span><span className="text-indigo-700">{percentage}%</span></span></button>; })}</div>{hasVoted && <p className="mt-3 text-[11px] font-bold text-indigo-700">{ui.voted}</p>}</div>}
-          {post.contact && <div className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-600"><span className="font-black text-slate-800">{ui.contact} </span>{post.contact}</div>}
+          {post.imageUrls?.length ? <div className={`mt-3 grid gap-1 overflow-hidden rounded-xl border border-slate-100 bg-slate-50 p-1 ${post.imageUrls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>{post.imageUrls.slice(0, 6).map((url, index) => <img key={`${url.slice(0, 24)}-${index}`} src={url} alt={`${post.titre || (isAr ? 'صورة المنشور' : 'Image de la publication')} ${index + 1}`} className={`w-full object-cover ${post.imageUrls && post.imageUrls.length === 1 ? 'max-h-[360px] object-contain' : 'h-36 sm:h-44'}`} loading="lazy" />)}</div> : null}
+          {post.poll && <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4"><div className="flex items-center gap-2 text-xs font-black text-indigo-700"><BarChart3 className="h-4 w-4" />{ui.poll}</div><p className="mt-2 text-sm font-black text-slate-800">{post.poll.question}</p><div className="mt-3 space-y-2">{post.poll.options.map((option, optionIndex) => { const votes = pollVoteCounts[optionIndex] || 0; const totalVotes = pollVoteCounts.reduce((sum, count) => sum + count, 0); const percentage = totalVotes ? Math.round((votes / totalVotes) * 100) : 0; return <button key={`${post.id}-poll-${optionIndex}`} type="button" disabled={hasVoted || isCommunityReadOnly} onClick={() => runCommunityAction(() => handlePollVote(post, optionIndex))} className="relative w-full overflow-hidden rounded-xl border border-indigo-100 bg-white px-3 py-2.5 text-start text-xs font-black text-slate-700 disabled:cursor-default"><span className="absolute inset-y-0 start-0 bg-indigo-100/70 transition-all" style={{ width: `${percentage}%` }} /><span className="relative flex items-center justify-between gap-2"><span>{option}</span><span className="text-indigo-700">{percentage}%</span></span></button>; })}</div>{hasVoted && <p className="mt-3 text-[11px] font-bold text-indigo-700">{ui.voted}</p>}</div>}
+          {post.categorie !== 'activite' && <div className="mt-3 flex flex-wrap items-center gap-2">
+            {post.prix != null && <span className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700">{new Intl.NumberFormat(language === 'ar' ? 'ar-DZ' : 'fr-DZ').format(post.prix)} DA</span>}
+            {(post.ville || post.authorVille) && <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600"><MapPin className="h-3.5 w-3.5" />{post.ville || post.authorVille}</span>}
+            {post.authorId !== user.id && <button type="button" disabled={isCommunityReadOnly} onClick={() => { setMessageRecipientId(post.authorId); setActiveView('messages'); }} className="ms-auto inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><MessageCircle className="h-4 w-4" />{isAr ? 'تواصل' : 'Contacter'}</button>}
+          </div>}
+          {post.contact && <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600"><span className="font-black text-slate-800">{ui.contact} </span>{post.contact}</div>}
 
-          {original && <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          {original && <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="flex min-w-0 items-center gap-3"><Avatar profile={originalProfile!} size="sm" /><div><p className="text-xs font-black text-slate-800">{original.authorName || (isAr ? 'مدير' : 'Directeur')}</p><p className="text-[11px] font-semibold text-slate-500">{original.nomCreche || (isAr ? 'حضانة' : 'Crèche')}</p></div></div>
             {original.titre && <p className="mt-3 break-words text-sm font-black text-slate-800">{original.titre}</p>}
             <p className="mt-1 break-words whitespace-pre-wrap text-sm leading-6 text-slate-600">{original.contenu || ''}</p>
           </div>}
 
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs font-bold text-slate-400"><span aria-live="polite">{reactionCount(post.id)} {ui.likes}</span><span>{comments.length} {comments.length > 1 ? ui.comments : ui.comment} · {communityPosts.filter(item => item.originalPostId === post.id).length} {communityPosts.filter(item => item.originalPostId === post.id).length > 1 ? ui.reposts : ui.repost}{(isAdmin || post.authorId === user.id) && <span className="ml-1 inline-flex items-center gap-1"><Eye className="h-3 w-3" />{postViewCount} {ui.views}</span>}</span></div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs font-bold text-slate-400"><span aria-live="polite">{reactionCount(post.id)} {ui.likes}</span><span>{comments.length} {comments.length > 1 ? ui.comments : ui.comment} · {communityPosts.filter(item => item.originalPostId === post.id).length} {communityPosts.filter(item => item.originalPostId === post.id).length > 1 ? ui.reposts : ui.repost}{(isAdmin || post.authorId === user.id) && <span className="ms-1 inline-flex items-center gap-1"><Eye className="h-3 w-3" />{postViewCount} {ui.views}</span>}</span></div>
           <div className="mt-2 grid grid-cols-1 min-[420px]:grid-cols-3 gap-1 border-t border-slate-100 pt-2">
             <button type="button" aria-pressed={isLiked(post.id)} disabled={isCommunityReadOnly} onClick={() => runCommunityAction(() => handleReaction(post))} className={`inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-xs font-black transition ${isLiked(post.id) ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50 hover:text-indigo-700'}`}><ThumbsUp className={`h-4 w-4 ${isLiked(post.id) ? 'fill-current' : ''}`} />{ui.likes}</button>
             <button type="button" disabled={isCommunityReadOnly} onClick={() => setExpandedComments(current => ({ ...current, [post.id]: !current[post.id] }))} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-xs font-black text-slate-500 hover:bg-slate-50 hover:text-indigo-700 disabled:opacity-50"><MessageCircle className="h-4 w-4" />{ui.commentAction}</button>
             <button type="button" onClick={() => runCommunityAction(() => handleRepost(post))} disabled={isCommunityReadOnly || submitting} className="inline-flex items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-xs font-black text-slate-500 hover:bg-slate-50 hover:text-indigo-700 disabled:opacity-50"><Repeat2 className="h-4 w-4" />{ui.repostAction}</button>
           </div>
           <AnimatePresence initial={false}>{expandedComments[post.id] && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden"><div className="mt-3 space-y-2 rounded-2xl bg-slate-50 p-3">
-            {comments.map(comment => <div key={comment.id} className="flex items-start gap-2 rounded-xl bg-white p-3"><Avatar profile={{ id: comment.authorId, name: comment.authorName, avatarUrl: comment.authorAvatarUrl, logoUrl: comment.authorLogoUrl, nomCreche: comment.nomCreche }} size="sm" /><div className="min-w-0 flex-1"><p className="text-xs font-black text-slate-800">{comment.authorName}<span className="ml-1 font-medium text-slate-400">· {comment.nomCreche}</span></p><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-600">{comment.contenu}</p><p className="mt-1 text-[10px] text-slate-400">{formatDate(comment.createdAt, language)}</p></div>{(isAdmin || comment.authorId === user.id) && <button type="button" onClick={() => runCommunityAction(() => handleDeleteComment(comment))} className="rounded-lg p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500"><Trash2 className="h-3.5 w-3.5" /></button>}</div>)}
-            <div className="flex items-end gap-2"><Avatar profile={currentProfile} size="sm" /><textarea disabled={isCommunityReadOnly} value={commentDrafts[post.id] || ''} onChange={event => setCommentDrafts(current => ({ ...current, [post.id]: event.target.value }))} rows={1} maxLength={1000} className="min-h-[42px] flex-1 resize-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-indigo-500" placeholder={ui.writeComment} /><button type="button" onClick={() => runCommunityAction(() => handleComment(post))} disabled={isCommunityReadOnly || !commentDrafts[post.id]?.trim() || submitting} className="rounded-xl bg-indigo-600 p-3 text-white hover:bg-indigo-700 disabled:opacity-40"><Send className="h-4 w-4" /></button></div>
+            {comments.map(comment => <div key={comment.id} className="flex items-start gap-2 rounded-xl bg-white p-3"><Avatar profile={{ id: comment.authorId, name: comment.authorName, avatarUrl: comment.authorAvatarUrl, logoUrl: comment.authorLogoUrl, nomCreche: comment.nomCreche }} size="sm" /><div className="min-w-0 flex-1"><p className="text-xs font-black text-slate-800">{comment.authorName}<span className="ms-1 font-medium text-slate-400">· {comment.nomCreche}</span></p><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-600">{comment.contenu}</p><p className="mt-1 text-[10px] text-slate-400">{formatDate(comment.createdAt, language)}</p></div>{(isAdmin || comment.authorId === user.id) && <button type="button" aria-label={isAr ? 'حذف التعليق' : 'Supprimer le commentaire'} onClick={() => runCommunityAction(() => handleDeleteComment(comment))} className="rounded-lg p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500"><Trash2 className="h-3.5 w-3.5" /></button>}</div>)}
+            <div className="flex items-end gap-2"><Avatar profile={currentProfile} size="sm" /><textarea disabled={isCommunityReadOnly} value={commentDrafts[post.id] || ''} onChange={event => setCommentDrafts(current => ({ ...current, [post.id]: event.target.value }))} rows={1} maxLength={1000} className="min-h-[42px] flex-1 resize-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-indigo-500" placeholder={ui.writeComment} /><button type="button" aria-label={ui.commentAction} onClick={() => runCommunityAction(() => handleComment(post))} disabled={isCommunityReadOnly || !commentDrafts[post.id]?.trim() || submitting} className="rounded-xl bg-indigo-600 p-3 text-white hover:bg-indigo-700 disabled:opacity-40"><Send className="h-4 w-4 rtl:rotate-180" /></button></div>
           </div></motion.div>}</AnimatePresence>
         </div>
       </article>
@@ -984,7 +1032,7 @@ export default function Community() {
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2 border-y border-slate-100 py-3" role="tablist" aria-label={isAr ? 'نوع المنشور' : 'Type de publication'}>
-          {([['post', isAr ? 'منشور' : 'Publication'], ['album', ui.album], ['poll', ui.poll]] as const).map(([mode, label]) => <button key={mode} type="button" role="tab" aria-selected={composerMode === mode} onClick={() => setComposerMode(mode)} className={`rounded-xl px-3 py-2 text-xs font-black transition ${composerMode === mode ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'}`}>{mode === 'album' ? <ImageIcon className="mr-1 inline h-3.5 w-3.5" /> : mode === 'poll' ? <BarChart3 className="mr-1 inline h-3.5 w-3.5" /> : <MessageCircle className="mr-1 inline h-3.5 w-3.5" />}{label}</button>)}
+          {([['post', isAr ? 'منشور' : 'Publication'], ['album', ui.album], ['poll', ui.poll]] as const).map(([mode, label]) => <button key={mode} type="button" role="tab" aria-selected={composerMode === mode} onClick={() => setComposerMode(mode)} className={`rounded-xl px-3 py-2 text-xs font-black transition ${composerMode === mode ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'}`}>{mode === 'album' ? <ImageIcon className="me-1 inline h-3.5 w-3.5" /> : mode === 'poll' ? <BarChart3 className="me-1 inline h-3.5 w-3.5" /> : <MessageCircle className="me-1 inline h-3.5 w-3.5" />}{label}</button>)}
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <label className="text-xs font-black text-slate-600">{isAr ? 'الفئة' : 'Catégorie'}
@@ -999,7 +1047,7 @@ export default function Community() {
             <textarea required rows={5} maxLength={3000} value={form.contenu} onChange={event => setForm(current => ({ ...current, contenu: event.target.value }))} className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none focus:border-indigo-500" placeholder={isAr ? 'شارك فكرة أو نشاطاً أو فرصة...' : 'Partagez une idée, une activité, une opportunité...'} />
           </label>
           {composerMode === 'poll' && <div className="grid gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4 md:col-span-2"><label className="text-xs font-black text-slate-600">{ui.pollQuestion}<input required value={pollQuestion} onChange={event => setPollQuestion(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder={isAr ? 'مثلاً: ما النشاط المفضل للأطفال؟' : 'Ex. : Quelle activité préfèrent les enfants ?'} /></label>{pollOptions.map((option, index) => <label key={`poll-option-${index}`} className="text-xs font-black text-slate-600">{ui.pollOption} {index + 1}<input required value={option} onChange={event => setPollOptions(current => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder={`${ui.pollOption} ${index + 1}`} /></label>)}<button type="button" onClick={() => setPollOptions(current => current.length < 4 ? [...current, ''] : current)} disabled={pollOptions.length >= 4} className="justify-self-start rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-black text-indigo-700 disabled:opacity-40">+ {ui.addOption}</button></div>}
-          {postImageUrls.length > 0 && <div className="grid grid-cols-2 gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-2 md:col-span-2">{postImageUrls.map((url, index) => <div key={`${url.slice(0, 24)}-${index}`} className="group relative overflow-hidden rounded-xl"><img src={url} alt={`${isAr ? 'صورة' : 'Photo'} ${index + 1}`} className="h-32 w-full object-cover" /><button type="button" onClick={() => setPostImageUrls(current => current.filter((_, itemIndex) => itemIndex !== index))} className="absolute right-2 top-2 rounded-full bg-slate-950/75 p-2 text-white opacity-0 transition group-hover:opacity-100 focus:opacity-100" aria-label={isAr ? 'حذف الصورة' : 'Supprimer la photo'}><X className="h-4 w-4" /></button></div>)}</div>}
+          {postImageUrls.length > 0 && <div className="grid grid-cols-2 gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-2 md:col-span-2">{postImageUrls.map((url, index) => <div key={`${url.slice(0, 24)}-${index}`} className="group relative overflow-hidden rounded-xl"><img src={url} alt={`${isAr ? 'صورة' : 'Photo'} ${index + 1}`} className="h-32 w-full object-cover" /><button type="button" onClick={() => setPostImageUrls(current => current.filter((_, itemIndex) => itemIndex !== index))} className="absolute right-2 top-2 rounded-full bg-slate-950/75 p-2 text-white opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100" aria-label={isAr ? 'حذف الصورة' : 'Supprimer la photo'}><X className="h-4 w-4" /></button></div>)}</div>}
           {postImageError && <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 md:col-span-2" role="alert">{postImageError}</p>}
           <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-black text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 md:col-span-2"><ImageIcon className="h-4 w-4 text-emerald-500" />{composerMode === 'album' ? ui.album : (isAr ? 'إضافة صورة' : 'Ajouter une photo')}<input type="file" accept="image/png,image/jpeg,image/webp" multiple={composerMode === 'album'} className="sr-only" onChange={event => void handlePostImageUpload(event)} /></label>
           <label className="text-xs font-black text-slate-600">{ui.city}<input value={form.ville} onChange={event => setForm(current => ({ ...current, ville: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="Alger" /></label>
@@ -1041,15 +1089,15 @@ export default function Community() {
 
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="h-16 w-16 overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-500 text-center text-xl font-black leading-[4rem] text-white">{profileForm.avatarUrl ? <img src={profileForm.avatarUrl} alt="Aperçu de la photo de profil" className="h-full w-full object-cover" /> : `${profileForm.prenom?.[0] || ''}${profileForm.nom?.[0] || ''}`.toUpperCase() || 'R+'}</div>
-              <div className="min-w-0 flex-1"><p className="text-xs font-black text-slate-700">{ui.profilePhoto}</p><p className="mt-1 text-[11px] leading-4 text-slate-500">JPG, PNG ou WEBP. L’image est optimisée automatiquement.</p><div className="mt-2 flex flex-wrap gap-2"><label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-[11px] font-black text-white hover:bg-indigo-700"><ImageIcon className="h-3.5 w-3.5" />{profileImageUploading === 'avatar' ? ui.loading : profileForm.avatarUrl ? ui.replace : ui.choosePhoto}<input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={event => void handleProfileImageUpload(event, 'avatarUrl')} disabled={profileImageUploading !== null} /></label>{profileForm.avatarUrl && <button type="button" onClick={() => setProfileForm(current => ({ ...current, avatarUrl: '' }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-600 hover:bg-slate-100">{ui.remove}</button>}</div></div>
+              <div className="h-16 w-16 overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-500 text-center text-xl font-black leading-[4rem] text-white">{profileForm.avatarUrl ? <img src={profileForm.avatarUrl} alt={isAr ? 'معاينة الصورة الشخصية' : 'Aperçu de la photo de profil'} className="h-full w-full object-cover" /> : `${profileForm.prenom?.[0] || ''}${profileForm.nom?.[0] || ''}`.toUpperCase() || 'R+'}</div>
+              <div className="min-w-0 flex-1"><p className="text-xs font-black text-slate-700">{ui.profilePhoto}</p><p className="mt-1 text-[11px] leading-4 text-slate-500">{isAr ? 'JPG أو PNG أو WEBP. يتم تحسين الصورة تلقائياً.' : 'JPG, PNG ou WEBP. L’image est optimisée automatiquement.'}</p><div className="mt-2 flex flex-wrap gap-2"><label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-[11px] font-black text-white hover:bg-indigo-700"><ImageIcon className="h-3.5 w-3.5" />{profileImageUploading === 'avatar' ? ui.loading : profileForm.avatarUrl ? ui.replace : ui.choosePhoto}<input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={event => void handleProfileImageUpload(event, 'avatarUrl')} disabled={profileImageUploading !== null} /></label>{profileForm.avatarUrl && <button type="button" onClick={() => setProfileForm(current => ({ ...current, avatarUrl: '' }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-600 hover:bg-slate-100">{ui.remove}</button>}</div></div>
             </div>
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border-2 border-white bg-white shadow-sm">{profileForm.logoUrl ? <img src={profileForm.logoUrl} alt="Aperçu du logo de la crèche" className="h-full w-full object-contain" /> : <Building2 className="h-7 w-7 text-slate-300" />}</div>
-              <div className="min-w-0 flex-1"><p className="text-xs font-black text-slate-700">{ui.daycareLogo}</p><p className="mt-1 text-[11px] leading-4 text-slate-500">Ajoutez le logo visible sur votre profil et vos publications.</p><div className="mt-2 flex flex-wrap gap-2"><label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[11px] font-black text-white hover:bg-violet-700"><Building2 className="h-3.5 w-3.5" />{profileImageUploading === 'logo' ? ui.loading : profileForm.logoUrl ? ui.replace : ui.chooseLogo}<input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={event => void handleProfileImageUpload(event, 'logoUrl')} disabled={profileImageUploading !== null} /></label>{profileForm.logoUrl && <button type="button" onClick={() => setProfileForm(current => ({ ...current, logoUrl: '' }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-600 hover:bg-slate-100">{ui.remove}</button>}</div></div>
+              <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border-2 border-white bg-white shadow-sm">{profileForm.logoUrl ? <img src={profileForm.logoUrl} alt={isAr ? 'معاينة شعار الحضانة' : 'Aperçu du logo de la crèche'} className="h-full w-full object-contain" /> : <Building2 className="h-7 w-7 text-slate-300" />}</div>
+              <div className="min-w-0 flex-1"><p className="text-xs font-black text-slate-700">{ui.daycareLogo}</p><p className="mt-1 text-[11px] leading-4 text-slate-500">{isAr ? 'أضف الشعار الظاهر على ملفك ومنشوراتك.' : 'Ajoutez le logo visible sur votre profil et vos publications.'}</p><div className="mt-2 flex flex-wrap gap-2"><label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[11px] font-black text-white hover:bg-violet-700"><Building2 className="h-3.5 w-3.5" />{profileImageUploading === 'logo' ? ui.loading : profileForm.logoUrl ? ui.replace : ui.chooseLogo}<input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={event => void handleProfileImageUpload(event, 'logoUrl')} disabled={profileImageUploading !== null} /></label>{profileForm.logoUrl && <button type="button" onClick={() => setProfileForm(current => ({ ...current, logoUrl: '' }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-600 hover:bg-slate-100">{ui.remove}</button>}</div></div>
             </div>
           </div>
 
@@ -1061,7 +1109,7 @@ export default function Community() {
           <label className="text-xs font-black text-slate-600">{ui.hours}<input value={profileForm.horaires} onChange={event => setProfileForm(current => ({ ...current, horaires: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder={isAr ? 'الأحد - الخميس، 08:00 - 17:00' : 'Dimanche - jeudi, 08:00 - 17:00'} /></label>
           <label className="text-xs font-black text-slate-600">{ui.services}<input value={profileForm.services} onChange={event => setProfileForm(current => ({ ...current, services: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder={isAr ? 'نقل، وجبات، أنشطة' : 'Transport, repas, activités'} /></label>
           <label className="text-xs font-black text-slate-600">{isAr ? 'عدد الأقسام' : 'Nombre de classes'}<input type="number" min="0" max="99" value={profileForm.classesCount} onChange={event => setProfileForm(current => ({ ...current, classesCount: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-indigo-500" placeholder="4" /></label>
-          <label className="text-xs font-black text-slate-600 md:col-span-2">{ui.presentation}<textarea rows={4} maxLength={500} value={profileForm.bio} onChange={event => setProfileForm(current => ({ ...current, bio: event.target.value }))} className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none focus:border-indigo-500" placeholder="Présentez votre parcours et votre crèche..." /></label>
+          <label className="text-xs font-black text-slate-600 md:col-span-2">{ui.presentation}<textarea rows={4} maxLength={500} value={profileForm.bio} onChange={event => setProfileForm(current => ({ ...current, bio: event.target.value }))} className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none focus:border-indigo-500" placeholder={isAr ? 'قدّم مسارك وحضانتك...' : 'Présentez votre parcours et votre crèche...'} /></label>
         </div>
 
         <div className="mt-6 flex flex-col-reverse gap-2 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
@@ -1087,7 +1135,7 @@ export default function Community() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-start sm:gap-4"><div className="shrink-0 rounded-full bg-white p-1 shadow-lg ring-2 ring-indigo-100"><Avatar profile={profile} size="lg" /></div><div className="min-w-0 flex-1 pt-1"><div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center"><h2 className="min-w-0 break-words text-lg leading-tight sm:text-xl font-black text-slate-900">{profile.name}</h2>{profile.estCertifie ? <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700"><Check className="h-3 w-3" />{profile.isPlatform ? ui.officialAccount : (isAr ? 'حضانة موثّقة' : 'Crèche certifiée')}</span> : <span className="inline-flex shrink-0 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-700">{isAr ? 'التحقق قيد التقدم' : 'Certification en cours'}</span>}</div><p className="mt-1 flex min-w-0 flex-wrap items-center gap-1 text-sm font-semibold text-slate-500"><Building2 className="h-4 w-4 shrink-0" /><span className="break-words">{profile.nomCreche || (isAr ? 'حضانة' : 'Crèche')}{profile.ville ? ` · ${profile.ville}` : ''}</span></p></div></div>
               <div className="flex flex-wrap gap-2">
-                {!isOwnProfile && !profile.isPlatform && <button type="button" disabled={isCommunityReadOnly} onClick={() => runCommunityAction(() => handleToggleFollow(profile))} className={`rounded-xl px-4 py-2.5 text-xs font-black ${followingIds.has(profile.id) ? 'bg-indigo-50 text-indigo-700' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>{followingIds.has(profile.id) ? <><UserCheck className="mr-1 inline h-3.5 w-3.5" />{ui.following}</> : <><UserPlus className="mr-1 inline h-3.5 w-3.5" />{ui.follow}</>}</button>}
+                {!isOwnProfile && !profile.isPlatform && <button type="button" disabled={isCommunityReadOnly} onClick={() => runCommunityAction(() => handleToggleFollow(profile))} className={`rounded-xl px-4 py-2.5 text-xs font-black ${followingIds.has(profile.id) ? 'bg-indigo-50 text-indigo-700' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>{followingIds.has(profile.id) ? <><UserCheck className="me-1 inline h-3.5 w-3.5" />{ui.following}</> : <><UserPlus className="me-1 inline h-3.5 w-3.5" />{ui.follow}</>}</button>}
                 {isOwnProfile && !profile.isPlatform && <button type="button" disabled={isCommunityReadOnly} onClick={() => setShowProfileEditor(true)} className="self-stretch rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-xs font-black text-indigo-700 hover:bg-indigo-50 sm:self-auto">{ui.myProfile}</button>}
               </div>
             </div>
@@ -1103,64 +1151,96 @@ export default function Community() {
   const renderSocialUtilityView = () => {
     if (activeView === 'saved') {
       const savedPosts = communityPosts.filter(post => savedPostIds.has(post.id) && (isAdmin || post.statut !== 'masquee'));
-      return <section className="min-w-0 space-y-4"><div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><Bookmark className="h-5 w-5 text-indigo-600" /><div><h2 className="text-lg font-black text-slate-900">{ui.saved}</h2><p className="text-xs font-semibold text-slate-500">{savedPosts.length} {isAr ? 'منشور محفوظ' : `publication${savedPosts.length > 1 ? 's' : ''} enregistrée${savedPosts.length > 1 ? 's' : ''}`}</p></div></div></div>{savedPosts.length ? savedPosts.map(renderPost) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">{ui.savedEmpty}</div>}</section>;
+      return <section className="min-w-0 space-y-4"><div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><Bookmark className="h-5 w-5 text-indigo-600" /><div><h2 className="text-lg font-black text-slate-900">{ui.saved}</h2><p className="text-xs font-semibold text-slate-500">{savedPosts.length} {isAr ? 'منشور محفوظ' : `publication${savedPosts.length > 1 ? 's' : ''} enregistrée${savedPosts.length > 1 ? 's' : ''}`}</p></div></div></div>{savedPosts.length ? savedPosts.map(renderPost) : <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">{ui.savedEmpty}</div>}</section>;
     }
     if (activeView === 'notifications') {
       const notifications = communityFeatures.filter(feature => feature.kind === 'social_notification' && feature.recipientId === user.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      return <section className="min-w-0 space-y-4"><div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><BellRing className="h-5 w-5 text-indigo-600" /><div><h2 className="text-lg font-black text-slate-900">{ui.notifications}</h2><p className="text-xs font-semibold text-slate-500">{unreadSocialNotifications.length} {isAr ? 'غير مقروء' : 'non lue(s)'}</p></div></div></div>{notifications.length ? notifications.map(notification => <button type="button" key={notification.id} onClick={() => notification.payload?.read !== true && void markCommunityFeatureRead(notification.id).catch(() => undefined)} className={`flex w-full items-start gap-3 rounded-2xl border p-4 text-left shadow-sm transition ${notification.payload?.read === true ? 'border-slate-200 bg-white' : 'border-indigo-100 bg-indigo-50/50'}`}><BellRing className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" /><span className="min-w-0 flex-1"><span className="block text-sm font-black text-slate-800">{String(notification.payload?.actorName || (isAr ? 'عضو في الشبكة' : 'Un membre du réseau'))} {String(notification.payload?.message || '')}</span><span className="mt-1 block text-[11px] font-semibold text-slate-500">{formatDate(notification.createdAt, language)}</span></span>{notification.payload?.read !== true && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-indigo-600" />}</button>) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">{ui.notificationsEmpty}</div>}</section>;
+      return <section className="min-w-0 space-y-4"><div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><BellRing className="h-5 w-5 text-indigo-600" /><div><h2 className="text-lg font-black text-slate-900">{ui.notifications}</h2><p className="text-xs font-semibold text-slate-500">{unreadSocialNotifications.length} {isAr ? 'غير مقروء' : 'non lue(s)'}</p></div></div></div>{notifications.length ? notifications.map(notification => <button type="button" key={notification.id} onClick={() => notification.payload?.read !== true && void markCommunityFeatureRead(notification.id).catch(() => undefined)} className={`flex w-full items-start gap-3 rounded-2xl border p-4 text-start shadow-sm transition ${notification.payload?.read === true ? 'border-slate-200 bg-white' : 'border-indigo-100 bg-indigo-50/50'}`}><BellRing className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" /><span className="min-w-0 flex-1"><span className="block text-sm font-black text-slate-800">{String(notification.payload?.actorName || (isAr ? 'عضو في الشبكة' : 'Un membre du réseau'))} {String(notification.payload?.message || '')}</span><span className="mt-1 block text-[11px] font-semibold text-slate-500">{formatDate(notification.createdAt, language)}</span></span>{notification.payload?.read !== true && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-indigo-600" />}</button>) : <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">{ui.notificationsEmpty}</div>}</section>;
+    }
+    if (activeView === 'discover') {
+      const locations = Array.from(new Set<string>(profiles.map(profile => profile.ville).filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b));
+      return <section className="mx-auto max-w-2xl space-y-4"><div className="rounded-2xl border border-slate-200 bg-white p-4"><h2 className="text-base font-bold text-slate-900">{ui.discover}</h2><div className="mt-4 grid gap-2 sm:grid-cols-2"><label className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5"><Search className="h-4 w-4 text-slate-400"/><input value={profileSearch} onChange={event => setProfileSearch(event.target.value)} placeholder={ui.searchProfiles} aria-label={ui.searchProfiles} className="w-full min-w-0 bg-transparent text-sm outline-none" /></label><select value={locationFilter} onChange={event => setLocationFilter(event.target.value)} aria-label={isAr ? 'الموقع' : 'Localisation'} className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700"><option value="">{isAr ? 'كل المناطق' : 'Toutes les localisations'}</option>{locations.map(location => <option key={location} value={location}>{location}</option>)}</select></div></div><div className="overflow-hidden rounded-2xl border border-slate-200 bg-white divide-y divide-slate-100">{filteredProfiles.filter(profile => profile.id !== user.id).map(profile => <div key={profile.id} className="flex items-center gap-3 p-4"><button type="button" onClick={() => { setSelectedProfileId(profile.id); setActiveView('profile'); }} className="flex min-w-0 flex-1 items-center gap-3 text-start"><Avatar profile={profile} size="md"/><span className="min-w-0"><span className="block truncate text-sm font-bold text-slate-900">{profile.nomCreche || profile.name}</span><span className="block truncate text-xs text-slate-500">{[profile.name, profile.ville].filter(Boolean).join(' · ')}</span></span></button><button type="button" disabled={isCommunityReadOnly} onClick={() => { setMessageRecipientId(profile.id); setActiveView('messages'); }} aria-label={`${ui.messages} ${profile.name}`} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 disabled:opacity-50"><MessageCircle className="h-4 w-4"/></button></div>)}{filteredProfiles.filter(profile => profile.id !== user.id).length === 0 && <p className="p-6 text-center text-sm text-slate-500">{ui.profilesEmpty}</p>}</div></section>;
     }
     if (activeView === 'messages') {
       const recipient = messageRecipientId ? profiles.find(profile => profile.id === messageRecipientId) : null;
-      const conversation = recipient ? communityFeatures.filter(feature => feature.kind === 'private_message' && ((feature.actorId === user.id && feature.recipientId === recipient.id) || (feature.actorId === recipient.id && feature.recipientId === user.id))).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) : [];
-      return <section className="min-w-0 space-y-4"><div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><MessageCircle className="h-5 w-5 text-indigo-600" /><div><h2 className="text-lg font-black text-slate-900">{ui.messages}</h2><p className="text-xs font-semibold text-slate-500">{isAr ? 'تواصل مهنياً مع مدراء الشبكة.' : 'Échangez professionnellement avec les Directeurs du réseau.'}</p></div></div><div className="mt-4 flex flex-wrap gap-2">{profiles.filter(profile => profile.id !== user.id).map(profile => <button type="button" key={profile.id} onClick={() => setMessageRecipientId(profile.id)} className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-black ${messageRecipientId === profile.id ? 'bg-indigo-600 text-white' : 'bg-slate-50 text-slate-600 hover:bg-indigo-50'}`}><Avatar profile={profile} size="sm" />{profile.name}</button>)}</div></div>{recipient ? <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center gap-3 border-b border-slate-100 pb-3"><Avatar profile={recipient} size="sm" /><div><p className="text-sm font-black text-slate-800">{recipient.name}</p><p className="text-xs font-semibold text-slate-500">{recipient.nomCreche || (isAr ? 'حضانة' : 'Crèche')}</p></div></div><div className="my-4 max-h-80 space-y-2 overflow-y-auto">{conversation.length ? conversation.map(message => <div key={message.id} className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs leading-5 ${message.actorId === user.id ? 'ml-auto bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700'}`}>{String(message.payload?.content || '')}<p className={`mt-1 text-[10px] ${message.actorId === user.id ? 'text-indigo-100' : 'text-slate-400'}`}>{formatDate(message.createdAt, language)}</p></div>) : <p className="py-8 text-center text-xs text-slate-400">{isAr ? 'ابدأ المحادثة المهنية.' : 'Commencez la conversation professionnelle.'}</p>}</div><form onSubmit={handleSendMessage} className="flex items-end gap-2"><textarea value={messageDraft} onChange={event => setMessageDraft(event.target.value)} rows={2} maxLength={1000} placeholder={ui.messagePlaceholder} className="min-h-[44px] flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs outline-none focus:border-indigo-500" /><button type="submit" disabled={!messageDraft.trim() || submitting} className="rounded-xl bg-indigo-600 p-3 text-white disabled:opacity-40" aria-label={ui.sendMessage}><Send className="h-4 w-4" /></button></form></div> : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">{isAr ? 'اختر مديراً لبدء محادثة.' : 'Choisissez un Directeur pour commencer.'}</div>}</section>;
+      const messages = communityFeatures.filter(feature => feature.kind === 'private_message' && (feature.actorId === user.id || feature.recipientId === user.id));
+      const conversation = recipient ? messages.filter(feature => (feature.actorId === user.id && feature.recipientId === recipient.id) || (feature.actorId === recipient.id && feature.recipientId === user.id)).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) : [];
+      const conversations = profiles.filter(profile => profile.id !== user.id).map(profile => {
+        const items = messages.filter(message => message.actorId === profile.id || message.recipientId === profile.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        return { profile, last: items[0], unread: items.filter(message => message.recipientId === user.id && message.payload?.read !== true).length };
+      }).filter(item => item.last).sort((a, b) => new Date(b.last.createdAt).getTime() - new Date(a.last.createdAt).getTime());
+      return <section className="mx-auto max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white md:grid md:grid-cols-[300px_1fr]">
+        <div className={`${recipient ? 'hidden md:block' : ''} border-slate-100 md:border-e`}><div className="flex items-center justify-between border-b border-slate-100 p-4"><h2 className="text-base font-bold text-slate-900">{ui.messages}</h2><button type="button" onClick={() => setActiveView('discover')} className="text-xs font-bold text-indigo-700">{isAr ? 'رسالة جديدة' : 'Nouveau message'}</button></div>{conversations.length ? conversations.map(({ profile, last, unread }) => <button type="button" key={profile.id} onClick={() => setMessageRecipientId(profile.id)} className={`flex w-full items-center gap-3 border-b border-slate-100 p-4 text-start hover:bg-slate-50 ${recipient?.id === profile.id ? 'bg-slate-50' : ''}`}><Avatar profile={profile} size="sm"/><span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-slate-800">{profile.nomCreche || profile.name}</span><span className="block truncate text-xs text-slate-500">{String(last.payload?.content || '')}</span></span>{unread > 0 && <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-xs text-white">{unread}</span>}</button>) : <p className="p-5 text-sm text-slate-500">{isAr ? 'لا توجد محادثات بعد.' : 'Aucune conversation pour le moment.'}</p>}</div>
+        {recipient ? <div className="flex min-h-[450px] min-w-0 flex-col"><div className="flex items-center gap-3 border-b border-slate-100 p-4"><button type="button" onClick={() => setMessageRecipientId(null)} className="text-xs font-bold text-indigo-700 md:hidden">{isAr ? 'رجوع' : 'Retour'}</button><Avatar profile={recipient} size="sm"/><div className="min-w-0"><p className="truncate text-sm font-bold text-slate-800">{recipient.nomCreche || recipient.name}</p><p className="truncate text-xs text-slate-500">{recipient.name}</p></div></div><div className="max-h-[450px] min-h-[300px] flex-1 space-y-2 overflow-y-auto p-4">{conversation.length ? conversation.map(message => <div key={message.id} className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${message.actorId === user.id ? 'ms-auto bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700'}`}><p className="whitespace-pre-wrap break-words">{String(message.payload?.content || '')}</p><p className={`mt-1 text-[10px] ${message.actorId === user.id ? 'text-indigo-100' : 'text-slate-400'}`}>{formatDate(message.createdAt, language)}</p></div>) : <p className="py-8 text-center text-xs text-slate-400">{isAr ? 'ابدأ المحادثة.' : 'Commencez la conversation.'}</p>}</div><form onSubmit={handleSendMessage} className="flex items-end gap-2 border-t border-slate-100 p-4"><textarea disabled={isCommunityReadOnly} value={messageDraft} onChange={event => setMessageDraft(event.target.value)} rows={1} maxLength={1000} placeholder={ui.messagePlaceholder} className="min-h-[44px] min-w-0 flex-1 resize-none rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-indigo-500"/><button type="submit" disabled={isCommunityReadOnly || !messageDraft.trim() || submitting} className="rounded-xl bg-indigo-600 p-3 text-white disabled:opacity-40" aria-label={ui.sendMessage}><Send className="h-4 w-4 rtl:rotate-180"/></button></form></div> : <div className="hidden items-center justify-center p-10 text-sm text-slate-400 md:flex">{isAr ? 'اختر محادثة' : 'Sélectionnez une conversation'}</div>}
+      </section>;
     }
     return null;
   };
 
   return (
     <div className="min-h-full min-w-0 overflow-x-hidden bg-slate-50 pb-14" dir={isAr ? 'rtl' : 'ltr'}>
-      <div className="mx-auto min-w-0 max-w-7xl px-3 py-4 sm:px-4 sm:py-5 md:px-6">
+      <div className="mx-auto min-w-0 max-w-7xl py-1">
         <AnimatePresence initial={false}>{showProfileEditor && renderProfileEditor()}</AnimatePresence>
         {isCommunityReadOnly && <div role="status" className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-bold text-amber-800">{ui.readOnly}</div>}
-        <div className="sticky top-0 z-20 mb-5 grid grid-cols-6 gap-1.5 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-md shadow-slate-900/5 backdrop-blur-md lg:flex lg:gap-2">
-          <button type="button" onClick={() => setActiveView('feed')} aria-label={ui.home} title={ui.home} className={`relative inline-flex min-w-0 items-center justify-center rounded-xl p-2.5 text-xs font-black ${activeView === 'feed' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'} lg:gap-2 lg:px-4 lg:py-2.5 lg:text-sm lg:whitespace-nowrap`}>
+        <div className="sticky top-0 z-20 mb-3 hidden grid-cols-7 gap-1 rounded-2xl lg:grid [@media(max-height:430px)]:grid border border-slate-200 bg-white/95 p-1.5 shadow-md shadow-slate-900/5 backdrop-blur-md lg:gap-1 xl:flex xl:flex-wrap xl:gap-1">
+          <button type="button" onClick={() => setActiveView('feed')} aria-label={ui.home} title={ui.home} className={`relative inline-flex min-w-0 items-center justify-center rounded-xl p-2.5 text-xs font-black ${activeView === 'feed' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'} lg:gap-1 lg:px-1 lg:whitespace-nowrap xl:gap-2 xl:px-3 xl:py-2.5 xl:text-sm`}>
             <House className="h-4 w-4 shrink-0" /><span className="hidden lg:inline">{ui.home}</span>
           </button>
-          <button type="button" onClick={() => { setActiveView('profile'); setSelectedProfileId(user.id); }} aria-label={ui.myProfile} title={ui.myProfile} className={`relative inline-flex min-w-0 items-center justify-center rounded-xl p-2.5 text-xs font-black ${activeView === 'profile' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'} lg:gap-2 lg:px-4 lg:py-2.5 lg:text-sm lg:whitespace-nowrap`}>
-            <UserRound className="h-4 w-4 shrink-0" /><span className="hidden lg:inline">{ui.myProfile}</span>
+          <button type="button" onClick={() => setActiveView('discover')} aria-label={ui.discover} title={ui.discover} className={`inline-flex min-w-0 items-center justify-center rounded-xl p-2.5 text-xs font-black lg:gap-1 lg:px-1 xl:gap-2 xl:px-3 xl:text-sm ${activeView === 'discover' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}><Search className="h-4 w-4 shrink-0"/><span className="hidden lg:inline">{ui.discover}</span></button>
+          <button type="button" onClick={() => { setActiveView('profile'); setSelectedProfileId(user.id); }} aria-label={ui.myProfile} title={ui.myProfile} className={`relative inline-flex min-w-0 items-center justify-center rounded-xl p-2.5 text-xs font-black ${activeView === 'profile' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'} lg:gap-1 lg:px-1 lg:whitespace-nowrap xl:gap-2 xl:px-3 xl:py-2.5 xl:text-sm`}>
+            <UserRound className="h-4 w-4 shrink-0" /><span className="hidden lg:inline">{isAr ? 'الملف' : 'Profil'}</span>
           </button>
-          <button type="button" onClick={() => setActiveView('reposts')} aria-label={ui.myReposts} title={ui.myReposts} className={`relative inline-flex min-w-0 items-center justify-center rounded-xl p-2.5 text-xs font-black ${activeView === 'reposts' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'} lg:gap-2 lg:px-4 lg:py-2.5 lg:text-sm lg:whitespace-nowrap`}>
-            <Repeat2 className="h-4 w-4 shrink-0" /><span className="hidden lg:inline">{ui.myReposts}</span>
+          <button type="button" onClick={() => setActiveView('reposts')} aria-label={ui.myReposts} title={ui.myReposts} className={`relative inline-flex min-w-0 items-center justify-center rounded-xl p-2.5 text-xs font-black ${activeView === 'reposts' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'} lg:gap-1 lg:px-1 lg:whitespace-nowrap xl:gap-2 xl:px-3 xl:py-2.5 xl:text-sm`}>
+            <Repeat2 className="h-4 w-4 shrink-0" /><span className="hidden xl:inline">{ui.myReposts}</span>
           </button>
-          <button type="button" onClick={() => setActiveView('saved')} aria-label={ui.saved} title={ui.saved} className={`relative inline-flex min-w-0 items-center justify-center rounded-xl p-2.5 text-xs font-black ${activeView === 'saved' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'} lg:gap-2 lg:px-4 lg:py-2.5 lg:text-sm lg:whitespace-nowrap`}>
+          <button type="button" onClick={() => setActiveView('saved')} aria-label={ui.saved} title={ui.saved} className={`relative inline-flex min-w-0 items-center justify-center rounded-xl p-2.5 text-xs font-black ${activeView === 'saved' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'} lg:gap-1 lg:px-1 lg:whitespace-nowrap xl:gap-2 xl:px-3 xl:py-2.5 xl:text-sm`}>
             <Bookmark className="h-4 w-4 shrink-0" /><span className="hidden lg:inline">{ui.saved}</span>
           </button>
-          <button type="button" onClick={() => setActiveView('notifications')} aria-label={ui.notifications} title={ui.notifications} className={`relative inline-flex min-w-0 items-center justify-center rounded-xl p-2.5 text-xs font-black ${activeView === 'notifications' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'} lg:gap-2 lg:px-4 lg:py-2.5 lg:text-sm lg:whitespace-nowrap`}>
-            <BellRing className="h-4 w-4 shrink-0" /><span className="hidden lg:inline">{ui.notifications}</span>{unreadSocialNotifications.length > 0 && <span className="absolute right-1 top-1 min-w-4 rounded-full bg-rose-500 px-1 text-center text-[9px] font-black leading-4 text-white lg:static lg:min-w-0 lg:px-1.5 lg:text-[10px]">{unreadSocialNotifications.length}</span>}
+          <button type="button" onClick={() => setActiveView('notifications')} aria-label={ui.notifications} title={ui.notifications} className={`relative inline-flex min-w-0 items-center justify-center rounded-xl p-2.5 text-xs font-black ${activeView === 'notifications' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'} lg:gap-1 lg:px-1 lg:whitespace-nowrap xl:gap-2 xl:px-3 xl:py-2.5 xl:text-sm`}>
+            <BellRing className="h-4 w-4 shrink-0" /><span className="hidden xl:inline">{ui.notifications}</span>{unreadSocialNotifications.length > 0 && <span className="absolute right-1 top-1 min-w-4 rounded-full bg-rose-500 px-1 text-center text-[9px] font-black leading-4 text-white xl:static xl:min-w-0 xl:px-1.5 xl:text-[10px]">{unreadSocialNotifications.length}</span>}
           </button>
-          <button type="button" onClick={() => setActiveView('messages')} aria-label={ui.messages} title={ui.messages} className={`relative inline-flex min-w-0 items-center justify-center rounded-xl p-2.5 text-xs font-black ${activeView === 'messages' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'} lg:gap-2 lg:px-4 lg:py-2.5 lg:text-sm lg:whitespace-nowrap`}>
-            <MessageCircle className="h-4 w-4 shrink-0" /><span className="hidden lg:inline">{ui.messages}</span>{communityFeatures.filter(feature => feature.kind === 'private_message' && feature.recipientId === user.id && feature.payload?.read !== true).length > 0 && <span className="absolute right-1 top-1 min-w-4 rounded-full bg-rose-500 px-1 text-center text-[9px] font-black leading-4 text-white lg:static lg:min-w-0 lg:px-1.5 lg:text-[10px]">{Math.min(99, communityFeatures.filter(feature => feature.kind === 'private_message' && feature.recipientId === user.id && feature.payload?.read !== true).length)}</span>}
+          <button type="button" onClick={() => setActiveView('messages')} aria-label={ui.messages} title={ui.messages} className={`relative inline-flex min-w-0 items-center justify-center rounded-xl p-2.5 text-xs font-black ${activeView === 'messages' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'} lg:gap-1 lg:px-1 lg:whitespace-nowrap xl:gap-2 xl:px-3 xl:py-2.5 xl:text-sm`}>
+            <MessageCircle className="h-4 w-4 shrink-0" /><span className="hidden lg:inline">{ui.messages}</span>{communityFeatures.filter(feature => feature.kind === 'private_message' && feature.recipientId === user.id && feature.payload?.read !== true).length > 0 && <span className="absolute right-1 top-1 min-w-4 rounded-full bg-rose-500 px-1 text-center text-[9px] font-black leading-4 text-white xl:static xl:min-w-0 xl:px-1.5 xl:text-[10px]">{Math.min(99, communityFeatures.filter(feature => feature.kind === 'private_message' && feature.recipientId === user.id && feature.payload?.read !== true).length)}</span>}
           </button>
-          <div className="ml-auto hidden items-center gap-2 px-3 text-xs font-semibold text-slate-400 lg:flex"><Users className="h-4 w-4" />{profiles.length} {isAr ? 'ملف ظاهر' : `profil${profiles.length > 1 ? 's' : ''} visibles`}</div>
+          <div className="ms-auto hidden items-center gap-2 px-3 text-xs font-semibold text-slate-400 2xl:flex"><Users className="h-4 w-4" />{profiles.length} {isAr ? 'ملف ظاهر' : `profil${profiles.length > 1 ? 's' : ''} visibles`}</div>
         </div>
 
-        {activeView === 'profile' && selectedProfile ? renderPublicProfile(selectedProfile) : activeView === 'saved' || activeView === 'notifications' || activeView === 'messages' ? renderSocialUtilityView() : (
-        <div className="grid min-w-0 gap-5 lg:grid-cols-[240px_minmax(0,640px)_280px] lg:items-start">
+        <div className="mb-3 flex items-center justify-end gap-2 lg:hidden [@media(max-height:430px)]:hidden">
+          <button type="button" onClick={() => setActiveView('reposts')} aria-label={ui.myReposts} title={ui.myReposts} className={`relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 ${activeView === 'reposts' ? 'bg-indigo-50 text-indigo-700' : 'bg-white text-slate-500'}`}><Repeat2 className="h-4 w-4" /></button>
+          <button type="button" onClick={() => setActiveView('saved')} aria-label={ui.saved} title={ui.saved} className={`relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 ${activeView === 'saved' ? 'bg-indigo-50 text-indigo-700' : 'bg-white text-slate-500'}`}><Bookmark className="h-4 w-4" /></button>
+          <button type="button" onClick={() => setActiveView('notifications')} aria-label={ui.notifications} title={ui.notifications} className={`relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 ${activeView === 'notifications' ? 'bg-indigo-50 text-indigo-700' : 'bg-white text-slate-500'}`}><BellRing className="h-4 w-4" />{unreadSocialNotifications.length > 0 && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-500" />}</button>
+        </div>
+        <nav aria-label={isAr ? 'التنقل في Rawdha Connect' : 'Navigation Rawdha Connect'} className="fixed inset-x-0 bottom-0 z-30 px-2.5 pb-[max(0.4rem,env(safe-area-inset-bottom,0px))] lg:hidden [@media(max-height:430px)]:hidden">
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-slate-50 via-slate-50/90 to-transparent" />
+          <div className="relative mx-auto grid max-w-md grid-cols-5 rounded-2xl border border-slate-200 bg-white px-1 py-1.5 shadow-[0_6px_24px_rgba(15,23,42,0.12)]">
+            {([
+              { key: 'feed', label: isAr ? 'الرئيسية' : 'Fil', icon: House, action: () => setActiveView('feed'), active: activeView === 'feed' && !showComposer },
+              { key: 'discover', label: ui.discover, icon: Search, action: () => setActiveView('discover'), active: activeView === 'discover' },
+              { key: 'publish', label: isAr ? 'نشر' : 'Publier', icon: Plus, action: () => { setActiveView('feed'); openComposer(); }, active: activeView === 'feed' && showComposer },
+              { key: 'messages', label: ui.messages, icon: MessageCircle, action: () => setActiveView('messages'), active: activeView === 'messages' },
+              { key: 'profile', label: isAr ? 'ملفي' : 'Profil', icon: UserRound, action: () => { setSelectedProfileId(user.id); setActiveView('profile'); }, active: activeView === 'profile' && selectedProfileId === user.id },
+            ] as const).map(item => <button key={item.key} type="button" onClick={item.action} disabled={item.key === 'publish' && isCommunityReadOnly} aria-label={item.label} aria-current={item.active ? 'page' : undefined} className={`relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1 text-[10px] font-semibold disabled:opacity-40 ${item.active ? 'text-indigo-700' : 'text-slate-500'}`}><span className={`flex h-8 w-8 items-center justify-center rounded-full ${item.key === 'publish' ? 'bg-indigo-600 text-white' : item.active ? 'bg-indigo-50' : ''}`}><item.icon className="h-4 w-4" /></span><span className="w-full truncate text-center">{item.label}</span>{item.key === 'messages' && communityFeatures.some(feature => feature.kind === 'private_message' && feature.recipientId === user.id && feature.payload?.read !== true) && <span className="absolute right-2 top-1 h-2 w-2 rounded-full bg-rose-500" />}</button>)}
+          </div>
+        </nav>
+
+        {activeView === 'profile' && selectedProfile ? renderPublicProfile(selectedProfile) : activeView === 'saved' || activeView === 'notifications' || activeView === 'messages' || activeView === 'discover' ? renderSocialUtilityView() : (
+        <div className="grid min-w-0 gap-3 lg:grid-cols-[190px_minmax(0,1fr)] lg:items-start xl:grid-cols-[200px_minmax(0,1fr)_220px]">
           <aside className="hidden space-y-4 lg:sticky lg:top-24 lg:block">
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="h-20 bg-gradient-to-br from-slate-950 via-indigo-900 to-violet-700" /><div className="px-4 pb-4"><div className="-mt-8"><Avatar profile={currentProfile} size="lg" /></div><h2 className="mt-3 flex min-w-0 flex-wrap items-center gap-2 break-words text-base font-black text-slate-900">{currentProfile.name}{currentProfile.estCertifie && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700"><Check className="h-3 w-3" />{currentProfile.isPlatform ? (isAr ? 'رسمي' : 'Officiel') : (isAr ? 'موثّقة' : 'Certifiée')}</span>}</h2><p className="mt-0.5 break-words text-xs font-semibold text-slate-500">{currentProfile.nomCreche}</p><p className="mt-3 line-clamp-3 text-xs leading-5 text-slate-500">{currentProfile.bio || ui.addPresentation}</p>{!isAdmin && <button type="button" disabled={isCommunityReadOnly} onClick={() => { setSelectedProfileId(user.id); setActiveView('profile'); setShowProfileEditor(true); }} className="mt-4 w-full rounded-xl border border-indigo-200 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50">{ui.myProfile}</button>}</div></div>
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="h-20 bg-slate-800" /><div className="px-4 pb-4"><div className="-mt-8"><Avatar profile={currentProfile} size="lg" /></div><h2 className="mt-3 flex min-w-0 flex-wrap items-center gap-2 break-words text-base font-black text-slate-900">{currentProfile.name}{currentProfile.estCertifie && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700"><Check className="h-3 w-3" />{currentProfile.isPlatform ? (isAr ? 'رسمي' : 'Officiel') : (isAr ? 'موثّقة' : 'Certifiée')}</span>}</h2><p className="mt-0.5 break-words text-xs font-semibold text-slate-500">{currentProfile.nomCreche}</p><p className="mt-3 line-clamp-3 text-xs leading-5 text-slate-500">{currentProfile.bio || ui.addPresentation}</p>{!isAdmin && <button type="button" disabled={isCommunityReadOnly} onClick={() => { setSelectedProfileId(user.id); setActiveView('profile'); setShowProfileEditor(true); }} className="mt-4 w-full rounded-xl border border-indigo-200 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50">{ui.myProfile}</button>}</div></div>
             <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 shadow-sm"><div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3"><div><p className="text-[11px] font-black uppercase tracking-wider text-emerald-700">{isAdmin ? (isAr ? 'حساب المنصة الرسمي' : 'Compte officiel de la plateforme') : (isAr ? 'شهادة Rawdha+' : 'Certification Rawdha+')}</p><p className="mt-1 text-sm font-black text-slate-900">{isAdmin ? (isAr ? 'Rawdha+ موثّق' : 'Rawdha+ certifié') : isCurrentUserCertified ? (isAr ? 'حساب موثّق' : 'Compte certifié') : `${Math.min(certificationChildrenCount, 30)} / 30 ${isAr ? 'طفلاً' : 'enfants'}`}</p></div><ShieldCheck className={`h-5 w-5 ${isCurrentUserCertified ? 'text-emerald-600' : 'text-slate-400'}`} /></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.min(100, (certificationChildrenCount / 30) * 100)}%` }} /></div><p className="mt-2 text-[11px] font-semibold leading-4 text-emerald-800">{isAdmin ? (isAr ? 'يظهر شعار Rawdha+ وصورة المنصة الرسميان على منشوراتك.' : 'Le logo officiel et l’identité de la plateforme apparaissent sur vos publications.') : isCurrentUserCertified ? (isAr ? 'شارة التوثيق ظاهرة على منشوراتك.' : 'Votre badge vérifié est visible sur vos publications.') : (isAr ? `أضف ${Math.max(0, 30 - certificationChildrenCount)} طفلاً مسجلاً للحصول على الشارة.` : `Ajoutez encore ${Math.max(0, 30 - certificationChildrenCount)} enfant${30 - certificationChildrenCount > 1 ? 's' : ''} enregistré${30 - certificationChildrenCount > 1 ? 's' : ''} pour débloquer le badge.`)}</p></div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"><p className="px-2 pb-2 text-[11px] font-black uppercase tracking-wider text-slate-400">{ui.explore}</p>{categories.map(category => <button type="button" key={category.value} onClick={() => { setActiveCategory(category.value); setActiveView('feed'); }} className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-black transition ${activeCategory === category.value && activeView === 'feed' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}><span className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${category.value === 'tous' ? 'bg-slate-400' : category.color.split(' ')[0].replace('bg-', 'bg-')}`} />{isAr ? category.ar : category.fr}</span><ChevronRight className="h-3.5 w-3.5 text-slate-300" /></button>)}</div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"><p className="px-2 pb-2 text-[11px] font-black uppercase tracking-wider text-slate-400">{ui.explore}</p>{categories.map(category => <button type="button" key={category.value} onClick={() => { setActiveCategory(category.value); setActiveView('feed'); }} className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-start text-xs font-black transition ${activeCategory === category.value && activeView === 'feed' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}><span className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${category.value === 'tous' ? 'bg-slate-400' : category.color.split(' ')[0].replace('bg-', 'bg-')}`} />{isAr ? category.ar : category.fr}</span><ChevronRight className="h-3.5 w-3.5 text-slate-300 rtl:rotate-180" /></button>)}</div>
           </aside>
 
-          <main className="order-first min-w-0 space-y-5 lg:order-none">
-            {showComposer ? renderComposer() : <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex min-w-0 items-center gap-3"><Avatar profile={currentProfile} size="md" /><button type="button" disabled={isCommunityReadOnly} onClick={openComposer} className="flex-1 rounded-xl bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60">{isAdmin ? ui.whatAdmin : ui.whatDirector}</button></div><div className="mt-3 grid grid-cols-3 gap-1.5 border-t border-slate-100 pt-3"><button type="button" disabled={isCommunityReadOnly} onClick={openComposer} className="inline-flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-center text-[10px] font-black leading-tight text-slate-500 transition hover:bg-slate-50 sm:flex-row sm:gap-2 sm:px-2 sm:text-xs"><ImageIcon className="h-4 w-4 text-emerald-500" />{ui.photoActivity}</button><button type="button" disabled={isCommunityReadOnly} onClick={openComposer} className="inline-flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-center text-[10px] font-black leading-tight text-slate-500 transition hover:bg-slate-50 sm:flex-row sm:gap-2 sm:px-2 sm:text-xs"><BriefcaseBusiness className="h-4 w-4 text-indigo-500" />{ui.opportunity}</button><button type="button" disabled={isCommunityReadOnly} onClick={openComposer} className="inline-flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-center text-[10px] font-black leading-tight text-slate-500 transition hover:bg-slate-50 sm:flex-row sm:gap-2 sm:px-2 sm:text-xs"><Tag className="h-4 w-4 text-amber-500" />{ui.announcement}</button></div></div>}
-            <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-black text-slate-900">{activeView === 'reposts' ? ui.myReposts : activeView === 'profile' ? ui.myProfile : ui.feed}</h2><p className="text-xs text-slate-500">{filteredPosts.length} {isAr ? 'منشور' : `publication${filteredPosts.length > 1 ? 's' : ''}`}</p></div><label className="inline-flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 focus-within:border-indigo-500"><Tag className="h-3.5 w-3.5 shrink-0 text-indigo-500" /><select value={activeCategory} onChange={event => setActiveCategory(event.target.value as CommunityPostCategory | 'tous')} aria-label={isAr ? 'تصفية حسب الفئة' : 'Filtrer par catégorie'} className="min-w-0 max-w-[190px] bg-transparent outline-none">{categories.map(category => <option key={category.value} value={category.value}>{isAr ? category.ar : category.fr}</option>)}</select></label></div>
-            {filteredPosts.length ? filteredPosts.map(renderPost) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center"><Sparkles className="mx-auto h-8 w-8 text-indigo-400" /><h3 className="mt-3 text-base font-black text-slate-800">{ui.noPosts}</h3><p className="mt-1 text-sm text-slate-500">{ui.noPostsDesc}</p><button type="button" disabled={isCommunityReadOnly} onClick={openComposer} className="mt-4 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50">{ui.createPost}</button></div>}
+          <main className="order-first min-w-0 space-y-3 lg:order-none">
+            {showComposer ? renderComposer() : <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="flex min-w-0 items-center gap-2"><Avatar profile={currentProfile} size="sm" /><button type="button" disabled={isCommunityReadOnly} onClick={openComposer} className="flex-1 rounded-xl bg-slate-50 px-3 py-2.5 text-start text-sm font-semibold text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60">{isAdmin ? ui.whatAdmin : ui.whatDirector}</button></div><div className="mt-2 grid grid-cols-3 gap-1 border-t border-slate-100 pt-2"><button type="button" disabled={isCommunityReadOnly} onClick={openComposer} className="inline-flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-center text-[10px] font-black leading-tight text-slate-500 transition hover:bg-slate-50 sm:flex-row sm:gap-2 sm:px-2 sm:text-xs"><ImageIcon className="h-4 w-4 text-emerald-500" />{ui.photoActivity}</button><button type="button" disabled={isCommunityReadOnly} onClick={openComposer} className="inline-flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-center text-[10px] font-black leading-tight text-slate-500 transition hover:bg-slate-50 sm:flex-row sm:gap-2 sm:px-2 sm:text-xs"><BriefcaseBusiness className="h-4 w-4 text-indigo-500" />{ui.opportunity}</button><button type="button" disabled={isCommunityReadOnly} onClick={openComposer} className="inline-flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-center text-[10px] font-black leading-tight text-slate-500 transition hover:bg-slate-50 sm:flex-row sm:gap-2 sm:px-2 sm:text-xs"><Tag className="h-4 w-4 text-amber-500" />{ui.announcement}</button></div></div>}
+            <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-base font-bold text-slate-900">{activeView === 'reposts' ? ui.myReposts : activeView === 'profile' ? ui.myProfile : ui.feed}</h2><p className="text-xs text-slate-500">{filteredPosts.length} {isAr ? 'منشور' : `publication${filteredPosts.length > 1 ? 's' : ''}`}</p></div><label className="inline-flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 focus-within:border-indigo-500"><Tag className="h-3.5 w-3.5 shrink-0 text-indigo-500" /><select value={activeCategory} onChange={event => setActiveCategory(event.target.value as CommunityPostCategory | 'tous')} aria-label={isAr ? 'تصفية حسب الفئة' : 'Filtrer par catégorie'} className="min-w-0 max-w-[190px] bg-transparent outline-none">{categories.map(category => <option key={category.value} value={category.value}>{isAr ? category.ar : category.fr}</option>)}</select></label></div>
+            <div className="grid gap-2 sm:grid-cols-2"><label className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5"><Search className="h-4 w-4 shrink-0 text-slate-400"/><input value={search} onChange={event => setSearch(event.target.value)} aria-label={isAr ? 'البحث في المنشورات' : 'Rechercher dans le fil'} placeholder={isAr ? 'البحث في المنشورات' : 'Rechercher dans le fil'} className="w-full min-w-0 bg-transparent text-sm outline-none"/></label><select value={locationFilter} onChange={event => setLocationFilter(event.target.value)} aria-label={isAr ? 'الموقع' : 'Localisation'} className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700"><option value="">{isAr ? 'كل المناطق' : 'Toutes les localisations'}</option>{Array.from(new Set<string>(communityPosts.map(post => post.ville || post.authorVille).filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b)).map(location => <option key={location} value={location}>{location}</option>)}</select></div>
+            {filteredPosts.length ? filteredPosts.map(renderPost) : <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center"><Sparkles className="mx-auto h-8 w-8 text-indigo-400" /><h3 className="mt-2 text-sm font-bold text-slate-800">{ui.noPosts}</h3><p className="mt-1 text-sm text-slate-500">{ui.noPostsDesc}</p><button type="button" disabled={isCommunityReadOnly} onClick={openComposer} className="mt-4 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50">{ui.createPost}</button></div>}
           </main>
 
-          <aside className="hidden space-y-4 lg:sticky lg:top-24 lg:block">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between gap-2"><h3 className="text-sm font-black text-slate-900">{ui.discover}</h3><Users className="h-4 w-4 text-indigo-500" /></div><label className="mt-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><Search className="h-3.5 w-3.5 shrink-0 text-slate-400" /><input value={profileSearch} onChange={event => setProfileSearch(event.target.value)} placeholder={ui.searchProfiles} className="min-w-0 w-full bg-transparent text-xs outline-none placeholder:text-slate-400" /></label><div className="mt-3 space-y-3">{filteredProfiles.filter(profile => profile.id !== user.id).slice(0, 6).map(profile => <div key={profile.id} className="flex min-w-0 items-center gap-2 rounded-xl p-2 hover:bg-slate-50"><button type="button" onClick={() => { setSelectedProfileId(profile.id); setActiveView('profile'); }} className="flex min-w-0 flex-1 items-center gap-3 text-left"><Avatar profile={profile} size="sm" /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-black text-slate-800">{profile.name}</span><span className="block truncate text-[11px] font-semibold text-slate-500">{profile.nomCreche || (isAr ? 'حضانة' : 'Crèche')}</span></span></button><button type="button" disabled={isCommunityReadOnly} onClick={() => runCommunityAction(() => handleToggleFollow(profile))} className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] font-black ${followingIds.has(profile.id) ? 'bg-indigo-50 text-indigo-700' : 'border border-slate-200 text-slate-600 hover:bg-indigo-50'}`} aria-label={`${followingIds.has(profile.id) ? ui.following : ui.follow} ${profile.name}`}>{followingIds.has(profile.id) ? <UserCheck className="h-3 w-3" /> : <UserPlus className="h-3 w-3" />}{followingIds.has(profile.id) ? ui.following : ui.follow}</button></div>)}{filteredProfiles.filter(profile => profile.id !== user.id).length === 0 && <p className="text-xs leading-5 text-slate-500">{ui.profilesEmpty}</p>}</div></div>
-            <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-700 p-5 text-white shadow-lg shadow-indigo-700/20"><ShieldCheck className="h-6 w-6" /><h3 className="mt-3 text-base font-black">{ui.verifiedNetwork}</h3><p className="mt-2 text-xs leading-5 text-indigo-100">{ui.verifiedNetworkDesc}</p></div>
+          <aside className="hidden space-y-4 xl:sticky xl:top-24 xl:block">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between gap-2"><h3 className="text-sm font-black text-slate-900">{ui.discover}</h3><Users className="h-4 w-4 text-indigo-500" /></div><label className="mt-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><Search className="h-3.5 w-3.5 shrink-0 text-slate-400" /><input value={profileSearch} onChange={event => setProfileSearch(event.target.value)} placeholder={ui.searchProfiles} className="min-w-0 w-full bg-transparent text-xs outline-none placeholder:text-slate-400" /></label><div className="mt-3 space-y-3">{filteredProfiles.filter(profile => profile.id !== user.id).slice(0, 6).map(profile => <div key={profile.id} className="flex min-w-0 items-center gap-2 rounded-xl p-2 hover:bg-slate-50"><button type="button" onClick={() => { setSelectedProfileId(profile.id); setActiveView('profile'); }} className="flex min-w-0 flex-1 items-center gap-3 text-start"><Avatar profile={profile} size="sm" /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-black text-slate-800">{profile.name}</span><span className="block truncate text-[11px] font-semibold text-slate-500">{profile.nomCreche || (isAr ? 'حضانة' : 'Crèche')}</span></span></button><button type="button" disabled={isCommunityReadOnly} onClick={() => runCommunityAction(() => handleToggleFollow(profile))} className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] font-black ${followingIds.has(profile.id) ? 'bg-indigo-50 text-indigo-700' : 'border border-slate-200 text-slate-600 hover:bg-indigo-50'}`} aria-label={`${followingIds.has(profile.id) ? ui.following : ui.follow} ${profile.name}`}>{followingIds.has(profile.id) ? <UserCheck className="h-3 w-3" /> : <UserPlus className="h-3 w-3" />}{followingIds.has(profile.id) ? ui.following : ui.follow}</button></div>)}{filteredProfiles.filter(profile => profile.id !== user.id).length === 0 && <p className="text-xs leading-5 text-slate-500">{ui.profilesEmpty}</p>}</div></div>
+            <div className="rounded-2xl bg-slate-800 p-5 text-white shadow-sm"><ShieldCheck className="h-6 w-6" /><h3 className="mt-3 text-base font-black">{ui.verifiedNetwork}</h3><p className="mt-2 text-xs leading-5 text-indigo-100">{ui.verifiedNetworkDesc}</p></div>
           </aside>
         </div>)}
       </div>

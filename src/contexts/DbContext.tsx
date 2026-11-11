@@ -1,12 +1,18 @@
+import { financeErrorKind, financeErrorMessage } from '../utils/financeError';
+import { offloadChildDocumentsToStorage } from '../utils/documentStorage';
+import { useLanguage } from './LanguageContext';
+import { attendanceErrorKind } from '../utils/attendanceError';
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Enfant, Presence, PresenceJournee, Paiement, Achat, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction, CommunityFeature, CommunityFeatureKind, AdminAuditLog, AdminAuditAction, AdminAuditTargetType, AdminFollowup, AdminFollowupChannel, AdminFollowupStatus, CommercialStage } from '../types';
+import { ChildHealthEvent, ChildHealthDraft, PickupAuthorization, PickupAuthorizationDraft, Enfant, Presence, PresenceJournee, Paiement, PaiementPatch, InvoicePeriodReview, InvoiceReviewAction, InvoiceReviewEvent, Achat, Personnel, Classe, Activite, Repas, UserAccount, DiscussionMessage, Avis, AppNotification, DemandeDirecteur, Signalement, InscriptionLink, DemandeAdmission, CommunityPost, CommunityComment, CommunityReaction, CommunityFeature, CommunityFeatureKind, AdminAuditLog, AdminAuditAction, AdminAuditTargetType, AdminFollowup, AdminFollowupChannel, AdminFollowupStatus, CommercialStage } from '../types';
 import { 
-  getCollectionData, 
+  getCollectionData,
+  getCollectionDataStrict,
   addCollectionDocument, 
   updateCollectionDocument, 
   deleteCollectionDocument,
   setCollectionDocument,
   callSupabaseRpc,
+  callSupabaseRpcWithTimeout,
   supabase
 } from '../supabase';
 import { useAuth } from './AuthContext';
@@ -233,6 +239,7 @@ interface DbContextType {
   adminAuditLogs: AdminAuditLog[];
   adminFollowups: AdminFollowup[];
   loading: boolean;
+  financialDataReady: boolean;
   refreshAll: () => Promise<void>;
 
   addNotification: (notif: Omit<AppNotification, 'id'>) => Promise<string>;
@@ -284,19 +291,30 @@ interface DbContextType {
   addEnfant: (enfant: Omit<Enfant, 'id'>) => Promise<string>;
   updateEnfant: (id: string, enfant: Partial<Enfant>) => Promise<void>;
   deleteEnfant: (id: string) => Promise<void>;
+  listChildHealthEvents: (childId: string) => Promise<ChildHealthEvent[]>;
+  addChildHealthEvent: (childId: string, draft: ChildHealthDraft) => Promise<ChildHealthEvent>;
+  listPickupAuthorizations: (childId: string) => Promise<PickupAuthorization[]>;
+  createPickupAuthorization: (childId: string, draft: PickupAuthorizationDraft) => Promise<PickupAuthorization>;
+  revokePickupAuthorization: (childId: string, id: string) => Promise<PickupAuthorization>;
 
   addClasse: (classe: Omit<Classe, 'id'>) => Promise<string>;
   updateClasse: (id: string, classe: Partial<Classe>) => Promise<void>;
   deleteClasse: (id: string) => Promise<void>;
 
   addPresence: (presence: Omit<Presence, 'id'>) => Promise<string>;
-  updatePresence: (id: string, presence: Partial<Presence>) => Promise<void>;
-  deletePresence: (id: string) => Promise<void>;
+  updatePresence: (id: string, presence: Partial<Presence>, expected?: Presence) => Promise<void>;
+  deletePresence: (id: string, expected?: Presence) => Promise<void>;
+  confirmPickupDeparture: (presence: Presence, authorizationId: string, departureTime: string) => Promise<void>;
   savePresenceJournee: (journee: Omit<PresenceJournee, 'id'> & { id?: string }) => Promise<string>;
 
-  addPaiement: (paiement: Omit<Paiement, 'id'>) => Promise<string>;
-  updatePaiement: (id: string, paiement: Partial<Paiement>) => Promise<void>;
+  addPaiement: (paiement: Omit<Paiement, 'id'> & { id?: string }) => Promise<string>;
+  updatePaiement: (id: string, paiement: PaiementPatch, expected: Paiement) => Promise<void>;
   deletePaiement: (id: string) => Promise<void>;
+  reviewInvoicePeriod: (expected: Paiement, key: string, reason: string) => Promise<Paiement>;
+  getInvoicePeriodReview: (id: string) => Promise<InvoicePeriodReview | null>;
+  invoiceReviewAction: (draft: InvoiceReviewAction) => Promise<Paiement>;
+  listInvoiceReviewEvents: (id: string) => Promise<InvoiceReviewEvent[]>;
+  checkInvoiceReminder: (invoice: Paiement, child: Enfant, phone?: string) => Promise<void>;
 
   addAchat: (achat: Omit<Achat, 'id' | 'crecheId' | 'createdBy' | 'createdAt' | 'updatedAt'>) => Promise<string>;
   updateAchat: (id: string, achat: Partial<Achat>) => Promise<void>;
@@ -315,11 +333,12 @@ interface DbContextType {
   deleteRepas: (id: string) => Promise<void>;
 }
 
-const DbContext = createContext<DbContextType | null>(null);
+export const DbContext = createContext<DbContextType | null>(null);
 
 export const DbProvider = ({ children }: { children: React.ReactNode }) => {
-  const { user, creche } = useAuth(); // Récupère l'utilisateur connecté + les paramètres de sa crèche (tarif, etc.)
+  const { user } = useAuth();
   const { showToast } = useToast();
+  const { language } = useLanguage();
   // ✅ FIX: message générique en cas d'échec d'écriture Supabase, pour ne plus jamais
   // avaler une erreur en silence (l'utilisateur croyait avoir sauvegardé pour rien).
   const notifyWriteError = (action: 'ajout' | 'modification' | 'suppression') => {
@@ -361,7 +380,16 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const [adminAuditLogs, setAdminAuditLogs] = useState<AdminAuditLog[]>([]);
   const [adminFollowups, setAdminFollowups] = useState<AdminFollowup[]>([]);
   const [loading, setLoading] = useState(true);
-  const autoInvoiceRanRef = React.useRef(false); // évite de relancer la génération auto plusieurs fois par session
+  const [financialState, setFinancialState] = useState<{ owner: string | undefined; ready: boolean }>({ owner: undefined, ready: false });
+  // A filtered/empty RLS response for an unapproved director is not a zero balance.
+  const financialDataReady = !!user && (user.role !== 'directeur' || user.approvalStatus === 'approved') && financialState.owner === user.id && financialState.ready;
+  const setFinancialDataReady = (ready: boolean) => setFinancialState({ owner: user?.id, ready });
+  const refreshSequence = React.useRef(0);
+  const financialWrites = React.useRef({ generation: 0, active: 0 });
+  const financialReadyRef = React.useRef(financialDataReady);
+  financialReadyRef.current = financialDataReady;
+  const currentUserId = React.useRef(user?.id);
+  currentUserId.current = user?.id;
 
   // ✅ FIX PERF (v2) : chargement en 2 vagues au lieu d'attendre les 10 tables d'un coup.
   //
@@ -375,6 +403,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   // regarder son dashboard, et se glissent dans l'appli dès qu'elles sont prêtes
   // (utile seulement s'il va sur les pages Classes / Activités / Repas / Messagerie).
   const refreshAll = async () => {
+    const request = ++refreshSequence.current;
+    const financialGeneration = financialWrites.current.generation;
+    setFinancialDataReady(false);
     // Ne lance jamais de requêtes RLS avec le rôle anon pendant l’écran de connexion.
     // Cela évite les 401 sur toutes les tables avant que Supabase Auth ait une session.
     if (!user) {
@@ -410,14 +441,16 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         user?.role === 'admin'
           ? getCollectionData<UserAccount>('comptes')
           : Promise.resolve([user] as UserAccount[]),
-        getCollectionData<Enfant>('enfants'),
+        getCollectionDataStrict<Enfant>('enfants').then(data => ({ data, ok: true as const })).catch(() => ({ data: [] as Enfant[], ok: false as const })),
         getCollectionData<Presence>('presences'),
         getCollectionData<PresenceJournee>('presence_journees'),
-        getCollectionData<Paiement>('paiements'),
+        getCollectionDataStrict<Paiement>('paiements').then(data => ({ data, ok: true as const })).catch(() => ({ data: [] as Paiement[], ok: false as const })),
         getCollectionData<Personnel>('personnel'),
         user?.role === 'admin' ? getCollectionData<DemandeDirecteur>('demandes_directeur') : Promise.resolve([] as DemandeDirecteur[]),
         user?.role === 'admin' ? getCollectionData<CrecheSettingsContact>('parametres') : Promise.resolve([] as CrecheSettingsContact[]),
       ]);
+
+      if (request !== refreshSequence.current) return;
 
       // ✅ FIX: Don't create hardcoded admin - security risk!
       if (user?.role === 'admin' && dbComptes.length === 0) {
@@ -431,10 +464,16 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       setComptes(user?.role === 'admin' ? hydrateAccountsWithCrechePhone(dbComptes, dbCrecheSettings) : dbComptes);
-      setEnfants(dbEnfants.filter(Boolean).map(normalizeEnfantData));
+      setEnfants(dbEnfants.data.filter(Boolean).map(normalizeEnfantData));
       setPresences(dbPresences);
       setPresenceJournees(dbPresenceJournees);
-      setPaiements(dbPaiements);
+      // A refresh that overlaps a write is not a reliable financial snapshot.
+      if (financialGeneration === financialWrites.current.generation && financialWrites.current.active === 0) {
+        setPaiements(dbPaiements.data);
+        setFinancialDataReady(dbEnfants.ok && dbPaiements.ok);
+      } else {
+        setFinancialDataReady(false);
+      }
       setPersonnel(dbPersonnel);
       setDemandesDirecteur(dbDemandesDirecteur);
 
@@ -462,6 +501,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         user?.role === 'admin' ? getCollectionData<AdminFollowup>('admin_followups') : Promise.resolve([] as AdminFollowup[]),
       ])
         .then(([dbClasses, dbActivites, dbRepas, dbAchats, dbMessages, dbAvis, dbSignalements, dbCommunityPosts, dbCommunityComments, dbCommunityReactions, dbCommunityFeatures, dbInscriptionLinks, dbDemandesAdmission, dbNotifications, dbAdminAuditLogs, dbAdminFollowups]) => {
+          if (request !== refreshSequence.current) return;
           setClasses(dbClasses);
           setActivites(dbActivites);
           setRepas(dbRepas);
@@ -484,7 +524,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
         });
     } catch (err) {
       console.error('Erreur de connexion à Supabase:', err);
-      setLoading(false);
+      if (request === refreshSequence.current) { setFinancialDataReady(false); setLoading(false); }
     }
   };
 
@@ -539,6 +579,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     }, 8 * 1000);
 
     return () => {
+      refreshSequence.current++;
       window.removeEventListener('focus', refreshWhenVisible);
       document.removeEventListener('visibilitychange', refreshWhenVisible);
       window.clearInterval(interval);
@@ -644,202 +685,325 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   // --- ENFANTS ---
   const addEnfant = async (enfant: Omit<Enfant, 'id'>) => {
     assertWriteAccess();
-    const tempId = (enfant as any).id || 'child_' + Date.now();
-    const cleanEnfant = normalizeEnfantData({ ...enfant, id: tempId } as Enfant);
-    setEnfants(prev => [...prev.filter(item => item.id !== tempId), cleanEnfant]);
-    try {
-      const persistedEnfant = normalizeEnfantData({ ...enfant, id: tempId });
-      const freshId = await addCollectionDocument('enfants', persistedEnfant);
-      setEnfants(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
-      return freshId;
-    } catch (err) {
-      setEnfants(prev => prev.filter(item => item.id !== tempId)); // rollback: retire l'ajout optimiste
-      notifyWriteError('ajout');
-      return tempId;
-    }
+    const id = (enfant as Partial<Enfant>).id || `child_${crypto.randomUUID()}`;
+    const documentsFichiers = enfant.documentsFichiers
+      ? await offloadChildDocumentsToStorage(user?.id || 'creche', id, enfant.documentsFichiers)
+      : enfant.documentsFichiers;
+    const record = normalizeEnfantData({ ...enfant, documentsFichiers, id });
+    const savedId = await addCollectionDocument('enfants', record);
+    setEnfants(prev => [...prev.filter(item => item.id !== savedId), { ...record, id: savedId }]);
+    return savedId;
   };
 
   const updateEnfant = async (id: string, data: Partial<Enfant>) => {
-    assertWriteAccess();
-    const previous = enfants.find(item => item.id === id);
-    const normalized = normalizeEnfantData({ ...previous, ...data, id });
-    const persistedData: Partial<Enfant> = {
-      ...data,
-      parents: normalized.parents,
-      contactsUrgence: normalized.contactsUrgence,
-      documentsRequis: normalized.documentsRequis,
-      documentsFichiers: normalized.documentsFichiers,
-    };
-    setEnfants(prev => prev.map(item => item.id === id ? normalized : item));
     try {
-      await updateCollectionDocument<Enfant>('enfants', id, persistedData);
+      assertWriteAccess();
+      const payload: Partial<Enfant> = data.documentsFichiers
+        ? {
+            ...data,
+            documentsFichiers: await offloadChildDocumentsToStorage(
+              user?.id || 'creche',
+              id,
+              data.documentsFichiers,
+            ),
+          }
+        : data;
+      // Ne pas réécrire les parents, contacts et documents non demandés : une
+      // copie locale périmée pourrait écraser des modifications d'un autre poste.
+      await updateCollectionDocument<Enfant>('enfants', id, payload);
+      setEnfants(prev => prev.map(item => item.id === id ? normalizeEnfantData({ ...item, ...payload, id }) : item));
     } catch (err) {
-      if (previous) setEnfants(prev => prev.map(item => item.id === id ? previous : item)); // rollback
       notifyWriteError('modification');
+      throw err;
     }
   };
 
-  const deleteEnfant = async (id: string) => {
+  // Temporary fail-closed protection: the old multi-request deletion could delete
+  // the child before related records and leave irrecoverable partial results.
+  // Permanent erasure requires a separately reviewed, atomic server workflow.
+  const deleteEnfant = async (_id: string) => {
+    throw new Error('child_permanent_deletion_temporarily_unavailable');
+  };
+
+  // Fetch sensitive health entries only when the child's journal is opened.
+  const listChildHealthEvents = async (childId: string): Promise<ChildHealthEvent[]> => {
+    const { data, error } = await supabase.rpc('rawdha_list_child_health_events', { p_child_id: childId });
+    if (error) throw error;
+    if (!Array.isArray(data)) throw new Error('invalid_health_response');
+    return data as ChildHealthEvent[];
+  };
+  const addChildHealthEvent = async (childId: string, draft: ChildHealthDraft): Promise<ChildHealthEvent> => {
     assertWriteAccess();
-    const previous = enfants.find(item => item.id === id);
-    setEnfants(prev => prev.filter(item => item.id !== id));
-    setPresences(prev => prev.filter(item => item.enfantId !== id));
-    setPaiements(prev => prev.filter(item => item.enfantId !== id));
-    try {
-      // L’état local peut être incomplet (par exemple après un chargement partiel).
-      // On relit donc les identifiants persistés avant de supprimer l’enfant afin
-      // de ne jamais laisser de présence ou de facture orpheline en base.
-      const [{ data: persistedPresences, error: presencesError }, { data: persistedPaiements, error: paiementsError }] = await Promise.all([
-        supabase.from('presences').select('id').filter('data->>enfantId', 'eq', id),
-        supabase.from('paiements').select('id').filter('data->>enfantId', 'eq', id),
-      ]);
-      if (presencesError) throw presencesError;
-      if (paiementsError) throw paiementsError;
+    const { data, error } = await supabase.rpc('rawdha_add_child_health_event', {
+      p_id: draft.id, p_child_id: childId, p_type: draft.type, p_date: draft.date,
+      p_time: draft.heure, p_details: draft.details, p_corrects_id: draft.correctsId,
+    });
+    if (error) throw error;
+    return data as ChildHealthEvent;
+  };
 
-      const presenceIds = new Set([
-        ...presences.filter(p => p.enfantId === id).map(p => p.id),
-        ...(persistedPresences || []).map(row => row.id),
-      ]);
-      const paiementIds = new Set([
-        ...paiements.filter(p => p.enfantId === id).map(p => p.id),
-        ...(persistedPaiements || []).map(row => row.id),
-      ]);
-
-      await deleteCollectionDocument('enfants', id);
-      for (const presenceId of presenceIds) await deleteCollectionDocument('presences', presenceId);
-      for (const paiementId of paiementIds) await deleteCollectionDocument('paiements', paiementId);
-    } catch (err) {
-      if (previous) setEnfants(prev => [...prev, previous]); // rollback: on ne peut pas fiablement restaurer présences/paiements liés, mais on prévient
-      notifyWriteError('suppression');
-    }
+  // Dedicated RPCs deliberately surface missing migration, permission and network errors.
+  const listPickupAuthorizations = async (childId: string): Promise<PickupAuthorization[]> => {
+    const { data, error } = await supabase.rpc('rawdha_list_pickup_authorizations', { p_child_id: childId });
+    if (error) throw error;
+    if (!Array.isArray(data)) throw new Error('invalid_pickup_response');
+    return data as PickupAuthorization[];
+  };
+  const createPickupAuthorization = async (childId: string, draft: PickupAuthorizationDraft): Promise<PickupAuthorization> => {
+    assertWriteAccess();
+    const { data, error } = await supabase.rpc('rawdha_write_pickup_authorization', {
+      p_action: 'create', p_child_id: childId, p_id: draft.id, p_nom: draft.nom,
+      p_lien: draft.lien, p_telephone: draft.telephone, p_reference: draft.referenceAutorisation,
+    });
+    if (error) throw error;
+    return data as PickupAuthorization;
+  };
+  const revokePickupAuthorization = async (childId: string, id: string): Promise<PickupAuthorization> => {
+    assertWriteAccess();
+    const { data, error } = await supabase.rpc('rawdha_write_pickup_authorization', { p_action: 'revoke', p_child_id: childId, p_id: id });
+    if (error) throw error;
+    return data as PickupAuthorization;
   };
 
   // --- CLASSES ---
+  // La migration de classes doit être appliquée avant ce client : ne jamais
+  // revenir aux écritures directes si le RPC est absent ou si l'accès est refusé.
+  const writeClasse = async (action: 'create' | 'update' | 'delete', id: string, patch: Partial<Classe> = {}, expectedChildren: string[] | null = null) => {
+    assertWriteAccess();
+    const { data, error } = await supabase.rpc('rawdha_write_classe', { p_action: action, p_id: id, p_patch: patch, p_expected_children: expectedChildren });
+    if (error) throw error;
+    return data as Classe;
+  };
   const addClasse = async (classe: Omit<Classe, 'id'>) => {
-    assertWriteAccess();
-    const tempId = (classe as any).id || 'class_' + Date.now();
-    const cleanClasse = { ...classe, id: tempId } as Classe;
-    setClasses(prev => [...prev.filter(item => item.id !== tempId), cleanClasse]);
+    const id = `class_${crypto.randomUUID()}`;
     try {
-      const freshId = await addCollectionDocument('classes', classe);
-      setClasses(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
-      return freshId;
+      const saved = await writeClasse('create', id, classe);
+      setClasses(prev => [...prev, saved]);
+      return id;
     } catch (err) {
-      setClasses(prev => prev.filter(item => item.id !== tempId));
       notifyWriteError('ajout');
-      return tempId;
+      throw err;
     }
   };
-
   const updateClasse = async (id: string, data: Partial<Classe>) => {
-    assertWriteAccess();
-    const previous = classes.find(item => item.id === id);
-    setClasses(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try { await updateCollectionDocument<Classe>('classes', id, data); } catch (err) {
-      if (previous) setClasses(prev => prev.map(item => item.id === id ? previous : item));
+    try {
+      const current = classes.find(item => item.id === id);
+      if ('childrenIds' in data && !current) throw new Error('class_not_found');
+      const expectedChildren = 'childrenIds' in data ? current?.childrenIds || [] : null;
+      const saved = await writeClasse('update', id, data, expectedChildren);
+      setClasses(prev => prev.map(item => item.id === id ? saved : item));
+    } catch (err) {
       notifyWriteError('modification');
+      throw err;
     }
   };
-
   const deleteClasse = async (id: string) => {
-    assertWriteAccess();
-    const previous = classes.find(item => item.id === id);
-    setClasses(prev => prev.filter(item => item.id !== id));
-    try { await deleteCollectionDocument('classes', id); } catch (err) {
-      if (previous) setClasses(prev => [...prev, previous]);
+    try {
+      await writeClasse('delete', id);
+      setClasses(prev => prev.filter(item => item.id !== id));
+    } catch (err) {
       notifyWriteError('suppression');
+      throw err;
     }
   };
 
   // --- PRESENCES ---
+  // Ces RPC exigent la migration correspondante : aucun retour silencieux aux
+  // écritures directes si elle est absente ou refuse la requête.
+  const notifyAttendanceError = (err: unknown, action: 'ajout' | 'modification' | 'suppression') => {
+    const kind = attendanceErrorKind(err);
+    if (kind === 'stale') showToast('Le pointage a changé ailleurs. Actualisez les données avant de réessayer.', 'error');
+    else if (kind === 'locked') showToast('La journée est validée. Rouvrez-la avant de modifier le pointage.', 'error');
+    else if (kind === 'incomplete') showToast('Des enfants ne sont pas encore pointés. Actualisez puis vérifiez la journée.', 'error');
+    else notifyWriteError(action);
+  };
+  const writePresence = async (action: 'create' | 'update' | 'delete', id: string, patch: Partial<Presence>, expected: Presence | null) => {
+    assertWriteAccess();
+    const { data, error } = await supabase.rpc('rawdha_write_presence', { p_action: action, p_id: id, p_patch: patch, p_expected: expected });
+    if (error) throw error;
+    return data as Presence;
+  };
   const addPresence = async (presence: Omit<Presence, 'id'>) => {
-    assertWriteAccess();
-    const tempId = (presence as any).id || 'pres_' + Date.now();
-    const cleanPresence = { ...presence, id: tempId } as Presence;
-    setPresences(prev => [...prev.filter(item => item.id !== tempId), cleanPresence]);
     try {
-      const freshId = await addCollectionDocument('presences', presence);
-      setPresences(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
-      return freshId;
-    } catch (err) {
-      setPresences(prev => prev.filter(item => item.id !== tempId));
-      notifyWriteError('ajout');
-      return tempId;
-    }
-  };
-
-  const updatePresence = async (id: string, data: Partial<Presence>) => {
-    assertWriteAccess();
-    const previous = presences.find(item => item.id === id);
-    setPresences(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try { await updateCollectionDocument<Presence>('presences', id, data); } catch (err) {
-      if (previous) setPresences(prev => prev.map(item => item.id === id ? previous : item));
-      notifyWriteError('modification');
-    }
-  };
-
-  const deletePresence = async (id: string) => {
-    assertWriteAccess();
-    const previous = presences.find(item => item.id === id);
-    setPresences(prev => prev.filter(item => item.id !== id));
-    try { await deleteCollectionDocument('presences', id); } catch (err) {
-      if (previous) setPresences(prev => [...prev, previous]);
-      notifyWriteError('suppression');
-    }
-  };
-
-  const savePresenceJournee = async (journee: Omit<PresenceJournee, 'id'> & {    assertWriteAccess();
- id?: string }) => {
-    const id = journee.id || `presence_day_${journee.crecheId}_${journee.date}`;
-    const record = { ...journee, id } as PresenceJournee;
-    const previous = presenceJournees.find(item => item.id === id);
-    setPresenceJournees(prev => [...prev.filter(item => item.id !== id), record]);
-    try {
-      await setCollectionDocument<PresenceJournee>('presence_journees', id, record);
+      const id = `pres_${crypto.randomUUID()}`;
+      const saved = await writePresence('create', id, presence, null);
+      setPresences(prev => [...prev.filter(item => item.id !== id), saved]);
       return id;
     } catch (err) {
-      setPresenceJournees(prev => previous
-        ? [...prev.filter(item => item.id !== id), previous]
-        : prev.filter(item => item.id !== id));
-      notifyWriteError('modification');
-      return id;
+      notifyAttendanceError(err, 'ajout');
+      throw err;
+    }
+  };
+  const updatePresence = async (id: string, data: Partial<Presence>, expected?: Presence) => {
+    try {
+      const current = expected || presences.find(item => item.id === id);
+      if (!current || current.id !== id) throw new Error('attendance_not_found');
+      const saved = await writePresence('update', id, data, current);
+      setPresences(prev => prev.map(item => item.id === id ? saved : item));
+    } catch (err) {
+      notifyAttendanceError(err, 'modification');
+      throw err;
+    }
+  };
+  const confirmPickupDeparture = async (presence: Presence, authorizationId: string, departureTime: string) => {
+    try {
+      assertWriteAccess();
+      const { data, error } = await supabase.rpc('rawdha_confirm_pickup_departure', {
+        p_presence_id: presence.id, p_expected: presence, p_authorization_id: authorizationId,
+        p_departure_time: departureTime, p_identity_checked: true,
+      });
+      if (error) throw error;
+      const saved = data as Presence;
+      setPresences(prev => prev.map(item => item.id === presence.id ? saved : item));
+    } catch (err) {
+      const message = err && typeof err === 'object' && 'message' in err ? String(err.message) : '';
+      if (message.includes('pickup_authorization_inactive')) showToast('Autorisation introuvable ou révoquée. Actualisez le registre et vérifiez avant la remise.', 'error');
+      else if (message.includes('attendance_changed') || message.includes('attendance_not_found')) showToast('La présence a changé. Actualisez les données avant de réessayer.', 'error');
+      else showToast('Départ non confirmé. Actualisez et vérifiez le registre et la présence avant de réessayer.', 'error');
+      throw err;
+    }
+  };
+  const deletePresence = async (id: string, expected?: Presence) => {
+    try {
+      const current = expected || presences.find(item => item.id === id);
+      if (!current || current.id !== id) throw new Error('attendance_not_found');
+      await writePresence('delete', id, {}, current);
+      setPresences(prev => prev.filter(item => item.id !== id));
+    } catch (err) {
+      notifyAttendanceError(err, 'suppression');
+      throw err;
+    }
+  };
+  const savePresenceJournee = async (journee: Omit<PresenceJournee, 'id'> & { id?: string }) => {
+    try {
+      assertWriteAccess();
+      const expected = presenceJournees.find(item => item.crecheId === journee.crecheId && item.date === journee.date) || null;
+      const { data, error } = await supabase.rpc('rawdha_write_attendance_day', {
+        p_creche_id: journee.crecheId, p_date: journee.date, p_status: journee.statut, p_expected: expected,
+      });
+      if (error) throw error;
+      const saved = data as PresenceJournee;
+      setPresenceJournees(prev => [...prev.filter(item => item.id !== saved.id), saved]);
+      return saved.id;
+    } catch (err) {
+      notifyAttendanceError(err, 'modification');
+      throw err;
     }
   };
 
   // --- PAIEMENTS ---
-  const addPaiement = async (paiement: Omit<Paiement, 'id'>) => {
-    assertWriteAccess();
-    const tempId = (paiement as any).id || 'pay_' + Date.now();
-    const cleanPaiement = { ...paiement, id: tempId } as Paiement;
-    setPaiements(prev => [...prev.filter(item => item.id !== tempId), cleanPaiement]);
+  // No fallback to direct writes: the matching staged migration is required.
+  const addPaiement = async (paiement: Omit<Paiement, 'id'> & { id?: string }) => {
+    let started = false;
     try {
-      const freshId = await addCollectionDocument('paiements', paiement);
-      setPaiements(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
-      return freshId;
+      assertWriteAccess();
+      if (!financialDataReady) throw new Error('financial_data_unavailable');
+      started = true; financialWrites.current.active++; financialWrites.current.generation++;
+      const id = paiement.id || `pay_${crypto.randomUUID()}`;
+      const { id: _id, ...patch } = paiement;
+      const { data, error } = await supabase.rpc('rawdha_write_invoice', { p_action:'create', p_id:id, p_patch:patch, p_expected:null });
+      if (error) throw error;
+      if (!data || data.id !== id) throw new Error('finance_unconfirmed_response');
+      if (currentUserId.current === user?.id) setPaiements(prev => [...prev.filter(item => item.id !== id), data as Paiement]);
+      return id;
     } catch (err) {
-      setPaiements(prev => prev.filter(item => item.id !== tempId));
-      notifyWriteError('ajout');
-      return tempId;
-    }
+      if (financeErrorKind(err) === 'unknown' || financeErrorKind(err) === 'changed' || financeErrorKind(err) === 'blocked') setFinancialDataReady(false);
+      showToast(financeErrorMessage(err, language === 'ar'), 'error');
+      throw err;
+    } finally { if (started) { financialWrites.current.active--; financialWrites.current.generation++; } }
+  };
+  const updatePaiement = async (id: string, patch: PaiementPatch, expected: Paiement) => {
+    let started = false;
+    try {
+      assertWriteAccess();
+      if (!financialDataReady || !expected || expected.id !== id) throw new Error('financial_data_unavailable');
+      started = true; financialWrites.current.active++; financialWrites.current.generation++;
+      const { data, error } = await supabase.rpc('rawdha_write_invoice', { p_action:'update', p_id:id, p_patch:patch, p_expected:expected });
+      if (error) throw error;
+      if (!data || data.id !== id) throw new Error('finance_unconfirmed_response');
+      if (currentUserId.current === user?.id) setPaiements(prev => prev.map(item => item.id === id ? data as Paiement : item));
+    } catch (err) {
+      if (financeErrorKind(err) === 'unknown' || financeErrorKind(err) === 'changed' || financeErrorKind(err) === 'blocked') setFinancialDataReady(false);
+      showToast(financeErrorMessage(err, language === 'ar'), 'error');
+      throw err;
+    } finally { if (started) { financialWrites.current.active--; financialWrites.current.generation++; } }
+  };
+  const deletePaiement = async (_id: string) => {
+    throw new Error('finance_deletion_paused');
   };
 
-  const updatePaiement = async (id: string, data: Partial<Paiement>) => {
-    assertWriteAccess();
-    const previous = paiements.find(item => item.id === id);
-    setPaiements(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
-    try { await updateCollectionDocument<Paiement>('paiements', id, data); } catch (err) {
-      if (previous) setPaiements(prev => prev.map(item => item.id === id ? previous : item));
-      notifyWriteError('modification');
-    }
+  const reviewInvoicePeriod = async (expected: Paiement, key: string, reason: string) => {
+    let started = false;
+    try {
+      assertWriteAccess();
+      if (!financialDataReady || !expected?.id) throw new Error('financial_data_unavailable');
+      started = true; financialWrites.current.active++; financialWrites.current.generation++;
+      const { data, error } = await supabase.rpc('rawdha_review_invoice_period', {
+        p_invoice_id: expected.id, p_expected: expected, p_period_key: key, p_reason: reason.trim(), p_confirmed: true,
+      });
+      if (error) throw error;
+      if (!data || data.id !== expected.id || data.periodeCle !== key) throw new Error('finance_unconfirmed_response');
+      if (currentUserId.current === user?.id) setPaiements(prev => prev.map(item => item.id === expected.id ? data as Paiement : item));
+      return data as Paiement;
+    } catch (err) {
+      if (financeErrorKind(err) === 'unknown' || financeErrorKind(err) === 'changed' || financeErrorKind(err) === 'blocked') { setFinancialDataReady(false); showToast(financeErrorMessage(err, language === 'ar'), 'error'); }
+      throw err;
+    } finally { if (started) { financialWrites.current.active--; financialWrites.current.generation++; } }
+  };
+  const getInvoicePeriodReview = async (id: string) => {
+    const { data, error } = await callSupabaseRpc<InvoicePeriodReview>('rawdha_get_invoice_period_review', { p_invoice_id: id });
+    if (error) throw error;
+    return data;
   };
 
-  const deletePaiement = async (id: string) => {
-    assertWriteAccess();
-    const previous = paiements.find(item => item.id === id);
-    setPaiements(prev => prev.filter(item => item.id !== id));
-    try { await deleteCollectionDocument('paiements', id); } catch (err) {
-      if (previous) setPaiements(prev => [...prev, previous]);
-      notifyWriteError('suppression');
+  const invoiceReviewAction = async (draft: InvoiceReviewAction) => {
+    let started = false;
+    try {
+      assertWriteAccess();
+      if (!financialDataReady || !draft.expected?.id) throw new Error('financial_data_unavailable');
+      started = true; financialWrites.current.active++; financialWrites.current.generation++;
+      const { data, error } = await supabase.rpc('rawdha_invoice_review_action', {
+        p_request_id: draft.requestId, p_action: draft.action, p_invoice_id: draft.expected.id, p_expected: draft.expected,
+        p_period_key: draft.periodKey || null, p_target_invoice_id: draft.target?.id || null,
+        p_target_expected: draft.target || null, p_reason: draft.reason.trim(), p_confirmed: true,
+      });
+      if (error) throw error;
+      if (!data || data.id !== draft.expected.id) throw new Error('finance_unconfirmed_response');
+      if (currentUserId.current === user?.id) setPaiements(prev => prev.map(item => item.id === draft.expected.id ? data as Paiement : item));
+      return data as Paiement;
+    } catch (err) {
+      if (financeErrorKind(err) === 'unknown' || financeErrorKind(err) === 'changed' || financeErrorKind(err) === 'blocked') { setFinancialDataReady(false); showToast(financeErrorMessage(err, language === 'ar'), 'error'); }
+      throw err;
+    } finally { if (started) { financialWrites.current.active--; financialWrites.current.generation++; } }
+  };
+  const listInvoiceReviewEvents = async (id: string) => {
+    const { data, error } = await callSupabaseRpc<InvoiceReviewEvent[]>('rawdha_list_invoice_review_events', { p_invoice_id: id });
+    if (error) throw error;
+    if (!Array.isArray(data)) throw new Error('finance_invalid_history_response');
+    return data;
+  };
+
+  // Point-in-time server check only. It cannot reserve the invoice or recall
+  // a message after it leaves the app.
+  const checkInvoiceReminder = async (invoice: Paiement, child: Enfant, phone?: string) => {
+    const generation = financialWrites.current.generation;
+    const refresh = refreshSequence.current;
+    const owner = user?.id;
+    try {
+      if (!owner || !financialDataReady || financialWrites.current.active > 0 || !invoice?.id || invoice.enfantId !== child?.id) throw new Error('finance_changed');
+      const { data, error } = await callSupabaseRpcWithTimeout<boolean>('rawdha_check_invoice_reminder', {
+        p_invoice_id: invoice.id, p_expected_invoice: invoice, p_expected_first_name: child.prenom,
+        p_expected_last_name: child.nom, p_expected_phone: phone || null,
+      });
+      if (error) throw error;
+      if (data !== true || currentUserId.current !== owner || !financialReadyRef.current || refreshSequence.current !== refresh
+        || financialWrites.current.active > 0 || financialWrites.current.generation !== generation) throw new Error('finance_changed');
+    } catch (err) {
+      if (currentUserId.current === owner) {
+        setFinancialDataReady(false);
+        showToast(language === 'ar' ? 'تعذر تأكيد بيانات التذكير. أعد التحميل وتحقق من الفاتورة والوثائق.' : 'Impossible de confirmer les données du rappel. Rechargez et vérifiez la facture et les justificatifs.', 'error');
+      }
+      throw err;
     }
   };
 
@@ -914,7 +1078,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     } catch (err) {
       setPersonnel(prev => prev.filter(item => item.id !== tempId));
       notifyWriteError('ajout');
-      return tempId;
+      throw err;
     }
   };
 
@@ -951,7 +1115,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     } catch (err) {
       setActivites(prev => prev.filter(item => item.id !== tempId));
       notifyWriteError('ajout');
-      return tempId;
+      throw err;
     }
   };
 
@@ -977,18 +1141,14 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   // --- REPAS ---
   const addRepas = async (meal: Omit<Repas, 'id'>) => {
-    assertWriteAccess();
-    const tempId = (meal as any).id || 'meal_' + Date.now();
-    const cleanMeal = { ...meal, id: tempId } as Repas;
-    setRepas(prev => [...prev.filter(item => item.id !== tempId), cleanMeal]);
     try {
-      const freshId = await addCollectionDocument('repas', meal);
-      setRepas(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
-      return freshId;
+      assertWriteAccess();
+      const id = await addCollectionDocument('repas', meal);
+      setRepas(prev => [...prev.filter(item => item.id !== id), { ...meal, id }]);
+      return id;
     } catch (err) {
-      setRepas(prev => prev.filter(item => item.id !== tempId));
-      notifyWriteError('ajout');
-      return tempId;
+      showToast('Enregistrement non confirmé. Actualisez et vérifiez le menu avant de réessayer.', 'error');
+      throw err;
     }
   };
 
@@ -1174,8 +1334,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       return freshId;
     } catch (err) {
       setMessages(prev => prev.filter(item => item.id !== tempId));
-      notifyWriteError('ajout');
-      return tempId;
+      throw err;
     }
   };
 
@@ -1211,8 +1370,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       return freshId;
     } catch (err) {
       setAvis(prev => prev.filter(item => item.id !== tempId));
-      notifyWriteError('ajout');
-      return tempId;
+      throw err;
     }
   };
 
@@ -1617,6 +1775,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     } catch (err) {
       setNotifications(prev => prev.map(n => n.id === id ? target : n));
       console.error('Erreur marquage notification comme lue:', err);
+      showToast(language === 'ar' ? 'لم يتأكد تسجيل القراءة. تحقق من الإعلان قبل المحاولة مجدداً.' : 'Lecture non confirmée. Vérifiez cette annonce avant de réessayer.', 'error');
     }
   };
 
@@ -1628,69 +1787,12 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       await deleteCollectionDocument('notifications', id);
     } catch (err) {
       if (previous) setNotifications(prev => [previous, ...prev]);
-      notifyWriteError('suppression');
+      throw err;
     }
   };
 
-  // --- GÉNÉRATION AUTOMATIQUE DES FACTURES MENSUELLES ---
-  // Pour chaque enfant ayant un "jourEcheanceMensuel" défini (Paramètres enfant),
-  // dès que ce jour est atteint dans le mois en cours, on génère automatiquement
-  // une facture "En attente" si elle n'existe pas déjà pour ce mois. La notification
-  // de paiement correspondante reste visible (dans la cloche du directeur) tant que
-  // le statut de cette facture n'est pas passé à "Payé" — pas besoin de la stocker
-  // séparément, elle est directement dérivée de la liste des paiements.
-  const MOIS_FR = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
-
-  useEffect(() => {
-    if (autoInvoiceRanRef.current) return; // une seule fois par session, pour éviter les doublons
-    if (user?.role !== 'directeur') return;
-    if (user.approvalStatus === 'pending') return;
-    if (enfants.length === 0) return; // attend que les enfants (Vague 1) soient chargés
-
-    const today = new Date();
-    const currentMoisConcerne = `${MOIS_FR[today.getMonth()]} ${today.getFullYear()}`;
-
-    // ✅ FIX: nombre de jours du mois en cours, pour "capper" l'échéance des enfants dont le
-    // jourEcheanceMensuel est 29/30/31. Avant ce fix, un enfant avec échéance = 31 ne déclenchait
-    // JAMAIS la facture auto pendant les mois de moins de 31 jours (février, avril, juin...) car
-    // today.getDate() n'atteint jamais 31 dans ces mois-là -> facture silencieusement jamais générée.
-    const daysInCurrentMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-
-    const enfantsDuDirecteur = enfants.filter(e => e.crecheId === user.id && e.statut === 'Actif');
-    const aGenerer = enfantsDuDirecteur.filter(enfant => {
-      if (!enfant.jourEcheanceMensuel) return false;
-      const echeanceEffective = Math.min(enfant.jourEcheanceMensuel, daysInCurrentMonth);
-      if (today.getDate() < echeanceEffective) return false; // échéance pas encore atteinte ce mois-ci
-      const dejaExistant = paiements.some(p => p.enfantId === enfant.id && p.moisConcerne === currentMoisConcerne);
-      return !dejaExistant;
-    });
-
-    if (aGenerer.length === 0) {
-      autoInvoiceRanRef.current = true;
-      return;
-    }
-
-    autoInvoiceRanRef.current = true; // on marque tout de suite pour ne pas relancer en double pendant les awaits
-    (async () => {
-      for (const enfant of aGenerer) {
-        try {
-          // ✅ FIX: même correctif que ci-dessus appliqué à la date d'échéance stockée sur la facture —
-          // sinon "31" en avril (30 jours) débordait silencieusement sur le 1er mai.
-          const echeanceEffective = Math.min(enfant.jourEcheanceMensuel!, daysInCurrentMonth);
-          await addPaiement({
-            enfantId: enfant.id,
-            montant: creche?.tuitionFeeRate || 3500,
-            statut: 'En attente',
-            moisConcerne: currentMoisConcerne,
-            dateEcheance: new Date(today.getFullYear(), today.getMonth(), echeanceEffective).toISOString().split('T')[0],
-            autoGenere: true,
-          });
-        } catch (err) {
-          console.error(`Erreur génération auto facture pour ${enfant.prenom} ${enfant.nom}:`, err);
-        }
-      }
-    })();
-  }, [enfants, paiements, user, creche]);
+  // Automatic monthly invoices are paused locally: a browser-only existence
+  // check cannot prevent duplicate invoices across devices or failed reads.
 
   return (
     <DbContext.Provider value={{
@@ -1719,6 +1821,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       adminAuditLogs,
       adminFollowups,
       loading,
+      financialDataReady,
       refreshAll,
       addMessage,
       updateMessage,
@@ -1762,16 +1865,27 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       addEnfant,
       updateEnfant,
       deleteEnfant,
+      listChildHealthEvents,
+      addChildHealthEvent,
+      listPickupAuthorizations,
+      createPickupAuthorization,
+      revokePickupAuthorization,
       addClasse,
       updateClasse,
       deleteClasse,
       addPresence,
       updatePresence,
+      confirmPickupDeparture,
       deletePresence,
       savePresenceJournee,
       addPaiement,
       updatePaiement,
       deletePaiement,
+      reviewInvoicePeriod,
+      getInvoicePeriodReview,
+      invoiceReviewAction,
+      listInvoiceReviewEvents,
+      checkInvoiceReminder,
       addAchat,
       updateAchat,
       deleteAchat,

@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { departureNeedsRecheck } from '../utils/departure';
+import { useDeferredValue, useState, useMemo, useRef } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -17,15 +18,31 @@ import {
   Calendar,
   Layers,
   ArrowLeftRight,
+  BookHeart,
   MessageCircle,
-  Send
+  RefreshCw,
+  Send,
+  WifiOff,
+  Bell,
+  BellOff,
+  LogOut,
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
-import { Presence } from '../types';
+import { Enfant, Presence } from '../types';
+import { presenceFormValues, validatePresenceDetails } from '../utils/presence';
+import { attendanceChildren, groupAttendanceChildren } from '../utils/attendanceGroups';
+import { useOfflineAttendanceQueue } from '../utils/offlineAttendanceQueue';
+import ParentDailyReportModal from './ParentDailyReportModal';
+import { useWorkspaceProfile } from '../contexts/WorkspaceProfileContext';
+import {
+  dispatchAutomaticAttendancePush,
+  isAutoAttendancePushEnabled,
+  setAutoAttendancePushEnabled,
+} from '../utils/parentPortal';
 import { motion, AnimatePresence } from 'motion/react';
 
 const normalizeAlgerianWhatsApp = (raw?: string) => {
@@ -48,6 +65,8 @@ export default function PresencesPage() {
     presences: allDbPresences, 
     enfants: allEnfantsData, 
     classes: classesData,
+    repas: repasData = [],
+    activites: activitesData = [],
     addPresence,
     updatePresence,
     deletePresence,
@@ -55,23 +74,57 @@ export default function PresencesPage() {
     savePresenceJournee
   } = useDb();
   
-  const { user } = useAuth();
+  const { user, creche } = useAuth();
+  const { hasPagePermission } = useWorkspaceProfile();
+  const canPoint = hasPagePermission('presences', 'point');
+  const canDailyReport = hasPagePermission('presences', 'daily_report');
+  const canValidateDay = hasPagePermission('presences', 'validate_day');
   const isDirecteur = user?.role === 'directeur';
+  const [dailyReportChild, setDailyReportChild] = useState<Enfant | null>(null);
+
+  const {
+    queue: offlineQueue,
+    isOffline,
+    isSyncing,
+    enqueueAttendance,
+    flushQueue,
+  } = useOfflineAttendanceQueue({
+    crecheId: user?.id,
+    addPresence,
+    updatePresence,
+    onSynced: (count) => {
+      showToast(
+        isArabic
+          ? `تمت مزامنة ${count} تسجيل حضور مع الخادم.`
+          : `${count} pointage(s) hors-ligne synchronisé(s) avec succès.`,
+        'success'
+      );
+    },
+  });
   
   // Filtrer les enfants de la crèche courante
   const enfantsData = isDirecteur ? allEnfantsData.filter(e => e.crecheId === user!.id) : allEnfantsData;
   const enfantIdsVisibles = new Set(enfantsData.map(e => e.id));
   const dbPresences = isDirecteur ? allDbPresences.filter(p => enfantIdsVisibles.has(p.enfantId)) : allDbPresences;
 
-  const presences: Presence[] = dbPresences.map((p: any) => ({
-    ...p,
-    heureArrivee: p.heureArrivee || (p.statut === 'Présent' ? '08:30' : undefined),
-    heureDepart: p.heureDepart || (p.statut === 'Présent' ? '16:30' : undefined),
-    temperature: p.temperature || (p.statut === 'Présent' ? '36.6' : undefined),
-    repas: p.repas || (p.statut === 'Présent' ? 'Tout' : undefined),
-    humeur: p.humeur || (p.statut === 'Présent' ? 'Souriant' : undefined),
-    motifAbsence: p.motifAbsence || undefined
-  }));
+  // Fusion optimiste de la file hors-ligne avec les pointages enregistrés
+  const presences: Presence[] = useMemo(() => {
+    if (offlineQueue.length === 0) return dbPresences;
+    const merged = [...dbPresences];
+    for (const item of offlineQueue) {
+      if (!enfantIdsVisibles.has(item.payload.enfantId)) continue;
+      const idx = merged.findIndex(
+        p => p.enfantId === item.payload.enfantId && p.date === item.payload.date
+      );
+      const optimistic: Presence = {
+        id: item.existingId || item.queueId,
+        ...item.payload,
+      };
+      if (idx >= 0) merged[idx] = optimistic;
+      else merged.push(optimistic);
+    }
+    return merged;
+  }, [dbPresences, enfantIdsVisibles, offlineQueue]);
 
   // Gestion des États (Tabs)
   const [activeTab, setActiveTab] = useState<'pointing' | 'history'>('pointing');
@@ -82,13 +135,23 @@ export default function PresencesPage() {
   };
   const [selectedDate, setSelectedDate] = useState<string>(getLocalDate);
   const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'todo' | 'present' | 'absent'>('all');
+  const [expandAllClasses, setExpandAllClasses] = useState(false);
   const [expandedClasseId, setExpandedClasseId] = useState<string | null>(null);
+
+  const getNowHHMM = () => {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  };
 
   // Modals
   const [showAbsenceModal, setShowAbsenceModal] = useState(false);
   const [selectedEnfantForAbsence, setSelectedEnfantForAbsence] = useState<string | null>(null);
+  const [absenceSnapshot, setAbsenceSnapshot] = useState<{ date: string; record: Presence | null } | null>(null);
   const [showPresenceDetailsModal, setShowPresenceDetailsModal] = useState(false);
   const [selectedEnfantForPresenceDetails, setSelectedEnfantForPresenceDetails] = useState<string | null>(null);
+  const [detailsSnapshot, setDetailsSnapshot] = useState<{ date: string; record: Presence | null } | null>(null);
   const [parentNotificationPreview, setParentNotificationPreview] = useState<{ phone: string; childName: string; message: string } | null>(null);
 
   // Formulaires Modals
@@ -97,89 +160,196 @@ export default function PresencesPage() {
     motifAbsence: ''
   });
 
-  const [presenceDetailsForm, setPresenceDetailsForm] = useState({
-    heureArrivee: '08:30',
-    heureDepart: '16:30',
-    temperature: '36.5',
-    repas: 'Tout',
-    humeur: 'Souriant'
-  });
+  const [presenceDetailsForm, setPresenceDetailsForm] = useState(() => presenceFormValues());
+  const [personneRecuperationInput, setPersonneRecuperationInput] = useState('');
+  const [autoPushEnabled, setAutoPushEnabled] = useState<boolean>(() => isAutoAttendancePushEnabled(user?.id));
+  const [isSavingPointage, setIsSavingPointage] = useState(false);
+  const savingPointageRef = useRef(false);
+
+  const handleToggleAutoPush = () => {
+    const next = !autoPushEnabled;
+    setAutoPushEnabled(next);
+    if (user?.id) setAutoAttendancePushEnabled(user.id, next);
+    showToast(
+      next
+        ? (isArabic ? 'الإشعار التلقائي للأولياء مفعّل.' : 'Alerte Push auto aux parents activée.')
+        : (isArabic ? 'تم إيقاف الإشعار التلقائي للأولياء.' : 'Alerte Push auto aux parents désactivée.'),
+      'info'
+    );
+  };
 
   // Action rapide de pointage "Présent" : on conserve l’id existant pour éviter
   // les doublons et permettre une vraie modification du pointage du jour.
   const handleMarkPresent = (enfantId: string) => {
+    if (!selectedDate) { showToast(isArabic ? 'يرجى اختيار التاريخ.' : 'Veuillez choisir une date.', 'error'); return; }
     if (isDayValidated) {
       showToast(isArabic ? 'هذا اليوم معتمد. افتحه من جديد قبل التعديل.' : 'Cette journée est validée. Rouvrez-la avant de modifier un pointage.', 'error');
       return;
     }
     const existing = presences.find(p => p.enfantId === enfantId && p.date === selectedDate);
-    if (existing?.statut === 'Présent') {
-      setPresenceDetailsForm({
-        heureArrivee: existing.heureArrivee || '08:30',
-        heureDepart: existing.heureDepart || '16:30',
-        temperature: existing.temperature || '36.5',
-        repas: existing.repas || 'Tout',
-        humeur: existing.humeur || 'Souriant'
-      });
-    } else {
-      setPresenceDetailsForm({
-        heureArrivee: '08:30',
-        heureDepart: '16:30',
-        temperature: '36.5',
-        repas: 'Tout',
-        humeur: 'Souriant'
-      });
-    }
+    setDetailsSnapshot({ date: selectedDate, record: existing || null });
+    const baseValues = presenceFormValues(existing?.statut === 'Présent' ? existing : undefined);
+    setPresenceDetailsForm({
+      ...baseValues,
+      heureArrivee: baseValues.heureArrivee || getNowHHMM(),
+    });
+    setPersonneRecuperationInput(existing?.personneRecuperation || '');
     setSelectedEnfantForPresenceDetails(enfantId);
     setShowPresenceDetailsModal(true);
   };
 
+  // Action 1 clic "Récupéré" pour un enfant déjà pointé Présent
+  const handleQuickPickup = async (enfant: Enfant, existing: Presence) => {
+    if (!selectedDate || savingPointageRef.current) return;
+    if (isDayValidated) {
+      showToast(isArabic ? 'هذا اليوم معتمد. افتحه من جديد قبل التعديل.' : 'Cette journée est validée. Rouvrez-la avant de modifier un pointage.', 'error');
+      return;
+    }
+    let departTime = getNowHHMM();
+    if (existing.heureArrivee && departTime <= existing.heureArrivee) {
+      const [hStr, mStr] = existing.heureArrivee.split(':');
+      const totalMins = Math.min(23 * 60 + 59, (Number(hStr) || 8) * 60 + (Number(mStr) || 0) + 1);
+      departTime = `${String(Math.floor(totalMins / 60)).padStart(2, '0')}:${String(totalMins % 60).padStart(2, '0')}`;
+    }
+    const updatedPayload = {
+      ...existing,
+      statut: 'Présent' as const,
+      heureDepart: departTime,
+    };
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      enqueueAttendance({
+        mode: !existing.id.startsWith('off-pres-') ? 'update' : 'add',
+        existingId: !existing.id.startsWith('off-pres-') ? existing.id : undefined,
+        existingSnapshot: !existing.id.startsWith('off-pres-') ? existing : undefined,
+        payload: updatedPayload,
+      });
+      showToast(
+        isArabic ? 'تم تسجيل الاستلام محلياً.' : 'Départ enregistré hors-ligne.',
+        'info'
+      );
+      return;
+    }
+    savingPointageRef.current = true;
+    setIsSavingPointage(true);
+    try {
+      await updatePresence(existing.id, { heureDepart: departTime }, existing);
+      const pushRes = await dispatchAutomaticAttendancePush({
+        crecheId: user?.id,
+        crecheNom: creche?.nom,
+        enfant,
+        previous: existing,
+        next: updatedPayload,
+        isArabic,
+      });
+      showToast(
+        pushRes.triggered && pushRes.sentPushCount > 0
+          ? (isArabic
+              ? `تم تسجيل الاستلام (${departTime}) · أُرسل إشعار فوري للولي`
+              : `Départ enregistré (${departTime}) · Alerte Push envoyée aux parents`)
+          : (isArabic
+              ? `تم تسجيل استلام ${enfant.prenom} على ${departTime}`
+              : `${enfant.prenom} marqué(e) récupéré(e) à ${departTime}`),
+        'success'
+      );
+    } catch {
+      // Data provider shows error
+    } finally {
+      savingPointageRef.current = false;
+      setIsSavingPointage(false);
+    }
+  };
+
   // Soumission des détails de présence avec validation minimale des données métier.
-  const submitPresenceDetails = () => {
-    if (!selectedEnfantForPresenceDetails) return;
-    const arrival = presenceDetailsForm.heureArrivee;
-    const departure = presenceDetailsForm.heureDepart;
-    const temperature = Number(presenceDetailsForm.temperature.replace(',', '.'));
-    if (!arrival || !departure || arrival >= departure) {
-      showToast(isArabic ? 'يرجى التحقق من وقت الدخول والخروج.' : 'Vérifiez les heures d’arrivée et de départ.', 'error');
+  const submitPresenceDetails = async () => {
+    if (!selectedEnfantForPresenceDetails || !detailsSnapshot) return;
+    const validation = validatePresenceDetails(presenceDetailsForm);
+    if (validation) {
+      const message = validation === 'arrival'
+        ? (isArabic ? 'يرجى إدخال وقت الوصول.' : 'Veuillez saisir l’heure d’arrivée.')
+        : validation === 'departure'
+          ? (isArabic ? 'يجب أن يكون وقت المغادرة بعد وقت الوصول.' : 'Le départ doit être après l’arrivée.')
+          : (isArabic ? 'درجة الحرارة غير صالحة.' : 'La température saisie est invalide.');
+      showToast(message, 'error');
       return;
     }
-    if (!Number.isFinite(temperature) || temperature < 30 || temperature > 45) {
-      showToast(isArabic ? 'درجة الحرارة غير صالحة.' : 'La température saisie est invalide.', 'error');
-      return;
-    }
-    const existing = presences.find(p => p.enfantId === selectedEnfantForPresenceDetails && p.date === selectedDate);
+    const existing = detailsSnapshot.record;
+    const trimmedPickupBy = personneRecuperationInput.trim();
     const details = {
       enfantId: selectedEnfantForPresenceDetails,
-      date: selectedDate,
+      date: detailsSnapshot.date,
       statut: 'Présent' as const,
       ...presenceDetailsForm,
-      temperature: temperature.toFixed(1)
+      ...(presenceDetailsForm.heureDepart && trimmedPickupBy ? { personneRecuperation: trimmedPickupBy } : {}),
+      ...(departureNeedsRecheck(existing, presenceDetailsForm.heureArrivee, presenceDetailsForm.heureDepart) ? { departVerifie: false, departVerifiePar: '', departVerifieLe: '', personneRecuperationId: '' } : {}),
+      temperature: presenceDetailsForm.temperature.trim()
+        ? Number(presenceDetailsForm.temperature.trim().replace(',', '.')).toFixed(1)
+        : ''
     };
-    if (existing) {
-      updatePresence(existing.id, details);
-    } else {
-      addPresence(details);
+    if (savingPointageRef.current) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      enqueueAttendance({
+        mode: existing && !existing.id.startsWith('off-pres-') ? 'update' : 'add',
+        existingId: existing && !existing.id.startsWith('off-pres-') ? existing.id : undefined,
+        existingSnapshot: existing && !existing.id.startsWith('off-pres-') ? existing : undefined,
+        payload: details,
+      });
+      setShowPresenceDetailsModal(false);
+      setSelectedEnfantForPresenceDetails(null);
+      setDetailsSnapshot(null);
+      setPresenceDetailsForm(presenceFormValues());
+      setPersonneRecuperationInput('');
+      showToast(
+        isArabic
+          ? 'تم حفظ الحضور محلياً وسيتم إرساله تلقائياً فور عودة الإنترنت.'
+          : 'Pointage enregistré hors-ligne — synchronisation automatique dès le retour d’Internet.',
+        'info'
+      );
+      return;
     }
-
-    setShowPresenceDetailsModal(false);
-    setSelectedEnfantForPresenceDetails(null);
-    setPresenceDetailsForm({
-      heureArrivee: '08:30',
-      heureDepart: '16:30',
-      temperature: '36.5',
-      repas: 'Tout',
-      humeur: 'Souriant'
-    });
+    savingPointageRef.current = true;
+    setIsSavingPointage(true);
+    try {
+      if (existing) await updatePresence(existing.id, details, existing);
+      else await addPresence(details);
+      const targetChild = enfantsData.find(item => item.id === selectedEnfantForPresenceDetails) || null;
+      const pushRes = await dispatchAutomaticAttendancePush({
+        crecheId: user?.id,
+        crecheNom: creche?.nom,
+        enfant: targetChild,
+        previous: existing,
+        next: details,
+        isArabic,
+      });
+      if (pushRes.triggered && pushRes.sentPushCount > 0) {
+        showToast(
+          isArabic
+            ? `تم حفظ الحضور · أُرسل إشعار فوري للولي (${pushRes.sentPushCount})`
+            : `Pointage enregistré · Alerte Push envoyée aux parents`,
+          'success'
+        );
+      }
+      setShowPresenceDetailsModal(false);
+      setSelectedEnfantForPresenceDetails(null);
+      setDetailsSnapshot(null);
+      setPresenceDetailsForm(presenceFormValues());
+      setPersonneRecuperationInput('');
+    } catch {
+      // The data provider displays the write error; keep the form intact.
+    } finally {
+      savingPointageRef.current = false;
+      setIsSavingPointage(false);
+    }
   };
 
   // Action rapide de pointage "Absent" (Ouvre le modal de saisie de motif)
   const handleMarkAbsentClick = (enfantId: string) => {
+    if (!selectedDate) { showToast(isArabic ? 'يرجى اختيار التاريخ.' : 'Veuillez choisir une date.', 'error'); return; }
     if (isDayValidated) {
       showToast(isArabic ? 'هذا اليوم معتمد. افتحه من جديد قبل التعديل.' : 'Cette journée est validée. Rouvrez-la avant de modifier un pointage.', 'error');
       return;
     }
     const existing = presences.find(p => p.enfantId === enfantId && p.date === selectedDate);
+    setAbsenceSnapshot({ date: selectedDate, record: existing || null });
     setAbsenceForm({
       statut: existing?.statut === 'Absent justifié' ? 'Absent justifié' : 'Absent non justifié',
       motifAbsence: existing?.motifAbsence || ''
@@ -189,29 +359,73 @@ export default function PresencesPage() {
   };
 
   // Soumission de l’absence : le motif est obligatoire pour garder un registre exploitable.
-  const submitAbsence = () => {
-    if (!selectedEnfantForAbsence) return;
+  const submitAbsence = async () => {
+    if (!selectedEnfantForAbsence || !absenceSnapshot) return;
     const motif = absenceForm.motifAbsence.trim();
     if (!motif) {
       showToast(isArabic ? 'يرجى إدخال سبب الغياب.' : 'Veuillez renseigner le motif de l’absence.', 'error');
       return;
     }
-    const existing = presences.find(p => p.enfantId === selectedEnfantForAbsence && p.date === selectedDate);
+    const existing = absenceSnapshot.record;
     const absence = {
       enfantId: selectedEnfantForAbsence,
-      date: selectedDate,
+      date: absenceSnapshot.date,
       statut: absenceForm.statut,
       motifAbsence: motif,
+      personneRecuperationId: '', departVerifie: false, departVerifiePar: '', departVerifieLe: '',
     };
-    if (existing) {
-      updatePresence(existing.id, absence);
-    } else {
-      addPresence(absence);
+    if (savingPointageRef.current) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      enqueueAttendance({
+        mode: existing && !existing.id.startsWith('off-pres-') ? 'update' : 'add',
+        existingId: existing && !existing.id.startsWith('off-pres-') ? existing.id : undefined,
+        existingSnapshot: existing && !existing.id.startsWith('off-pres-') ? existing : undefined,
+        payload: absence,
+      });
+      setShowAbsenceModal(false);
+      setSelectedEnfantForAbsence(null);
+      setAbsenceSnapshot(null);
+      setAbsenceForm({ statut: 'Absent non justifié', motifAbsence: '' });
+      showToast(
+        isArabic
+          ? 'تم حفظ الغياب محلياً وسيتم إرساله تلقائياً فور عودة الإنترنت.'
+          : 'Absence enregistrée hors-ligne — synchronisation automatique dès le retour d’Internet.',
+        'info'
+      );
+      return;
     }
-
-    setShowAbsenceModal(false);
-    setSelectedEnfantForAbsence(null);
-    setAbsenceForm({ statut: 'Absent non justifié', motifAbsence: '' });
+    savingPointageRef.current = true;
+    setIsSavingPointage(true);
+    try {
+      if (existing) await updatePresence(existing.id, absence, existing);
+      else await addPresence(absence);
+      const targetChild = enfantsData.find(item => item.id === selectedEnfantForAbsence) || null;
+      const pushRes = await dispatchAutomaticAttendancePush({
+        crecheId: user?.id,
+        crecheNom: creche?.nom,
+        enfant: targetChild,
+        previous: existing,
+        next: absence,
+        isArabic,
+      });
+      if (pushRes.triggered && pushRes.sentPushCount > 0) {
+        showToast(
+          isArabic
+            ? 'تم تسجيل الغياب · أُرسل إشعار فوري للولي'
+            : 'Absence enregistrée · Alerte Push envoyée aux parents',
+          'success'
+        );
+      }
+      setShowAbsenceModal(false);
+      setSelectedEnfantForAbsence(null);
+      setAbsenceSnapshot(null);
+      setAbsenceForm({ statut: 'Absent non justifié', motifAbsence: '' });
+    } catch {
+      // Keep the entered reason available for retry.
+    } finally {
+      savingPointageRef.current = false;
+      setIsSavingPointage(false);
+    }
   };
 
   // Retirer un pointage (remettre à non-pointé)
@@ -224,13 +438,13 @@ export default function PresencesPage() {
       confirmLabel: isArabic ? 'حذف الغياب' : 'Supprimer l’absence',
       variant: 'danger',
     });
-    if (confirmed) await deletePresence(absence.id);
+    if (confirmed) await deletePresence(absence.id, absence).catch(() => {});
   };
 
   const handleParentNotification = (presence: Presence) => {
     const enfant = enfantsData.find(item => item.id === presence.enfantId);
     const parent = enfant?.parents
-      .map(item => ({ ...item, phone: normalizeAlgerianWhatsApp(item.telephone) }))
+      ?.map(item => ({ ...item, phone: normalizeAlgerianWhatsApp(item.telephone) }))
       .find(item => Boolean(item.phone));
     if (!enfant || !parent?.phone) {
       showToast(
@@ -255,29 +469,35 @@ export default function PresencesPage() {
   };
 
   const handleResetPointing = (enfantId: string) => {
+    if (!selectedDate) { showToast(isArabic ? 'يرجى اختيار التاريخ.' : 'Veuillez choisir une date.', 'error'); return; }
     if (isDayValidated) {
       showToast(isArabic ? 'هذا اليوم معتمد. افتحه من جديد قبل التعديل.' : 'Cette journée est validée. Rouvrez-la avant de modifier un pointage.', 'error');
       return;
     }
     const existing = presences.find(p => p.enfantId === enfantId && p.date === selectedDate);
     if (existing) {
-      deletePresence(existing.id);
+      void deletePresence(existing.id, existing).catch(() => {});
     }
   };
 
   // --- CALCULS DES STATISTIQUES POUR LA DATE SÉLECTIONNÉE ---
-  const todayPresences = useMemo(() => {
+  const todayPresenceByChild = useMemo(() => {
     // Une seule fiche par enfant et par jour : les anciens doublons ne faussent plus les compteurs.
     const recordsByChild = new Map<string, Presence>();
     presences.filter(p => p.date === selectedDate).forEach(p => recordsByChild.set(p.enfantId, p));
-    return Array.from(recordsByChild.values());
+    return recordsByChild;
   }, [presences, selectedDate]);
+  const todayPresences = useMemo(() => Array.from(todayPresenceByChild.values()), [todayPresenceByChild]);
 
-  const countPresents = todayPresences.filter(p => p.statut === 'Présent').length;
-  const countAbsents = todayPresences.filter(p => p.statut.startsWith('Absent')).length;
-  const countNonPointes = Math.max(enfantsData.length - todayPresences.length, 0);
-  const isDayComplete = enfantsData.length > 0 && countNonPointes === 0;
-  const currentPresenceJournee = presenceJournees.find(j => j.date === selectedDate);
+  const childrenForAttendance = attendanceChildren(enfantsData, todayPresences);
+  const attendanceIds = new Set(childrenForAttendance.map(child => child.id));
+  const visibleRecords = todayPresences.filter(p => attendanceIds.has(p.enfantId));
+  const attendanceGroups = groupAttendanceChildren(childrenForAttendance, classesData);
+  const countPresents = visibleRecords.filter(p => p.statut === 'Présent').length;
+  const countAbsents = visibleRecords.filter(p => p.statut.startsWith('Absent')).length;
+  const countNonPointes = Math.max(childrenForAttendance.length - visibleRecords.length, 0);
+  const isDayComplete = !!selectedDate && childrenForAttendance.length > 0 && countNonPointes === 0;
+  const currentPresenceJournee = presenceJournees.find(j => j.date === selectedDate && j.crecheId === user?.id);
   const isDayValidated = currentPresenceJournee?.statut === 'validee';
 
   const handleValidateDay = async () => {
@@ -324,106 +544,151 @@ export default function PresencesPage() {
   }, [presences]);
 
   return (
-    <div className={`space-y-6 ${isArabic ? 'rtl' : 'ltr'}`}>
+    <div className={`space-y-4 sm:space-y-6 ${isArabic ? 'rtl' : 'ltr'}`}>
       
-      {/* En-tête principal */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-slate-900 flex items-center gap-2">
-            <CalendarCheck className="w-8 h-8 text-indigo-600" />
-            {isArabic ? 'تسيير الحضور والغيابات' : 'Registre des Présences'}
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            {isArabic 
-              ? 'سجل الحضور اليومي مقسم حسب الفصول، ومتابعة ذكية للغيابات الشهرية' 
-              : 'Registre d\'appel quotidien par classe et historique chronologique des absences.'}
-          </p>
-        </div>
-
-        {/* Sélectionneur de date et état de clôture du pointage */}
-        <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
-          <div className="flex items-center gap-3 bg-white p-3 border border-slate-150 rounded-2xl shadow-xs">
-            <Calendar className="w-5 h-5 text-indigo-600" />
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="outline-none text-sm font-bold text-slate-800 cursor-pointer"
-            />
+      {/* En-tête principal épuré */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex w-full md:w-auto items-center justify-between gap-2">
+          <div>
+            <h1 className="text-lg sm:text-2xl font-bold text-slate-900 tracking-tight">
+              {isArabic ? 'الحضور والغيابات' : 'Présences'}
+            </h1>
+            <p className="hidden sm:block text-sm text-slate-500 mt-0.5">
+              {isArabic
+                ? 'سجل الحضور اليومي حسب الفصول ومتابعة الغيابات.'
+                : 'Appel quotidien par classe et suivi des absences.'}
+            </p>
           </div>
-          <div className={`px-3 py-2 rounded-xl text-xs font-black border ${
+
+          <div className={`md:hidden shrink-0 whitespace-nowrap px-2.5 py-1.5 rounded-xl text-[11px] font-bold border ${
             isDayValidated
               ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
               : isDayComplete
                 ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
                 : 'bg-amber-50 text-amber-700 border-amber-100'
           }`}>
-            {isDayValidated
+            {!selectedDate ? (isArabic ? 'اختر تاريخ الحضور' : 'Choisissez une date') : isDayValidated
+              ? (isArabic ? 'اليوم معتمد' : 'Validée')
+              : isDayComplete
+                ? (isArabic ? 'اليوم مكتمل' : 'Complet')
+                : (isArabic ? `${countNonPointes} متبقي` : `${countNonPointes} à pointer`)}
+          </div>
+        </div>
+
+        {/* Sélectionneur de date et bouton de clôture alignés sur 1 ligne */}
+        <div className="flex w-full md:w-auto items-center gap-2">
+          <div className="flex min-w-0 flex-1 md:flex-initial items-center gap-2 bg-white px-3 py-2 border border-slate-200 rounded-xl">
+            <Calendar className="w-4 h-4 shrink-0 text-slate-500" />
+            <input
+              type="date"
+              aria-label={isArabic ? 'تاريخ الحضور' : 'Date de présence'}
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="min-w-0 w-full outline-none text-xs sm:text-sm font-semibold text-slate-800 cursor-pointer"
+            />
+          </div>
+          <div className={`hidden md:block shrink-0 whitespace-nowrap px-2.5 py-2 rounded-xl text-xs font-bold border ${
+            isDayValidated
+              ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
+              : isDayComplete
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                : 'bg-amber-50 text-amber-700 border-amber-100'
+          }`}>
+            {!selectedDate ? (isArabic ? 'اختر تاريخ الحضور' : 'Choisissez une date') : isDayValidated
               ? (isArabic ? 'اليوم معتمد' : 'Journée validée')
               : isDayComplete
                 ? (isArabic ? 'اليوم مكتمل' : 'Pointage complet')
-                : (isArabic ? `${countNonPointes} أطفال لم يسجلوا` : `${countNonPointes} enfant(s) à pointer`)}
+                : (isArabic ? `${countNonPointes} متبقي` : `${countNonPointes} à pointer`)}
           </div>
-          {isDayValidated ? (
+          {canValidateDay && (isDayValidated ? (
             <button
               type="button"
-              onClick={handleReopenDay}
-              className="px-3 py-2 rounded-xl text-xs font-black bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50 transition-colors"
+              onClick={() => void handleReopenDay().catch(() => {})}
+              className="min-h-9! shrink-0 whitespace-nowrap px-3 py-2 rounded-xl text-xs font-bold bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50 transition-colors cursor-pointer"
             >
               {isArabic ? 'إعادة فتح اليوم' : 'Rouvrir la journée'}
             </button>
           ) : (
             <button
               type="button"
-              onClick={handleValidateDay}
+              onClick={() => void handleValidateDay().catch(() => {})}
               disabled={!isDayComplete}
-              className="px-3 py-2 rounded-xl text-xs font-black bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="min-h-9! shrink-0 whitespace-nowrap px-3 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
             >
               {isArabic ? 'اعتماد اليوم' : 'Valider la journée'}
             </button>
-          )}
+          ))}
         </div>
       </div>
 
-      {/* Widgets Statistiques */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-            <CheckCircle2 className="w-6 h-6" />
+      {/* Bandeau de file d'attente hors-ligne */}
+      {(isOffline || offlineQueue.length > 0) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-950">
+          <div className="flex items-center gap-2.5">
+            <WifiOff className="h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
+            <span className="font-semibold">
+              {isOffline
+                ? isArabic
+                  ? `وضع دون اتصال مفعل · يمكنك متابعة النداء الصباحي (${offlineQueue.length} في الانتظار).`
+                  : `Mode hors-ligne actif · L’appel continue normalement (${offlineQueue.length} en attente de synchronisation).`
+                : isArabic
+                  ? `${offlineQueue.length} تسجيل حضور محفوظ محلياً جاهز للمزامنة.`
+                  : `${offlineQueue.length} pointage(s) hors-ligne prêt(s) à être synchronisé(s).`}
+            </span>
           </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{isArabic ? 'حاضر اليوم' : 'Présents'}</p>
-            <p className="text-xl sm:text-2xl font-black text-emerald-600 mt-0.5">{countPresents}</p>
+          {!isOffline && offlineQueue.length > 0 && (
+            <button
+              type="button"
+              disabled={isSyncing}
+              onClick={() => void flushQueue()}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-amber-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-950 disabled:opacity-50 cursor-pointer"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>{isArabic ? 'مزامنة الآن' : 'Synchroniser'}</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Widgets Statistiques (affichés dès md, car sur mobile les pastilles de filtre affichent déjà les compteurs) */}
+      <div className="hidden md:grid md:grid-cols-4 gap-4">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium text-slate-500">{isArabic ? 'حاضر اليوم' : 'Présents'}</p>
+            <p className="text-xl font-bold text-slate-900 mt-0.5 tabular-nums">{selectedDate ? countPresents : '—'}</p>
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
-            <XCircle className="w-6 h-6" />
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+            <XCircle className="w-5 h-5" />
           </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{isArabic ? 'غائب اليوم' : 'Absents'}</p>
-            <p className="text-xl sm:text-2xl font-black text-rose-600 mt-0.5">{countAbsents}</p>
-          </div>
-        </div>
-
-        <div className="col-span-2 md:col-span-1 bg-white p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-            <Users className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{isArabic ? 'إجمالي الأطفال' : 'Total Enfants'}</p>
-            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{enfantsData.length}</p>
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium text-slate-500">{isArabic ? 'غائب اليوم' : 'Absents'}</p>
+            <p className="text-xl font-bold text-slate-900 mt-0.5 tabular-nums">{selectedDate ? countAbsents : '—'}</p>
           </div>
         </div>
 
-        <div className="col-span-2 md:col-span-1 bg-white p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4">
-          <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${isDayComplete ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
-            <HelpCircle className="w-6 h-6" />
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+            <Users className="w-5 h-5" />
           </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{isArabic ? 'المتبقي' : 'À pointer'}</p>
-            <p className={`text-xl sm:text-2xl font-black mt-0.5 ${isDayComplete ? 'text-emerald-600' : 'text-amber-600'}`}>{countNonPointes}</p>
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium text-slate-500">{isArabic ? 'إجمالي الأطفال' : 'Total enfants'}</p>
+            <p className="text-xl font-bold text-slate-900 mt-0.5 tabular-nums">{childrenForAttendance.length}</p>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center gap-3.5">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDayComplete ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+            <HelpCircle className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium text-slate-500">{isArabic ? 'المتبقي' : 'À pointer'}</p>
+            <p className="text-xl font-bold text-slate-900 mt-0.5 tabular-nums">{selectedDate ? countNonPointes : '—'}</p>
           </div>
         </div>
       </div>
@@ -463,50 +728,157 @@ export default function PresencesPage() {
       {activeTab === 'pointing' && (
         <div className="space-y-4">
           
-          {/* Barre de recherche d'enfant */}
-          <div className="relative w-full max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder={isArabic ? 'ابحث عن طفل لتحديد صفه...' : 'Rechercher un enfant...'}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:border-indigo-500 transition text-sm font-semibold text-slate-800"
-            />
+          {/* Barre de recherche + filtres rapides mobile + bouton Tout déplier */}
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="relative w-full lg:max-w-sm">
+              <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder={isArabic ? 'ابحث عن طفل لتحديد صفه...' : 'Rechercher un enfant...'}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full ps-9 pe-9 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:border-indigo-500 transition text-sm font-semibold text-slate-800"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  aria-label={isArabic ? 'مسح البحث' : 'Effacer la recherche'}
+                  className="absolute end-2.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-1.5">
+              {[
+                { key: 'all' as const, label: isArabic ? `الكل (${childrenForAttendance.length})` : `Tous (${childrenForAttendance.length})` },
+                { key: 'todo' as const, label: isArabic ? `متبقي (${selectedDate ? countNonPointes : 0})` : `À pointer (${selectedDate ? countNonPointes : 0})` },
+                { key: 'present' as const, label: isArabic ? `حاضرون (${selectedDate ? countPresents : 0})` : `Présents (${selectedDate ? countPresents : 0})` },
+                { key: 'absent' as const, label: isArabic ? `غائبون (${selectedDate ? countAbsents : 0})` : `Absents (${selectedDate ? countAbsents : 0})` },
+              ].map(pill => (
+                <button
+                  key={pill.key}
+                  type="button"
+                  onClick={() => setStatusFilter(pill.key)}
+                  className={`min-h-9! rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-bold transition cursor-pointer tabular-nums ${
+                    statusFilter === pill.key
+                      ? 'bg-indigo-600 text-white shadow-2xs'
+                      : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {pill.label}
+                </button>
+              ))}
+              {attendanceGroups.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExpandAllClasses(prev => !prev);
+                    setExpandedClasseId(null);
+                  }}
+                  className="min-h-9! col-span-2 sm:col-span-1 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 whitespace-nowrap transition cursor-pointer"
+                >
+                  {expandAllClasses
+                    ? (isArabic ? 'طي الكل' : 'Tout replier')
+                    : (isArabic ? 'فتح الكل' : 'Tout déplier')}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleToggleAutoPush}
+                data-testid="toggle-auto-parent-push"
+                className={`min-h-9! col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold whitespace-nowrap transition cursor-pointer ${
+                  autoPushEnabled
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                    : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                }`}
+                title={
+                  isArabic
+                    ? 'إرسال إشعار تلقائي للولي عند الوصول أو الاستلام أو الغياب'
+                    : 'Envoi Push automatique aux parents liés (Bien arrivé / Récupéré / Absence)'
+                }
+              >
+                {autoPushEnabled ? <Bell className="w-3.5 h-3.5 shrink-0" /> : <BellOff className="w-3.5 h-3.5 shrink-0" />}
+                <span>{isArabic ? (autoPushEnabled ? 'إشعار الولي: تلقائي' : 'إشعار الولي: متوقف') : (autoPushEnabled ? 'Push parents : Auto' : 'Push parents : Off')}</span>
+              </button>
+            </div>
           </div>
 
           {/* Grid des Classes (Accordéons) */}
           <div className="space-y-3">
-            {classesData.map((classe) => {
-              // Filtrer les enfants appartenant à cette classe
-              const classeChildren = enfantsData.filter(e => 
-                classe.childrenIds?.includes(e.id) &&
-                `${e.prenom} ${e.nom}`.toLowerCase().includes(searchTerm.toLowerCase())
-              );
+            {attendanceGroups.map((group) => {
+              const normalizedSearch = deferredSearchTerm.toLowerCase();
+              const groupPointedCount = group.children.filter(child =>
+                todayPresenceByChild.has(child.id)
+              ).length;
+              const classeChildren = group.children.filter(e => {
+                const matchesName = !normalizedSearch || `${e.prenom} ${e.nom}`.toLowerCase().includes(normalizedSearch);
+                if (!matchesName) return false;
+                if (statusFilter === 'all') return true;
+                const rec = todayPresenceByChild.get(e.id);
+                if (statusFilter === 'todo') return !rec;
+                if (statusFilter === 'present') return rec?.statut === 'Présent';
+                return Boolean(rec?.statut.startsWith('Absent'));
+              });
+              if ((deferredSearchTerm || statusFilter !== 'all') && classeChildren.length === 0) return null;
 
-              if (searchTerm && classeChildren.length === 0) return null;
+              const isExpanded =
+                expandAllClasses ||
+                Boolean(deferredSearchTerm.trim()) ||
+                statusFilter !== 'all' ||
+                expandedClasseId === group.key;
 
-              const isExpanded = expandedClasseId === classe.id;
+              const groupProgressPct = group.children.length > 0
+                ? Math.round((groupPointedCount / group.children.length) * 100)
+                : 0;
 
               return (
-                <div key={classe.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <div key={group.key} className="rawdha-card-modern bg-white rounded-3xl border border-slate-200/75 shadow-2xs overflow-hidden">
                   
                   {/* Header de l'accordéon de classe */}
-                  <div 
-                    onClick={() => setExpandedClasseId(isExpanded ? null : classe.id)}
-                    className="p-5 flex items-center justify-between cursor-pointer hover:bg-slate-50/50 transition-all"
+                  <button
+                    type="button"
+                    aria-expanded={isExpanded}
+                    onClick={() => {
+                      if (expandAllClasses) setExpandAllClasses(false);
+                      setExpandedClasseId(isExpanded ? null : group.key);
+                    }}
+                    className="w-full p-4 sm:p-5 flex flex-col gap-2.5 text-start cursor-pointer hover:bg-slate-50/50 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600"
                   >
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                        <Users className="w-5 h-5" />
+                    <div className="flex w-full items-center justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+                        <div className="w-10 h-10 shrink-0 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-sm shadow-indigo-500/20 flex items-center justify-center">
+                          <Users className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="truncate font-extrabold text-slate-950 text-sm sm:text-base">{group.unassigned ? (isArabic ? 'دون قسم' : 'Sans classe') : group.nom}</h3>
+                          <p className="text-xs text-slate-500 font-bold">{group.niveau && <>{group.niveau} • </>}{classeChildren.length} {isArabic ? 'أطفال مسجلين' : 'enfants'}</p>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="font-extrabold text-slate-950 text-base">{classe.nom}</h3>
-                        <p className="text-xs text-slate-400 font-bold">{classe.niveau} • {classeChildren.length} {isArabic ? 'أطفال مسجلين' : 'enfants'}</p>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {selectedDate && (
+                          <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold tabular-nums ${
+                            groupPointedCount === group.children.length && group.children.length > 0
+                              ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/70'
+                              : 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {groupPointedCount}/{group.children.length}
+                          </span>
+                        )}
+                        <ChevronDown className={`w-5 h-5 text-slate-400 transition-all ${isExpanded ? 'rotate-180 text-indigo-600' : ''}`} />
                       </div>
                     </div>
-                    <ChevronDown className={`w-5 h-5 text-slate-400 transition-all ${isExpanded ? 'rotate-180 text-indigo-600' : ''}`} />
-                  </div>
+                    {selectedDate && group.children.length > 0 && (
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-300"
+                          style={{ width: `${groupProgressPct}%` }}
+                        />
+                      </div>
+                    )}
+                  </button>
 
                   {/* Corps de l'accordéon contenant les enfants */}
                   <AnimatePresence>
@@ -515,21 +887,21 @@ export default function PresencesPage() {
                         initial={{ height: 0 }}
                         animate={{ height: 'auto' }}
                         exit={{ height: 0 }}
-                        className="border-t border-slate-100 bg-slate-50/20"
+                        className="border-t border-slate-100 bg-slate-50/30"
                       >
-                        <div className="p-5 divide-y divide-slate-100">
+                        <div className="p-3.5 sm:p-5 divide-y divide-slate-100">
                           {classeChildren.length > 0 ? (
                             classeChildren.map((enfant) => {
                               // Vérifier le statut de l'enfant pour la date sélectionnée
-                              const statusRecord = todayPresences.find(p => p.enfantId === enfant.id);
+                              const statusRecord = todayPresenceByChild.get(enfant.id);
                               
                               return (
-                                <div key={enfant.id} className="py-4 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div key={enfant.id} className="py-3.5 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                   
                                   {/* Infos Enfant */}
                                   <div className="flex items-center gap-3">
-                                    <div className={`w-10 h-10 rounded-xl font-black text-xs flex items-center justify-center text-white ${
-                                      enfant.genre === 'Fille' ? 'bg-pink-500' : 'bg-sky-500'
+                                    <div className={`w-10 h-10 rounded-2xl font-black text-xs flex items-center justify-center text-white shadow-xs ${
+                                      enfant.genre === 'Fille' ? 'bg-gradient-to-tr from-pink-500 to-rose-400' : 'bg-gradient-to-tr from-sky-500 to-indigo-500'
                                     }`}>
                                       {enfant.prenom[0]}{enfant.nom[0]}
                                     </div>
@@ -542,11 +914,11 @@ export default function PresencesPage() {
                                   {/* Affichage des détails si pointé présent */}
                                   {statusRecord?.statut === 'Présent' && (
                                     <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-500">
-                                      <span className="flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-1 rounded-md font-bold">
+                                      {statusRecord.temperature && <span className="flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-1 rounded-md font-bold">
                                         <Thermometer className="w-3.5 h-3.5" /> {statusRecord.temperature}°C
-                                      </span>
+                                      </span>}
                                       <span className="flex items-center gap-1 bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-1 rounded-md font-bold">
-                                        <Clock className="w-3.5 h-3.5" /> {statusRecord.heureArrivee} - {statusRecord.heureDepart}
+                                        <Clock className="w-3.5 h-3.5" /> {statusRecord.heureArrivee || '—'} - {statusRecord.heureDepart || (isArabic ? 'لم تسجل المغادرة' : 'Départ non renseigné')}
                                       </span>
                                     </div>
                                   )}
@@ -559,12 +931,13 @@ export default function PresencesPage() {
                                   )}
 
                                   {/* Double boutons interactifs de Pointage */}
-                                  <div className="flex items-center gap-2 shrink-0">
+                                  <div className="flex flex-wrap items-center gap-2">
                                     
                                     {/* Bouton : PRÉSENT */}
                                     <button
+                                      disabled={!selectedDate || isSavingPointage || !canPoint}
                                       onClick={() => handleMarkPresent(enfant.id)}
-                                      className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer border ${
+                                      className={`px-4 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all cursor-pointer border disabled:opacity-45 disabled:cursor-not-allowed ${
                                         statusRecord?.statut === 'Présent'
                                           ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
                                           : 'bg-white border-slate-200 text-slate-600 hover:border-emerald-300 hover:bg-emerald-50/30'
@@ -573,10 +946,32 @@ export default function PresencesPage() {
                                       {isArabic ? 'حاضر' : 'Présent'}
                                     </button>
 
+                                    {/* Bouton 1 clic : RÉCUPÉRÉ (visible dès que l'enfant est Présent sans heureDepart) */}
+                                    {statusRecord?.statut === 'Présent' && !statusRecord.heureDepart && (
+                                      <button
+                                        type="button"
+                                        disabled={!selectedDate || isSavingPointage || !canPoint}
+                                        onClick={() => void handleQuickPickup(enfant, statusRecord)}
+                                        data-testid={`quick-pickup-${enfant.id}`}
+                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all cursor-pointer border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-45 disabled:cursor-not-allowed"
+                                      >
+                                        <LogOut className="w-3.5 h-3.5 shrink-0" />
+                                        <span>{isArabic ? 'تم الاستلام' : 'Récupéré'}</span>
+                                      </button>
+                                    )}
+
+                                    {statusRecord?.statut === 'Présent' && Boolean(statusRecord.heureDepart) && (
+                                      <span className="inline-flex items-center gap-1 rounded-xl border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-[11px] font-extrabold text-teal-800 whitespace-nowrap">
+                                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                        <span>{isArabic ? `استُلم ${statusRecord.heureDepart}` : `Récupéré ${statusRecord.heureDepart}`}</span>
+                                      </span>
+                                    )}
+
                                     {/* Bouton : ABSENT */}
                                     <button
+                                      disabled={!selectedDate || isSavingPointage || !canPoint}
                                       onClick={() => handleMarkAbsentClick(enfant.id)}
-                                      className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer border ${
+                                      className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer border disabled:opacity-45 disabled:cursor-not-allowed ${
                                         statusRecord?.statut.startsWith('Absent')
                                           ? 'bg-rose-600 border-rose-600 text-white shadow-sm'
                                           : 'bg-white border-slate-200 text-slate-600 hover:border-rose-300 hover:bg-rose-50/30'
@@ -588,24 +983,39 @@ export default function PresencesPage() {
                                     {/* Actions après pointage */}
                                     {statusRecord && (
                                       <>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleParentNotification(statusRecord)}
-                                          className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
-                                          title={isArabic ? 'إعداد إشعار لولي الطفل' : 'Préparer une notification parent'}
-                                          aria-label={isArabic ? 'إعداد إشعار لولي الطفل' : 'Préparer une notification parent'}
-                                        >
-                                          <MessageCircle className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleResetPointing(enfant.id)}
-                                          className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition cursor-pointer"
-                                          title={isArabic ? 'إلغاء التحديد' : 'Réinitialiser'}
-                                          aria-label={isArabic ? 'إلغاء التحديد' : 'Réinitialiser le pointage'}
-                                        >
-                                          <ArrowLeftRight className="w-4 h-4" />
-                                        </button>
+                                        {canDailyReport && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setDailyReportChild(enfant)}
+                                            className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
+                                            title={isArabic ? 'دفتر المتابعة اليومي للأولياء' : 'Carnet de liaison du jour'}
+                                            aria-label={isArabic ? 'دفتر المتابعة اليومي للأولياء' : 'Carnet de liaison du jour'}
+                                          >
+                                            <BookHeart className="w-4 h-4" />
+                                          </button>
+                                        )}
+                                        {canDailyReport && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleParentNotification(statusRecord)}
+                                            className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
+                                            title={isArabic ? 'إعداد إشعار لولي الطفل' : 'Préparer une notification parent'}
+                                            aria-label={isArabic ? 'إعداد إشعار لولي الطفل' : 'Préparer une notification parent'}
+                                          >
+                                            <MessageCircle className="w-4 h-4" />
+                                          </button>
+                                        )}
+                                        {canPoint && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleResetPointing(enfant.id)}
+                                            className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+                                            title={isArabic ? 'إلغاء التحديد' : 'Réinitialiser'}
+                                            aria-label={isArabic ? 'إلغاء التحديد' : 'Réinitialiser le pointage'}
+                                          >
+                                            <ArrowLeftRight className="w-4 h-4" />
+                                          </button>
+                                        )}
                                       </>
                                     )}
                                   </div>
@@ -726,7 +1136,7 @@ export default function PresencesPage() {
         {showAbsenceModal && (
           <div 
             className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center z-[999] p-4 cursor-pointer"
-            onClick={() => setShowAbsenceModal(false)}
+            onClick={() => { if (!isSavingPointage) setShowAbsenceModal(false); }}
           >
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
@@ -742,7 +1152,7 @@ export default function PresencesPage() {
                   <p className="text-xs text-rose-100 mt-0.5">{isArabic ? 'تحديد تبرير وسبب الغياب بدقة' : 'Préciser la justification et le motif de l\'absence'}</p>
                 </div>
                 <button 
-                  onClick={() => setShowAbsenceModal(false)}
+                  onClick={() => { if (!isSavingPointage) setShowAbsenceModal(false); }}
                   className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
                 >
                   <X size={18} />
@@ -784,6 +1194,25 @@ export default function PresencesPage() {
                 {/* Motif de l'absence */}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{isArabic ? 'عذر أو سبب الغياب *' : 'Motif ou description *'}</label>
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {(isArabic
+                      ? ['وعكة صحية', 'موعد طبي', 'سفر عائلي', 'ظرف عائلي']
+                      : ['Malade', 'Rendez-vous médical', 'Voyage', 'Empêchement familial']
+                    ).map(suggestion => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => setAbsenceForm({ ...absenceForm, motifAbsence: suggestion })}
+                        className={`rounded-lg border px-2.5 py-1 text-xs font-bold transition cursor-pointer ${
+                          absenceForm.motifAbsence === suggestion
+                            ? 'border-rose-300 bg-rose-50 text-rose-700'
+                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
                   <input
                     type="text"
                     value={absenceForm.motifAbsence}
@@ -798,13 +1227,14 @@ export default function PresencesPage() {
               {/* Actions Footer */}
               <div className="p-4 sm:p-6 bg-slate-50 border-t border-slate-100 flex flex-col gap-3 sm:flex-row">
                 <button
-                  onClick={() => setShowAbsenceModal(false)}
+                  onClick={() => { if (!isSavingPointage) setShowAbsenceModal(false); }}
                   className="w-full sm:flex-1 py-3 bg-slate-200 hover:bg-slate-300 rounded-xl font-bold text-slate-700 transition cursor-pointer text-xs"
                 >
                   {t('common.cancel')}
                 </button>
                 <button
-                  onClick={submitAbsence}
+                  disabled={isSavingPointage}
+                  onClick={() => void submitAbsence()}
                   className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold transition cursor-pointer text-xs shadow-md shadow-rose-200"
                 >
                   {isArabic ? 'تأشير كغائب' : 'Marquer absent'}
@@ -823,7 +1253,7 @@ export default function PresencesPage() {
         {showPresenceDetailsModal && (
           <div 
             className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center z-[999] p-4 cursor-pointer"
-            onClick={() => setShowPresenceDetailsModal(false)}
+            onClick={() => { if (!isSavingPointage) setShowPresenceDetailsModal(false); }}
           >
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
@@ -839,7 +1269,7 @@ export default function PresencesPage() {
                   <p className="text-xs text-emerald-100 mt-0.5">{isArabic ? 'مراقبة المعايير الصحية والمزاج والأكل' : 'Saisir les observations santé, repas et humeur'}</p>
                 </div>
                 <button 
-                  onClick={() => setShowPresenceDetailsModal(false)}
+                  onClick={() => { if (!isSavingPointage) setShowPresenceDetailsModal(false); }}
                   className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
                 >
                   <X size={18} />
@@ -849,22 +1279,20 @@ export default function PresencesPage() {
               {/* Form Body */}
               <div className="p-4 sm:p-6 space-y-4">
                 
-                {/* Température */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{isArabic ? 'درجة الحرارة (°C)' : 'Température (°C)'}</label>
-                  <input
-                    type="text"
-                    value={presenceDetailsForm.temperature}
-                    onChange={(e) => setPresenceDetailsForm({ ...presenceDetailsForm, temperature: e.target.value })}
-                    placeholder="36.5"
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-black text-sm text-slate-800"
-                  />
-                </div>
-
-                {/* Heures Arrivée & Départ */}
+                {/* Heures Arrivée & Départ — placées en premier pour un pointage mobile en 1 geste */}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{isArabic ? 'وقت الدخول' : 'Heure d\'arrivée'}</label>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <label className="block text-xs font-bold text-slate-500 uppercase">{isArabic ? 'وقت الدخول *' : 'Heure d\'arrivée *'}</label>
+                      <button
+                        type="button"
+                        onClick={() => setPresenceDetailsForm({ ...presenceDetailsForm, heureArrivee: getNowHHMM() })}
+                        className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-black text-emerald-700 hover:bg-emerald-100 transition cursor-pointer"
+                      >
+                        <Clock className="w-3 h-3" />
+                        {isArabic ? 'الآن' : 'Maintenant'}
+                      </button>
+                    </div>
                     <input
                       type="time"
                       value={presenceDetailsForm.heureArrivee}
@@ -874,7 +1302,16 @@ export default function PresencesPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{isArabic ? 'وقت الانصراف' : 'Heure de départ'}</label>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <label className="block text-xs font-bold text-slate-500 uppercase">{isArabic ? 'وقت الانصراف (اختياري)' : 'Heure de départ (facultatif)'}</label>
+                      <button
+                        type="button"
+                        onClick={() => setPresenceDetailsForm({ ...presenceDetailsForm, heureDepart: getNowHHMM() })}
+                        className="inline-flex items-center gap-1 rounded-lg bg-slate-100 border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-200 transition cursor-pointer"
+                      >
+                        {isArabic ? 'الآن' : 'Maintenant'}
+                      </button>
+                    </div>
                     <input
                       type="time"
                       value={presenceDetailsForm.heureDepart}
@@ -883,6 +1320,35 @@ export default function PresencesPage() {
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-semibold text-sm text-slate-800"
                     />
                   </div>
+                </div>
+
+                {/* Accompagnateur lors du départ (affiché si heureDepart saisie) */}
+                {presenceDetailsForm.heureDepart && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">
+                      {isArabic ? 'الشخص المستلم (اختياري)' : 'Récupéré par (facultatif)'}
+                    </label>
+                    <input
+                      type="text"
+                      value={personneRecuperationInput}
+                      onChange={(e) => setPersonneRecuperationInput(e.target.value)}
+                      placeholder={isArabic ? 'مثال: الأب، الأم، الجد...' : 'Ex : Papa, Maman, Grand-mère...'}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 font-semibold text-sm text-slate-800"
+                    />
+                  </div>
+                )}
+
+                {/* Température */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{isArabic ? 'درجة الحرارة (°C) (اختياري)' : 'Température (°C) (facultatif)'}</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={presenceDetailsForm.temperature}
+                    onChange={(e) => setPresenceDetailsForm({ ...presenceDetailsForm, temperature: e.target.value })}
+                    placeholder="36.5"
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-black text-sm text-slate-800"
+                  />
                 </div>
 
                 {/* Repas & Humeur */}
@@ -894,10 +1360,11 @@ export default function PresencesPage() {
                       onChange={(e) => setPresenceDetailsForm({ ...presenceDetailsForm, repas: e.target.value })}
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-semibold text-sm text-slate-800"
                     >
-                      <option value="Tout">Tout mangé</option>
-                      <option value="Moyen">Moyen</option>
-                      <option value="Peu">Peu</option>
-                      <option value="Non">N'a pas mangé</option>
+                      <option value="">{isArabic ? 'غير مسجل' : 'Non renseigné'}</option>
+                      <option value="Tout">{isArabic ? 'أكل الكل' : 'Tout mangé'}</option>
+                      <option value="Moyen">{isArabic ? 'متوسط' : 'Moyen'}</option>
+                      <option value="Peu">{isArabic ? 'قليل' : 'Peu'}</option>
+                      <option value="Non">{isArabic ? 'لم يأكل' : "N'a pas mangé"}</option>
                     </select>
                   </div>
                   <div>
@@ -907,10 +1374,11 @@ export default function PresencesPage() {
                       onChange={(e) => setPresenceDetailsForm({ ...presenceDetailsForm, humeur: e.target.value })}
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-semibold text-sm text-slate-800"
                     >
-                      <option value="Souriant">Souriant</option>
-                      <option value="Calme">Calme</option>
-                      <option value="Agité">Agité</option>
-                      <option value="Fatigué">Fatigué</option>
+                      <option value="">{isArabic ? 'غير مسجل' : 'Non renseigné'}</option>
+                      <option value="Souriant">{isArabic ? 'مبتسم' : 'Souriant'}</option>
+                      <option value="Calme">{isArabic ? 'هادئ' : 'Calme'}</option>
+                      <option value="Agité">{isArabic ? 'مضطرب' : 'Agité'}</option>
+                      <option value="Fatigué">{isArabic ? 'متعب' : 'Fatigué'}</option>
                     </select>
                   </div>
                 </div>
@@ -920,13 +1388,14 @@ export default function PresencesPage() {
               {/* Actions Footer */}
               <div className="p-4 sm:p-6 bg-slate-50 border-t border-slate-100 flex flex-col gap-3 sm:flex-row">
                 <button
-                  onClick={() => setShowPresenceDetailsModal(false)}
+                  onClick={() => { if (!isSavingPointage) setShowPresenceDetailsModal(false); }}
                   className="w-full sm:flex-1 py-3 bg-slate-200 hover:bg-slate-300 rounded-xl font-bold text-slate-700 transition cursor-pointer text-xs"
                 >
                   {t('common.cancel')}
                 </button>
                 <button
-                  onClick={submitPresenceDetails}
+                  disabled={isSavingPointage}
+                  onClick={() => void submitPresenceDetails()}
                   className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition cursor-pointer text-xs shadow-md"
                 >
                   {isArabic ? 'تأشير كحاضر' : 'Marquer présent'}
@@ -969,6 +1438,19 @@ export default function PresencesPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {dailyReportChild && (
+        <ParentDailyReportModal
+          enfant={dailyReportChild}
+          date={selectedDate}
+          presence={todayPresenceByChild.get(dailyReportChild.id) || null}
+          repasList={repasData}
+          activitesList={activitesData}
+          creche={creche}
+          isArabic={isArabic}
+          onClose={() => setDailyReportChild(null)}
+        />
       )}
 
     </div>

@@ -1,3 +1,6 @@
+import { suspectedInvoiceIds, hasInvalidFinanceDetails } from '../utils/financePeriod';
+import FinanceReviewWarning from './FinanceReviewWarning';
+import FinanceUnavailable from './FinanceUnavailable';
 import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -15,13 +18,13 @@ import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/format';
 
-const monthKey = (date: Date) => date.toISOString().slice(0, 7);
+const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
 export default function Rapports() {
   const { language } = useLanguage();
   const isArabic = language === 'ar';
   const { user } = useAuth();
-  const { enfants: allEnfants, presences: allPresences, paiements: allPaiements, personnel: allPersonnel } = useDb();
+  const { enfants: allEnfants, presences: allPresences, paiements: allPaiements, personnel: allPersonnel, financialDataReady } = useDb();
   const [selectedMonth, setSelectedMonth] = useState(monthKey(new Date()));
 
   const enfants = user?.role === 'directeur'
@@ -30,6 +33,8 @@ export default function Rapports() {
   const enfantIds = useMemo(() => new Set(enfants.map(enfant => enfant.id)), [enfants]);
   const presences = allPresences.filter(presence => enfantIds.has(presence.enfantId));
   const paiements = allPaiements.filter(paiement => enfantIds.has(paiement.enfantId));
+  const suspected = suspectedInvoiceIds(paiements);
+  const invalidFinanceCount = paiements.filter(hasInvalidFinanceDetails).length;
   const personnel = user?.role === 'directeur'
     ? allPersonnel.filter((personne: any) => personne.crecheId === user.id)
     : allPersonnel;
@@ -52,9 +57,10 @@ export default function Rapports() {
     const tauxPresence = totalPointages > 0 ? Math.round((presents / totalPointages) * 100) : 0;
 
     const paiementsMois = paiements.filter((paiement: any) => {
+      if (paiement.statut === 'Annulé') return false;
       const echeance = typeof paiement.dateEcheance === 'string' ? paiement.dateEcheance : '';
       const periode = typeof paiement.moisConcerne === 'string' ? paiement.moisConcerne.toLowerCase() : '';
-      return echeance.startsWith(selectedMonth) || selectedMonthLabels.some(label => periode.includes(label));
+      return echeance.startsWith(selectedMonth) || (paiement.periodeCle ? paiement.periodeCle === `M:${selectedMonth}` : selectedMonthLabels.some(label => periode.includes(label)));
     });
     const payes = paiementsMois.filter(paiement => paiement.statut === 'Payé');
     const enAttente = paiementsMois.filter(paiement => paiement.statut === 'En attente');
@@ -102,63 +108,60 @@ export default function Rapports() {
     }, 80);
   };
 
+  if (!financialDataReady) return <FinanceUnavailable />;
+
   return (
-    <div className="space-y-5 print:bg-white print:p-0">
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 print:hidden">
+    <div className="space-y-4 sm:space-y-5 print:bg-white print:p-0">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 print:hidden">
         <div>
-          <div className="flex items-center gap-2">
-            <BarChart3 className="w-7 h-7 text-indigo-600" />
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900">
-              {isArabic ? 'التقارير الشهرية' : 'Rapports mensuels'}
-            </h1>
-          </div>
-          <p className="text-sm text-slate-500 mt-1">
-            {isArabic ? `ملخص موثوق للفترة ${selectedMonthLabel} مبني على البيانات المسجلة في المنصة.` : `Synthèse de ${selectedMonthLabel}, calculée uniquement à partir des données enregistrées.`}
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+            {isArabic ? 'التقارير الشهرية' : 'Rapports mensuels'}
+          </h1>
+          <p className="hidden sm:block text-xs text-slate-500 mt-0.5">
+            {isArabic ? `ملخص للفترة ${selectedMonthLabel} مبني على البيانات المسجلة.` : `Synthèse de ${selectedMonthLabel}, calculée à partir des données enregistrées.`}
           </p>
         </div>
         <div className="flex w-full items-center justify-between gap-2 sm:w-auto">
-          <button onClick={() => changeMonth(-1)} className="flex h-10 w-10 shrink-0 items-center justify-center p-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:border-indigo-300 cursor-pointer" aria-label={isArabic ? 'الشهر السابق' : 'Mois précédent'}>
-            <ChevronLeft className="w-4 h-4" />
+          <button onClick={() => changeMonth(-1)} className="flex h-9 w-9 shrink-0 items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 cursor-pointer" aria-label={isArabic ? 'الشهر السابق' : 'Mois précédent'}>
+            <ChevronLeft className={`w-4 h-4 ${isArabic ? 'rotate-180' : ''}`} />
           </button>
-          <div className="min-w-0 flex-1 px-2 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-800 sm:min-w-36 text-center capitalize truncate">
+          <div className="min-w-0 flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-800 sm:min-w-36 text-center capitalize truncate">
             {selectedMonthLabel}
           </div>
-          <button onClick={() => changeMonth(1)} className="flex h-10 w-10 shrink-0 items-center justify-center p-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:border-indigo-300 cursor-pointer" aria-label={isArabic ? 'الشهر التالي' : 'Mois suivant'}>
-            <ChevronRight className="w-4 h-4" />
+          <button onClick={() => changeMonth(1)} className="flex h-9 w-9 shrink-0 items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 cursor-pointer" aria-label={isArabic ? 'الشهر التالي' : 'Mois suivant'}>
+            <ChevronRight className={`w-4 h-4 ${isArabic ? 'rotate-180' : ''}`} />
           </button>
-          <button onClick={handlePrint} aria-label={isArabic ? 'طباعة التقرير' : 'Imprimer le rapport'} className="flex h-10 shrink-0 items-center justify-center gap-2 px-3.5 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 cursor-pointer">
+          <button onClick={handlePrint} aria-label={isArabic ? 'طباعة التقرير' : 'Imprimer le rapport'} className="flex h-9 shrink-0 items-center justify-center gap-1.5 px-3.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 cursor-pointer">
             <Printer className="w-4 h-4" />
             <span className="hidden sm:inline">{isArabic ? 'طباعة' : 'Imprimer'}</span>
           </button>
         </div>
       </div>
 
+      <FinanceReviewWarning count={paiements.filter(p => !p.periodeCle).length} suspected={paiements.filter(p => suspected.has(p.id)).length} invalid={invalidFinanceCount} />
+
       <div className="hidden print:block mb-6">
-        <h1 className="text-2xl font-black text-slate-900">Rawdha+ — Rapport mensuel</h1>
+        <h1 className="text-2xl font-bold text-slate-900">{isArabic ? 'Rawdha+ — التقرير الشهري' : 'Rawdha+ — Rapport mensuel'}</h1>
         <p className="text-sm text-slate-500 capitalize">{selectedMonthLabel}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
-        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs">
-          <Users className="w-5 h-5 text-indigo-500 mb-3" />
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{isArabic ? 'الأطفال النشطون' : 'Enfants actifs'}</p>
-          <p className="text-2xl font-black text-slate-900 mt-1">{enfants.filter(enfant => enfant.statut === 'Actif').length}</p>
+        <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
+          <p className="text-[11px] font-medium text-slate-500">{isArabic ? 'الأطفال النشطون' : 'Enfants actifs'}</p>
+          <p className="text-lg sm:text-2xl font-bold text-slate-900 mt-1 tabular-nums">{enfants.filter(enfant => enfant.statut === 'Actif').length}</p>
         </div>
-        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs">
-          <CalendarCheck className="w-5 h-5 text-emerald-500 mb-3" />
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{isArabic ? 'نسبة الحضور' : 'Taux de présence'}</p>
-          <p className="text-2xl font-black text-emerald-600 mt-1">{report.tauxPresence}%</p>
-          <p className="text-[10px] text-slate-400 mt-1">{isArabic ? `${report.totalPointages} تسجيلات` : `${report.totalPointages} pointages sur la période`}</p>
+        <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
+          <p className="text-[11px] font-medium text-slate-500">{isArabic ? 'نسبة الحضور' : 'Taux de présence'}</p>
+          <p className="text-lg sm:text-2xl font-bold text-emerald-700 mt-1 tabular-nums">{report.tauxPresence}%</p>
+          <p className="text-[11px] text-slate-400 mt-0.5">{isArabic ? `${report.totalPointages} تسجيلات` : `${report.totalPointages} pointages`}</p>
         </div>
-        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs">
-          <CreditCard className="w-5 h-5 text-indigo-500 mb-3" />
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{isArabic ? 'المبلغ المحصل خلال الفترة' : 'Montant encaissé sur la période'}</p>
-          <p className="text-xl font-black text-indigo-600 mt-1">{formatCurrency(report.totalPaye)}</p>
+        <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
+          <p className="text-[11px] font-medium text-slate-500">{isArabic ? 'فواتير بحالة مدفوعة للفترة' : 'Factures marquées payées'}</p>
+          <p className="text-base sm:text-xl font-bold text-slate-900 mt-1 tabular-nums">{invalidFinanceCount ? '—' : formatCurrency(report.totalPaye)}</p>
         </div>
-        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs">
-          <AlertTriangle className="w-5 h-5 text-rose-500 mb-3" />
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{isArabic ? 'المتأخرات المستحقة خلال الفترة' : 'Impayés échus sur la période'}</p>
-          <p className="text-xl font-black text-rose-600 mt-1">{formatCurrency(report.totalRetard)}</p>
+        <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
+          <p className="text-[11px] font-medium text-slate-500">{isArabic ? 'فواتير بحالة متأخرة للفترة' : 'Factures en retard'}</p>
+          <p className="text-base sm:text-xl font-bold text-rose-600 mt-1 tabular-nums">{invalidFinanceCount ? '—' : formatCurrency(report.totalRetard)}</p>
         </div>
       </div>
 
@@ -181,11 +184,12 @@ export default function Rapports() {
         </section>
 
         <section className="bg-white rounded-2xl border border-slate-100 shadow-xs p-5">
-          <h2 className="font-black text-slate-900 flex items-center gap-2"><CreditCard className="w-4 h-4 text-indigo-500" />{isArabic ? 'التحصيل خلال الفترة' : 'Encaissement sur la période'}</h2>
+          <h2 className="font-black text-slate-900 flex items-center gap-2"><CreditCard className="w-4 h-4 text-indigo-500" />{isArabic ? 'حالات الفواتير للفترة' : 'Statuts des factures de la période'}</h2>
+          <p className="mt-2 text-xs text-slate-500">{isArabic ? 'الفترة حسب شهر الفاتورة أو موعدها، وليست تاريخ الدفع.' : 'Période selon la facture ou son échéance, pas la date d’encaissement.'}</p>
           <div className="mt-5 space-y-3 text-sm">
-            <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-50"><span className="font-bold text-emerald-800">{isArabic ? 'مدفوع' : 'Payé'}</span><span className="font-black text-emerald-700">{formatCurrency(report.totalPaye)}</span></div>
-            <div className="flex items-center justify-between p-3 rounded-xl bg-amber-50"><span className="font-bold text-amber-800">{isArabic ? 'قيد الانتظار' : 'En attente'}</span><span className="font-black text-amber-700">{formatCurrency(report.totalAttendu)}</span></div>
-            <div className="flex items-center justify-between p-3 rounded-xl bg-rose-50"><span className="font-bold text-rose-800">{isArabic ? 'متأخر' : 'En retard'}</span><span className="font-black text-rose-700">{formatCurrency(report.totalRetard)}</span></div>
+            <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-50"><span className="font-bold text-emerald-800">{isArabic ? 'مدفوع' : 'Payé'}</span><span className="font-black text-emerald-700">{invalidFinanceCount ? '—' : formatCurrency(report.totalPaye)}</span></div>
+            <div className="flex items-center justify-between p-3 rounded-xl bg-amber-50"><span className="font-bold text-amber-800">{isArabic ? 'قيد الانتظار' : 'En attente'}</span><span className="font-black text-amber-700">{invalidFinanceCount ? '—' : formatCurrency(report.totalAttendu)}</span></div>
+            <div className="flex items-center justify-between p-3 rounded-xl bg-rose-50"><span className="font-bold text-rose-800">{isArabic ? 'متأخر' : 'En retard'}</span><span className="font-black text-rose-700">{invalidFinanceCount ? '—' : formatCurrency(report.totalRetard)}</span></div>
           </div>
           <div className="mt-5 p-3 rounded-xl border border-slate-100 flex items-start gap-2 text-xs text-slate-500">
             <FileText className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />

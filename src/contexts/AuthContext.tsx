@@ -1,3 +1,4 @@
+import { directorApprovalStatus } from '../utils/directorApproval';
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { UserAccount } from '../types';
 import { supabase, getCollectionDocument, updateCollectionDocument } from '../supabase';
@@ -62,7 +63,7 @@ interface AuthContextType {
   updateProfile: (changes: Partial<UserAccount>) => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | null>(null);
+export const AuthContext = createContext<AuthContextType | null>(null);
 
 const DEFAULT_CRECHE: CrecheInfo = {
   nom: 'RAWDHA+',
@@ -96,7 +97,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   // Charge le profil (table "comptes") associé à la session Auth active.
-  const loadProfile = async (userId: string, authUserSnapshot?: AuthUserSnapshot): Promise<UserAccount | null> => {
+  const loadProfile = async (userId: string): Promise<UserAccount | null> => {
     const { data, error } = await withTimeout(
       supabase
         .from('comptes')
@@ -119,14 +120,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     const rawProfile = { ...(data.data as object), id: data.id } as UserAccount;
-    // Compatibilité avec les anciens comptes : le flag Auth reste la source de vérité
-    // tant que le profil n’a pas encore reçu approvalStatus explicitement.
+    // A missing or unknown status is not approval; legacy accounts need review.
     const approvalStatus = rawProfile.role === 'directeur'
-      ? (rawProfile.approvalStatus === 'pending'
-        ? 'pending'
-        : rawProfile.approvalStatus === 'approved'
-          ? 'approved'
-          : authUserSnapshot?.user_metadata?.pendingDirector === true ? 'pending' : 'approved')
+      ? directorApprovalStatus(rawProfile.approvalStatus)
       : undefined;
     const profile = { ...rawProfile, ...(approvalStatus ? { approvalStatus } : {}) } as UserAccount;
     // Rawdha+ ne propose pas encore d’espace parent : seuls admin et directeur
@@ -177,7 +173,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       try {
-        const profile = await loadProfile(session.user.id, session.user);
+        const profile = await loadProfile(session.user.id);
         if (cancelled) return;
         setUser(profile);
         if (profile) {
@@ -251,7 +247,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       try {
         const { data: { user: authUser } } = await supabase.auth.getUser();
         if (!authUser || authUser.id !== user.id) return;
-        const profile = await loadProfile(user.id, authUser);
+        const profile = await loadProfile(user.id);
         if (!cancelled && profile && profile.approvalStatus !== 'pending') {
           setUser(profile);
           void loadCrecheSettings(profile);
@@ -303,7 +299,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         };
       }
 
-      const profile = await loadProfile(data.user.id, data.user);
+      const profile = await loadProfile(data.user.id);
       if (!profile) {
         await supabase.auth.signOut().catch(() => undefined);
         return {
@@ -346,11 +342,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     delete (safeChanges as Partial<UserAccount>).role;
     delete (safeChanges as Partial<UserAccount>).email;
     delete (safeChanges as Partial<UserAccount>).motDePasse;
+    delete (safeChanges as Partial<UserAccount>).abonnementActif;
+    delete (safeChanges as Partial<UserAccount>).dateFinAbonnement;
+    delete (safeChanges as Partial<UserAccount>).approvalStatus;
     await updateCollectionDocument<UserAccount>('comptes', user.id, safeChanges);
     const nextUser = { ...user, ...safeChanges } as UserAccount;
     setUser(nextUser);
     await loadCrecheSettings(nextUser);
   };
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const handleSubActivated = () => {
+      void getCollectionDocument<UserAccount>('comptes', user.id)
+        .then(fresh => {
+          if (fresh) setUser(prev => (prev && prev.id === user.id ? { ...prev, ...fresh } : prev));
+        })
+        .catch(() => {});
+    };
+    window.addEventListener('rawdha-subscription-activated', handleSubActivated);
+    return () => window.removeEventListener('rawdha-subscription-activated', handleSubActivated);
+  }, [user?.id]);
 
   return (
     <AuthContext.Provider value={{

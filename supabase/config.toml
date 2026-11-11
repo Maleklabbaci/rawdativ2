@@ -1,0 +1,13 @@
+# Configuration Supabase CLI — Rawdha+
+# `verify_jwt = false` est indispensable sur `slickpay-webhook` car les serveurs SlickPay / SATIM
+# appellent ce webhook externe en arrière-plan sans jeton JWT utilisateur Supabase
+# (l'authenticité est garantie par signature HMAC-SHA256 + contre-vérification API SlickPay).
+
+[functions.slickpay-checkout]
+verify_jwt = true
+
+[functions.slickpay-webhook]
+verify_jwt = false
+
+[functions.send-parent-web-push]
+verify_jwt = true

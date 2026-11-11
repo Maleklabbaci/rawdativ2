@@ -14,6 +14,9 @@ interface ToastContextType {
   toasts: Toast[];
   showToast: (message: string, type: ToastType, duration?: number) => void;
   removeToast: (id: string) => void;
+  success: (message: string, duration?: number) => void;
+  error: (message: string, duration?: number) => void;
+  info: (message: string, duration?: number) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -28,9 +31,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setToasts(prev => [...prev, newToast]);
     
     if (duration > 0) {
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         removeToast(id);
       }, duration);
+      (timer as unknown as { unref?: () => void })?.unref?.();
     }
   }, []);
 
@@ -38,8 +42,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
+  const success = useCallback((message: string, duration?: number) => showToast(message, 'success', duration), [showToast]);
+  const error = useCallback((message: string, duration?: number) => showToast(message, 'error', duration), [showToast]);
+  const info = useCallback((message: string, duration?: number) => showToast(message, 'info', duration), [showToast]);
+
   return (
-    <ToastContext.Provider value={{ toasts, showToast, removeToast }}>
+    <ToastContext.Provider value={{ toasts, showToast, removeToast, success, error, info }}>
       {children}
     </ToastContext.Provider>
   );
@@ -51,4 +59,8 @@ export function useToast() {
     throw new Error('useToast must be used within ToastProvider');
   }
   return context;
+}
+
+export function useOptionalToast() {
+  return useContext(ToastContext);
 }

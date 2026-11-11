@@ -4,6 +4,8 @@ import * as QRCode from 'qrcode';
 import { useDb } from '../contexts/DbContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { DemandeAdmission } from '../types';
+import DocumentScannerSlot from './DocumentScannerSlot';
+import type { ChildDocumentKey } from '../utils/documentPdf';
 
 export default function Admissions() {
   const { language } = useLanguage();
@@ -12,6 +14,8 @@ export default function Admissions() {
   const [selected, setSelected] = useState<DemandeAdmission | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
+  const [qrError, setQrError] = useState(false);
   const [pendingDecision, setPendingDecision] = useState<{ demande: DemandeAdmission; statut: 'acceptee' | 'refusee' } | null>(null);
   const [decisionMotif, setDecisionMotif] = useState('');
   const [decisionError, setDecisionError] = useState('');
@@ -20,22 +24,31 @@ export default function Admissions() {
   const [qrDataUrl, setQrDataUrl] = useState('');
 
   useEffect(() => {
-    if (!linkUrl) {
-      setQrDataUrl('');
-      return;
+    let current = true;
+    setQrDataUrl('');
+    setQrError(false);
+    setCopied(false);
+    setCopyError(false);
+    if (linkUrl) {
+      QRCode.toDataURL(linkUrl, { width: 520, margin: 2, errorCorrectionLevel: 'M', color: { dark: '#172554', light: '#ffffff' } })
+        .then(url => { if (current) setQrDataUrl(url); })
+        .catch(() => { if (current) setQrError(true); });
     }
-    QRCode.toDataURL(linkUrl, { width: 520, margin: 2, errorCorrectionLevel: 'M', color: { dark: '#172554', light: '#ffffff' } })
-      .then(setQrDataUrl)
-      .catch(error => console.error('Erreur de rendu du QR permanent:', error));
+    return () => { current = false; };
   }, [linkUrl]);
 
   const pending = demandesAdmission.filter(item => item.statut === 'en_attente');
 
   const copyLink = async () => {
     if (!linkUrl) return;
-    await navigator.clipboard?.writeText(linkUrl);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    setCopied(false);
+    setCopyError(false);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable');
+      await navigator.clipboard.writeText(linkUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch { setCopyError(true); }
   };
 
   const downloadQr = () => {
@@ -85,31 +98,50 @@ export default function Admissions() {
   };
 
   return (
-    <div className="space-y-8" dir={isAr ? 'rtl' : 'ltr'}>
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+    <div className="space-y-4 sm:space-y-6" dir={isAr ? 'rtl' : 'ltr'}>
+      <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
         <div>
-          <p className="mb-1 text-xs font-black uppercase tracking-[0.2em] text-indigo-500">RAWDHA+ • {isAr ? 'قبول الأطفال' : 'Admissions'}</p>
-          <h1 className="text-3xl font-black tracking-tight text-slate-950">{isAr ? 'رمز الروضة وطلبات التسجيل' : 'QR permanent et demandes'}</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">{isAr ? 'رمز واحد دائم لكل روضة. شاركه مع الأولياء وراجع الطلبات الواردة هنا.' : 'Un seul QR permanent est provisionné automatiquement pour chaque crèche. Partagez-le aux parents puis validez les demandes reçues.'}</p>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">{isAr ? 'طلبات التسجيل ورمز QR' : 'Admissions & QR'}</h1>
+          <p className="hidden sm:block mt-0.5 text-xs text-slate-500">{isAr ? 'شارك رمز الروضة الدائم مع الأولياء وراجع الطلبات الواردة.' : 'Partagez votre lien permanent aux parents et validez les demandes reçues.'}</p>
         </div>
-        <div className="flex items-center gap-2 rounded-2xl bg-indigo-50 px-4 py-3 text-sm font-bold text-indigo-700"><ShieldCheck className="h-5 w-5" />{isAr ? 'القبول بقرار الإدارة' : 'Validation par la direction'}</div>
+        <div className="flex items-center gap-2">
+          <span className="rounded-xl border border-amber-200/80 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800">{pending.length} {isAr ? 'في الانتظار' : 'en attente'}</span>
+          <span className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">{demandesAdmission.length} {isAr ? 'إجمالاً' : 'reçue(s)'}</span>
+        </div>
       </div>
 
-      <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <div className="rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-600 to-violet-700 p-6 text-white shadow-xl shadow-indigo-900/10 sm:p-8">
-          <div className="flex items-start gap-4"><div className="rounded-2xl bg-white/15 p-3"><QrCode className="h-7 w-7" /></div><div><h2 className="text-xl font-black">{isAr ? 'رمز QR الدائم' : 'Votre QR permanent'}</h2><p className="mt-1 text-sm leading-6 text-indigo-100">{isAr ? 'تم إنشاؤه تلقائياً مرة واحدة لهذه الروضة. لا تنشئ رمزاً جديداً.' : 'Il est créé automatiquement une seule fois pour cette crèche. Aucun bouton de génération.'}</p></div></div>
-          {permanentLink && linkUrl && qrDataUrl ? <div className="mt-6 grid gap-5 rounded-3xl bg-white p-5 text-slate-900 sm:grid-cols-[1fr_auto] sm:items-center"><div className="min-w-0"><p className="text-xs font-black uppercase tracking-wider text-emerald-600">{isAr ? 'نشط ودائم' : 'Actif et permanent'}</p><p className="mt-2 break-all rounded-xl bg-slate-50 p-3 text-xs font-semibold text-slate-600">{linkUrl}</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={copyLink} className="inline-flex items-center gap-2 rounded-xl bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-100"><Copy className="h-3.5 w-3.5" />{copied ? (isAr ? 'تم النسخ' : 'Copié') : (isAr ? 'نسخ الرابط' : 'Copier')}</button><a href={linkUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200"><ExternalLink className="h-3.5 w-3.5" />{isAr ? 'فتح' : 'Ouvrir'}</a><button type="button" onClick={downloadQr} className="inline-flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 hover:bg-emerald-100"><Download className="h-3.5 w-3.5" />{isAr ? 'تحميل QR' : 'Télécharger QR'}</button></div></div><img src={qrDataUrl} alt="QR code admission permanent" className="mx-auto h-40 w-40 rounded-2xl border border-slate-100 p-2" /></div> : <div className="mt-6 rounded-2xl border border-white/20 bg-white/10 p-5 text-sm font-bold text-indigo-100">{isAr ? 'جاري تجهيز رمز الروضة الدائم...' : 'Le QR permanent est en cours de préparation automatiquement...'}</div>}
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-6 shadow-2xs">
+        <div className="flex items-center gap-2.5">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-indigo-50 text-indigo-600"><QrCode className="h-5 w-5" /></span>
+          <div className="min-w-0">
+            <h2 className="text-sm sm:text-base font-bold text-slate-900 truncate">{isAr ? 'رمز QR الدائم لروضتك' : 'Votre QR permanent'}</h2>
+            <p className="text-xs text-slate-500 truncate">{isAr ? 'يفتح استمارة التسجيل فقط دون أي وصول لبياناتك الداخلية.' : 'Ouvre uniquement le formulaire public d’inscription.'}</p>
+          </div>
         </div>
-
-        <div className="min-w-0 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-8"><div><h2 className="text-lg font-black text-slate-900">{isAr ? 'ملخص الطلبات' : 'Résumé des demandes'}</h2><p className="mt-1 text-xs text-slate-500">{isAr ? 'كل طلب عبر QR مرتبط بهذه الروضة.' : 'Chaque demande envoyée avec ce QR est rattachée à cette crèche.'}</p></div><div className="mt-5 grid grid-cols-1 min-[390px]:grid-cols-2 gap-3"><div className="rounded-2xl bg-amber-50 p-4"><p className="text-2xl font-black text-amber-700">{pending.length}</p><p className="mt-1 text-xs font-bold text-amber-700">{isAr ? 'في الانتظار' : 'En attente'}</p></div><div className="rounded-2xl bg-indigo-50 p-4"><p className="text-2xl font-black text-indigo-700">{demandesAdmission.length}</p><p className="mt-1 text-xs font-bold text-indigo-700">{isAr ? 'كل الطلبات' : 'Total reçu'}</p></div></div></div>
+        {permanentLink && linkUrl ? (
+          <div className="mt-3.5 grid gap-3.5 rounded-xl border border-slate-100 bg-slate-50/70 p-3.5 sm:grid-cols-[1fr_auto] sm:items-center">
+            <div className="min-w-0">
+              <p className="truncate rounded-lg border border-slate-200/80 bg-white px-2.5 py-2 text-xs font-medium text-slate-600">{linkUrl}</p>
+              <div className="mt-2.5 grid grid-cols-3 gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
+                <button type="button" onClick={copyLink} className="min-h-9! whitespace-nowrap inline-flex items-center justify-center gap-1 rounded-xl bg-indigo-600 px-2.5 sm:px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-700 cursor-pointer"><Copy className="h-3.5 w-3.5 shrink-0" /><span>{copied ? (isAr ? 'تم النسخ' : 'Copié') : (isAr ? 'نسخ' : 'Copier')}</span></button>
+                <a href={linkUrl} target="_blank" rel="noreferrer" className="min-h-9! whitespace-nowrap inline-flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 sm:px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"><ExternalLink className="h-3.5 w-3.5 shrink-0" /><span>{isAr ? 'فتح' : 'Ouvrir'}</span></a>
+                <button type="button" disabled={!qrDataUrl} onClick={downloadQr} aria-label={isAr ? 'تحميل QR' : 'Télécharger QR'} className="min-h-9! whitespace-nowrap inline-flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 sm:px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"><Download className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{isAr ? 'تحميل' : 'QR PNG'}</span></button>
+              </div>
+              {copyError && <p role="alert" className="mt-2 text-xs font-bold text-rose-700">{isAr ? 'تعذر النسخ. انسخ الرابط المعروض يدوياً.' : 'Copie impossible. Copiez le lien affiché manuellement.'}</p>}
+            </div>
+            {qrDataUrl ? <img src={qrDataUrl} alt={isAr ? "رمز التسجيل" : "QR code admission permanent"} className="mx-auto h-32 w-32 rounded-xl border border-slate-200 bg-white p-2" /> : <p role="status" className="text-xs font-semibold text-slate-500">{qrError ? (isAr ? "تعذر عرض الرمز. حاول إعادة تحميل الصفحة." : "Impossible d’afficher le QR. Rechargez la page.") : (isAr ? "جارٍ إعداد الرمز…" : "Préparation du QR…")}</p>}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs font-semibold text-slate-600">{qrError ? (isAr ? 'تعذر عرض الرمز. حاول إعادة تحميل الصفحة.' : 'Impossible d’afficher le QR. Rechargez la page.') : import.meta.env.DEV && import.meta.env.VITE_ARENA_DEMO === 'true' ? (isAr ? 'رمز التسجيل غير متاح في النسخة التجريبية.' : 'Le QR d’inscription n’est pas disponible dans cet aperçu de démonstration.') : (isAr ? 'جاري تجهيز رمز الروضة الدائم...' : 'Le QR permanent est en cours de préparation automatiquement...')}</div>
+        )}
       </section>
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><div className="flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-indigo-600" /><h2 className="text-xl font-black text-slate-900">{isAr ? 'طلبات التسجيل' : "Demandes d'admission"}</h2></div><p className="mt-1 text-sm text-slate-500">{isAr ? 'راجع الملفات الواردة قبل إضافة الطفل إلى قاعدة التسيير.' : 'Vérifiez les dossiers reçus avant de créer l’enfant dans votre gestion.'}</p></div><span className="rounded-full bg-amber-50 px-4 py-2 text-xs font-black text-amber-700">{pending.length} {isAr ? 'في الانتظار' : 'en attente'}</span></div><div className="mt-6 grid gap-4 lg:grid-cols-2">{demandesAdmission.length === 0 ? <div className="lg:col-span-2 rounded-2xl border border-dashed border-slate-200 p-10 text-center text-sm text-slate-400">{isAr ? 'لا توجد طلبات تسجيل حالياً.' : "Aucune demande d'admission pour le moment."}</div> : [...demandesAdmission].sort((a, b) => b.dateDemande.localeCompare(a.dateDemande)).map(demande => <AdmissionCard key={demande.id} demande={demande} isAr={isAr} selected={selected?.id === demande.id} busy={busyId === demande.id} onSelect={() => setSelected(selected?.id === demande.id ? null : demande)} onDecide={requestDecision} />)}</div></section>
+      <section className="min-w-0 rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-6 shadow-2xs"><div className="flex items-center justify-between gap-3"><div><h2 className="text-base font-bold text-slate-900">{isAr ? 'طلبات التسجيل' : "Demandes reçues"}</h2><p className="hidden sm:block mt-0.5 text-xs text-slate-500">{isAr ? 'راجع الملفات الواردة قبل إضافة الطفل إلى قاعدة التسيير.' : 'Vérifiez chaque dossier avant de créer l’enfant dans votre gestion.'}</p></div><span className="shrink-0 whitespace-nowrap rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">{pending.length} {isAr ? 'في الانتظار' : 'en attente'}</span></div><div className="mt-4 grid min-w-0 gap-3 lg:grid-cols-2">{demandesAdmission.length === 0 ? <div className="lg:col-span-2 rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-400">{isAr ? 'لا توجد طلبات تسجيل حالياً.' : "Aucune demande d'admission pour le moment."}</div> : [...demandesAdmission].sort((a, b) => b.dateDemande.localeCompare(a.dateDemande)).map(demande => <AdmissionCard key={demande.id} demande={demande} isAr={isAr} selected={selected?.id === demande.id} busy={busyId === demande.id} onSelect={() => setSelected(selected?.id === demande.id ? null : demande)} onDecide={requestDecision} />)}</div></section>
 
       {pendingDecision && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="admission-decision-title">
         <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl sm:p-8" dir={isAr ? 'rtl' : 'ltr'}>
           <div className="flex items-start justify-between gap-4">
-            <div><div className="flex items-center gap-2 text-indigo-700"><ShieldCheck className="h-5 w-5" /><p className="text-xs font-black uppercase tracking-wider">{isAr ? 'تأكيد القرار' : 'Confirmation du décision'}</p></div><h2 id="admission-decision-title" className="mt-2 text-xl font-black text-slate-950">{pendingDecision.statut === 'acceptee' ? (isAr ? 'قبول وإضافة الطفل؟' : 'Accepter et ajouter cet enfant ?') : (isAr ? 'رفض طلب التسجيل؟' : 'Refuser cette demande ?')}</h2></div>
+            <div><div className="flex items-center gap-2 text-indigo-700"><ShieldCheck className="h-5 w-5" /><p className="text-xs font-black uppercase tracking-wider">{isAr ? 'تأكيد القرار' : 'Confirmation de la décision'}</p></div><h2 id="admission-decision-title" className="mt-2 text-xl font-black text-slate-950">{pendingDecision.statut === 'acceptee' ? (isAr ? 'قبول وإضافة الطفل؟' : 'Accepter et ajouter cet enfant ?') : (isAr ? 'رفض طلب التسجيل؟' : 'Refuser cette demande ?')}</h2></div>
             <button type="button" onClick={cancelDecision} disabled={Boolean(busyId)} aria-label={isAr ? 'إغلاق' : 'Fermer'} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"><X className="h-5 w-5" /></button>
           </div>
           <div className="mt-5 rounded-2xl bg-slate-50 p-4"><p className="text-sm font-black text-slate-900">{pendingDecision.demande.prenom} {pendingDecision.demande.nom}</p><p className="mt-1 text-xs text-slate-500">{pendingDecision.demande.parentPrenom} {pendingDecision.demande.parentNom} • {pendingDecision.demande.parentTelephone}</p></div>
@@ -125,8 +157,15 @@ export default function Admissions() {
 
 function AdmissionCard({ demande, isAr, selected, busy, onSelect, onDecide }: { key?: string; demande: DemandeAdmission; isAr: boolean; selected: boolean; busy: boolean; onSelect: () => void; onDecide: (demande: DemandeAdmission, statut: 'acceptee' | 'refusee') => void }) {
   const statusClass = demande.statut === 'acceptee' ? 'bg-emerald-50 text-emerald-700' : demande.statut === 'refusee' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700';
-  const statusLabel = demande.statut === 'acceptee' ? (isAr ? 'مقبول' : 'Acceptée') : demande.statut === 'refusee' ? (isAr ? 'مرفوض' : 'Refusée') : (isAr ? 'في الانتظار' : 'En attente');
-  return <article className="rounded-2xl border border-slate-200 p-5 transition hover:border-indigo-200 hover:shadow-md"><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600"><UserRound className="h-5 w-5" /></div><div className="min-w-0"><h3 className="truncate text-base font-black text-slate-900">{demande.prenom} {demande.nom}</h3><p className="mt-1 text-xs text-slate-500">{demande.parentPrenom} {demande.parentNom} • {demande.parentTelephone}</p></div></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-black ${statusClass}`}>{statusLabel}</span></div><p className="mt-4 text-xs text-slate-500">{new Date(demande.dateDemande).toLocaleString(isAr ? 'ar-DZ' : 'fr-DZ')} • {demande.groupeAge}</p><button type="button" onClick={onSelect} className="mt-4 inline-flex min-h-10 items-center text-xs font-black text-indigo-600 hover:text-indigo-800">{selected ? (isAr ? 'إخفاء التفاصيل' : 'Masquer les détails') : (isAr ? 'عرض الملف' : 'Voir le dossier')}</button>{selected && <div className="mt-4 space-y-3 border-t border-slate-100 pt-4 text-sm text-slate-600"><Detail label={isAr ? 'تاريخ الميلاد' : 'Date de naissance'} value={demande.dateNaissance} /><Detail label={isAr ? 'الحساسيات' : 'Allergies'} value={demande.allergie || '—'} /><Detail label={isAr ? 'النظام الغذائي' : 'Régime'} value={demande.regimeAlimentaire || '—'} /><Detail label={isAr ? 'البريد' : 'E-mail'} value={demande.parentEmail || '—'} /><Detail label={isAr ? 'العنوان' : 'Adresse'} value={demande.parentAdresse || '—'} />{demande.statut === 'refusee' && demande.motifRefus && <Detail label={isAr ? 'سبب الرفض' : 'Motif du refus'} value={demande.motifRefus} />} {demande.statut === 'en_attente' && <div className="flex flex-wrap gap-2 pt-2"><button type="button" disabled={busy} onClick={() => onDecide(demande, 'acceptee')} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700 disabled:opacity-60"><ClipboardCheck className="h-3.5 w-3.5" />{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (isAr ? 'قبول وإضافة الطفل' : 'Accepter et ajouter')}</button><button type="button" disabled={busy} onClick={() => onDecide(demande, 'refusee')} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 hover:bg-rose-100 disabled:opacity-60"><XCircle className="h-3.5 w-3.5" />{isAr ? 'رفض' : 'Refuser'}</button></div>}</div>}</article>;
+  const statusLabel = demande.statut === 'acceptee' ? (isAr ? 'مقبول' : 'Acceptée') : demande.statut === 'refusee' ? 'مرفوض' : (isAr ? 'في الانتظار' : 'En attente');
+  const attachedDocs = demande.documentsFichiers || {};
+  const docEntries: Array<[ChildDocumentKey, string]> = [
+    ['certificatMedical', isAr ? 'الشهادة الطبية' : 'Certificat médical'],
+    ['carnetVaccination', isAr ? 'دفتر التلقيح' : 'Carnet de vaccination'],
+    ['justificatifDomicile', isAr ? 'إثبات السكن' : 'Justificatif de domicile'],
+    ['photoIdentite', isAr ? 'صورة الهوية' : "Photo d'identité"],
+  ];
+  return <article className="min-w-0 rounded-2xl border border-slate-200/85 p-4 transition hover:border-indigo-200 hover:shadow-xs"><div className="flex items-start justify-between gap-2.5"><div className="flex min-w-0 items-center gap-2.5"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><UserRound className="h-4.5 w-4.5" /></div><div className="min-w-0"><h3 className="truncate text-sm font-bold text-slate-900">{demande.prenom} {demande.nom}</h3><p className="mt-0.5 truncate text-xs text-slate-500">{demande.parentPrenom} {demande.parentNom} · {demande.parentTelephone}</p></div></div><span className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[10.5px] font-bold ${statusClass}`}>{demande.statut === 'refusee' && !isAr ? 'Refusée' : statusLabel}</span></div><div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-2.5"><p className="truncate text-[11px] font-medium text-slate-500 tabular-nums">{new Date(demande.dateDemande).toLocaleDateString(isAr ? 'ar-DZ' : 'fr-DZ')} · {demande.groupeAge}</p><button type="button" onClick={onSelect} className="min-h-8! shrink-0 whitespace-nowrap inline-flex items-center rounded-lg px-2 py-1 text-xs font-bold text-indigo-600 hover:bg-indigo-50 cursor-pointer">{selected ? (isAr ? 'إخفاء' : 'Masquer') : (isAr ? 'عرض الملف' : 'Voir le dossier')}</button></div>{selected && <div className="mt-3 space-y-2.5 border-t border-slate-100 pt-3 text-sm text-slate-600"><Detail label={isAr ? 'تاريخ الميلاد' : 'Date de naissance'} value={demande.dateNaissance} /><Detail label={isAr ? 'الحساسيات' : 'Allergies'} value={demande.allergie || '—'} /><Detail label={isAr ? 'النظام الغذائي' : 'Régime'} value={demande.regimeAlimentaire || '—'} /><Detail label={isAr ? 'البريد' : 'E-mail'} value={demande.parentEmail || '—'} /><Detail label={isAr ? 'العنوان' : 'Adresse'} value={demande.parentAdresse || '—'} /><div className="grid gap-2 pt-1 sm:grid-cols-2">{docEntries.map(([k, lbl]) => <DocumentScannerSlot key={k} docKey={k} label={lbl} isArabic={isAr} value={attachedDocs[k]} declaredWithoutFile={Boolean(demande.documentsRequis?.[k] && !attachedDocs[k])} readOnly childName={`${demande.prenom} ${demande.nom}`.trim()} />)}</div>{demande.statut === 'refusee' && demande.motifRefus && <Detail label={isAr ? 'سبب الرفض' : 'Motif du refus'} value={demande.motifRefus} />} {demande.statut === 'en_attente' && <div className="grid grid-cols-2 gap-2 pt-2"><button type="button" disabled={busy} onClick={() => onDecide(demande, 'acceptee')} className="min-h-9! whitespace-nowrap inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-60 cursor-pointer"><ClipboardCheck className="h-3.5 w-3.5 shrink-0" />{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (isAr ? 'قبول وإضافة' : 'Accepter et ajouter')}</button><button type="button" disabled={busy} onClick={() => onDecide(demande, 'refusee')} className="min-h-9! whitespace-nowrap inline-flex items-center justify-center gap-1.5 rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-60 cursor-pointer"><XCircle className="h-3.5 w-3.5 shrink-0" />{isAr ? 'رفض' : 'Refuser'}</button></div>}</div>}</article>;
 }
 
 function Detail({ label, value }: { label: string; value: string }) {

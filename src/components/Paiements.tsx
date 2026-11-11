@@ -1,31 +1,58 @@
-import { useState } from 'react';
-import { 
-  Plus, 
-  Trash2, 
-  X, 
-  CreditCard, 
-  Search, 
-  DollarSign, 
-  TrendingUp, 
-  Clock, 
-  AlertCircle, 
-  CheckCircle2, 
+import { useReminderPreflight } from '../hooks/useReminderPreflight';
+import InvoiceCorrections from './InvoiceCorrections';
+import FinanceReviewWarning from './FinanceReviewWarning';
+import InvoicePeriodReview from './InvoicePeriodReview';
+import {
+  INVOICE_PAYMENT_METHODS,
+  formatInvoiceStatusLabel,
+  formatPaymentMethodLabel,
+  hasInvalidFinanceDetails,
+  invoicePeriod,
+  localizeInvoicePeriodText,
+  reminderBlockReason,
+  reminderContext,
+} from '../utils/financePeriod';
+import { financeErrorMessage } from '../utils/financeError';
+import { spreadsheetCsvCell } from '../utils/csv';
+import FinanceUnavailable from './FinanceUnavailable';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Plus,
+  X,
+  CreditCard,
+  Search,
+  DollarSign,
+  TrendingUp,
+  Clock,
+  AlertCircle,
+  CheckCircle2,
   Calendar,
   HelpCircle,
   FileText,
   Edit,
   Copy,
-  MessageCircle
+  MessageCircle,
+  Download,
+  Sparkles,
+  Wallet,
+  Receipt,
+  Ban,
 } from 'lucide-react';
+import { buildPaymentReceiptPdf } from '../utils/paymentReceiptPdf';
+import InAppPdfViewerModal, { type InAppPdfViewerSource } from './InAppPdfViewerModal';
 import { useLanguage } from '../contexts/LanguageContext';
-import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useWorkspaceProfile } from '../contexts/WorkspaceProfileContext';
+import InvoiceInstallmentsModal, { useInvoiceInstallments } from './InvoiceInstallmentsModal';
 import { Enfant, Paiement } from '../types';
 import { formatCurrency } from '../utils/format';
 import { motion, AnimatePresence } from 'motion/react';
 import Facture from './Facture';
+import BatchMonthlyInvoicesModal from './BatchMonthlyInvoicesModal';
+import EnfantDetails from './EnfantDetails';
+import { useIsMobileViewport } from '../hooks/useMobileViewport';
 
 const normalizeAlgerianWhatsApp = (raw?: string) => {
   const digits = (raw || '').replace(/\D/g, '');
@@ -41,7 +68,7 @@ const normalizeAlgerianWhatsApp = (raw?: string) => {
 
 const findWhatsAppPhone = (enfant: Enfant | undefined) => {
   if (!enfant) return null;
-  return enfant.parents
+  return (enfant.parents || [])
     .map(parent => normalizeAlgerianWhatsApp(parent.telephone))
     .find((value): value is string => Boolean(value)) || null;
 };
@@ -50,12 +77,13 @@ const buildWhatsAppRelanceMessage = (paiement: RichPaiement, enfant: Enfant | un
   if (!enfant) return '';
   const childName = `${enfant.prenom} ${enfant.nom}`;
   const dueDate = paiement.dateEcheance || (isArabic ? 'غير محدد' : 'non précisée');
+  const originalPeriod = invoicePeriod(paiement);
   const period = isArabic
-    ? paiement.moisConcerne.replace(/janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre/gi, month => ({ janvier: 'جانفي', février: 'فيفري', mars: 'مارس', avril: 'أفريل', mai: 'ماي', juin: 'جوان', juillet: 'جويلية', août: 'أوت', septembre: 'سبتمبر', octobre: 'أكتوبر', novembre: 'نوفمبر', décembre: 'ديسمبر' }[month.toLowerCase()] ?? month))
-    : paiement.moisConcerne;
+    ? originalPeriod.replace(/janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre/gi, month => ({ janvier: 'جانفي', février: 'فيفري', mars: 'مارس', avril: 'أفريل', mai: 'ماي', juin: 'جوان', juillet: 'جويلية', août: 'أوت', septembre: 'سبتمبر', octobre: 'أكتوبر', novembre: 'نوفمبر', décembre: 'ديسمبر' }[month.toLowerCase()] ?? month))
+    : originalPeriod;
   return isArabic
-    ? `السلام عليكم، نذكركم بأن فاتورة ${childName} الخاصة بـ ${period} بمبلغ ${formatCurrency(paiement.montant)} ${paiement.statut === 'Retard' ? 'متأخرة وغير مسددة' : 'في انتظار التسديد'}. تاريخ الاستحقاق: ${dueDate}. شكراً لتواصلكم مع إدارة الروضة.`
-    : `Bonjour,\n\nNous vous rappelons que la facture de ${childName} pour ${paiement.moisConcerne} (${formatCurrency(paiement.montant)}) est ${paiement.statut === 'Retard' ? 'en retard et reste impayée' : 'en attente de règlement'}. Échéance : ${dueDate}.\n\nMerci de prendre contact avec la direction de la crèche.\n\nCordialement,\nLa direction de Rawdha+`;
+    ? `السلام عليكم، نرجو التواصل مع إدارة الروضة للتحقق من الفاتورة المسجلة باسم ${childName} للفترة ${period} بمبلغ ${formatCurrency(paiement.montant)}. تاريخ الاستحقاق المسجل: ${dueDate}. شكراً لكم.`
+    : `Bonjour,\n\nMerci de contacter la direction pour vérifier la facture enregistrée pour ${childName}, période ${period}, montant ${formatCurrency(paiement.montant)}. Échéance enregistrée : ${dueDate}.\n\nCordialement,\nLa direction de Rawdha+`;
 };
 
 const buildWhatsAppRelanceLink = (paiement: RichPaiement, enfant: Enfant | undefined, isArabic: boolean) => {
@@ -73,60 +101,153 @@ interface RichPaiement extends Paiement {
   typeFacture?: 'Mensuel' | 'Annuel';
 }
 
-const PAYMENT_METHODS: NonNullable<RichPaiement['moyenPaiement']>[] = ['Espèces', 'Chèque', 'Virement', 'Carte'];
+const PAYMENT_METHODS = INVOICE_PAYMENT_METHODS;
 
 export default function Paiements() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
-  const { confirm } = useConfirmDialog();
   const { showToast } = useToast();
 
-  const { 
-    paiements: allDbPaiements, 
-    enfants: allEnfantsData, 
-    addPaiement, 
-    deletePaiement,
-    updatePaiement // Utilisation de l'update depuis le DbContext
+  const {
+    financialDataReady,
+    paiements: allDbPaiements,
+    enfants: allEnfantsData,
+    addPaiement,
+    updatePaiement, // Utilisation de l'update depuis le DbContext
+    invoiceReviewAction,
   } = useDb();
-  
+
   const { user, creche } = useAuth();
+  const { activeProfile, hasPagePermission } = useWorkspaceProfile();
+  const canManageInvoices = hasPagePermission('paiements', 'manage');
+  const canRecordInstallments = hasPagePermission('paiements', 'installments');
+  const canRemindParents = hasPagePermission('paiements', 'remind');
+  const {
+    byInvoiceId: installmentsByInvoice,
+    paidSumByInvoiceId,
+    todaySummary,
+    addInstallment,
+    removeInstallment,
+  } = useInvoiceInstallments(user?.id);
+  const [installmentTarget, setInstallmentTarget] = useState<RichPaiement | null>(null);
   const isDirecteur = user?.role === 'directeur';
   const enfantsData = isDirecteur ? allEnfantsData.filter(e => e.crecheId === user!.id) : allEnfantsData;
-  const enfantIdsVisibles = new Set(enfantsData.map(e => e.id));
-  const dbPaiements = isDirecteur ? allDbPaiements.filter(p => enfantIdsVisibles.has(p.enfantId)) : allDbPaiements;
+  const enfantById = useMemo(() => new Map(enfantsData.map(e => [e.id, e])), [enfantsData]);
+  const enfantIdsVisibles = useMemo(() => new Set(enfantsData.map(e => e.id)), [enfantsData]);
+  const dbPaiements = useMemo(
+    () => (isDirecteur ? allDbPaiements.filter(p => enfantIdsVisibles.has(p.enfantId)) : allDbPaiements),
+    [allDbPaiements, enfantIdsVisibles, isDirecteur]
+  );
+  const reminderState = useMemo(() => reminderContext(dbPaiements), [dbPaiements]);
+  const suspectedIds = reminderState.suspectedIds;
+  const invalidDetailsCount = useMemo(() => dbPaiements.filter(hasInvalidFinanceDetails).length, [dbPaiements]);
+  const reminderCheck = useReminderPreflight(dbPaiements, enfantsData, financialDataReady);
   const today = new Date();
-  const currentMonthLabel = new Intl.DateTimeFormat(isArabic ? 'ar-DZ' : 'fr-FR', { month: 'long', year: 'numeric' }).format(today);
-  const nextWeekDate = new Date(today);
-  nextWeekDate.setDate(today.getDate() + 7);
-  const nextWeekDateKey = nextWeekDate.toISOString().split('T')[0];
-  const todayKey = today.toISOString().split('T')[0];
+  const currentMonthLabel = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const todayKey = `${currentMonthLabel}-${String(today.getDate()).padStart(2, '0')}`;
 
-  const paiements: RichPaiement[] = dbPaiements.map((p: any) => ({
+  const paiements: RichPaiement[] = useMemo(() => dbPaiements.map((p: any) => ({
     ...p,
     // Une facture en attente dont l’échéance est passée devient automatiquement un retard à l’affichage.
     // Le statut enregistré n’est pas modifié tant que la direction ne valide pas l’encaissement.
     statut: p.statut === 'En attente' && p.dateEcheance && p.dateEcheance < todayKey ? 'Retard' : p.statut,
-    moyenPaiement: p.moyenPaiement || (p.statut === 'Payé' ? 'Espèces' : undefined),
+    moyenPaiement: p.moyenPaiement,
     // Une facture ancienne sans échéance reste sans échéance : on ne fabrique pas
     // une date 2026 qui donnerait une information fausse à la directrice.
     dateEcheance: p.dateEcheance || undefined,
-    reductionCode: p.reductionCode || 'Aucun',
-    typeFacture: p.typeFacture || 'Mensuel'
-  }));
+    reductionCode: p.reductionCode,
+    typeFacture: p.typeFacture
+  })), [dbPaiements, todayKey]);
 
   const [showModal, setShowModal] = useState(false);
+  const [showBatchModal, setShowBatchModal] = useState(false);
+  const [dossierEnfant, setDossierEnfant] = useState<Enfant | null>(null);
+  const isMobileViewport = useIsMobileViewport();
   const [editingPaiementId, setEditingPaiementId] = useState<string | null>(null);
+  const [editingSnapshot, setEditingSnapshot] = useState<Paiement | null>(null);
+  const [formError, setFormError] = useState('');
   const [selectedPaiement, setSelectedPaiement] = useState<any | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [filterStatut, setFilterStatut] = useState('Tous');
   const [showFacture, setShowFacture] = useState(false);
   const [selectedFacturePaiement, setSelectedFacturePaiement] = useState<any | null>(null);
+  const [receiptViewerSource, setReceiptViewerSource] = useState<InAppPdfViewerSource | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<Paiement | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancellingInvoice, setCancellingInvoice] = useState(false);
+
+  const handleOpenReceiptPdf = async (p: Paiement) => {
+    try {
+      const enfant = enfantById.get(p.enfantId);
+      const built = await buildPaymentReceiptPdf({
+        paiement: p,
+        enfant,
+        creche,
+        installments: installmentsByInvoice.get(p.id) || [],
+        recordedBy: activeProfile?.name,
+      });
+      setReceiptViewerSource({
+        title: isArabic ? `وصل الدفع ${built.receiptNumber}` : `Reçu ${built.receiptNumber}`,
+        fileName: built.fileName,
+        mimeType: 'application/pdf',
+        bytes: built.bytes,
+        pageCount: built.pageCount,
+      });
+    } catch {
+      showToast(isArabic ? 'تعذر إنشاء وصل PDF.' : 'Impossible de générer le reçu PDF.', 'error');
+    }
+  };
+
+  const handleConfirmCancelInvoice = async () => {
+    if (!cancelTarget || !cancelReason.trim() || cancellingInvoice || typeof invoiceReviewAction !== 'function') return;
+    const stored = dbPaiements.find(item => item.id === cancelTarget.id);
+    if (!stored) return;
+    setCancellingInvoice(true);
+    try {
+      await invoiceReviewAction({
+        requestId: `finance_cancel_${crypto.randomUUID()}`,
+        action: 'cancel_invoice',
+        expected: stored,
+        reason: cancelReason.trim(),
+      });
+      setCancelTarget(null);
+      setCancelReason('');
+      showToast(
+        isArabic ? 'تم إلغاء الفاتورة محاسبياً مع حفظ أثرها.' : 'Facture annulée avec conservation de sa trace.',
+        'success'
+      );
+    } catch (err) {
+      showToast(financeErrorMessage(err, isArabic), 'error');
+    } finally {
+      setCancellingInvoice(false);
+    }
+  };
   const [copiedPaiementId, setCopiedPaiementId] = useState<string | null>(null);
-  const [whatsappPreview, setWhatsappPreview] = useState<{ phone: string; childName: string; message: string } | null>(null);
+  const [whatsappPreview, setWhatsappPreview] = useState<{ invoiceId: string; invoiceSnapshot: string; phone: string; childName: string; message: string } | null>(null);
+  const [previewInvalidated, setPreviewInvalidated] = useState(false);
   const [quickUpdatingPaiementId, setQuickUpdatingPaiementId] = useState<string | null>(null);
-  const isReadOnly = user?.role === 'directeur' && user.approvalStatus === 'pending';
+  const isAccountPending = user?.role === 'directeur' && user.approvalStatus === 'pending';
+  const isReadOnly = isAccountPending || !canManageInvoices;
+
+  // Local revalidation only: another device can still change the server afterwards.
+  const previewPayment = whatsappPreview && paiements.find(item => item.id === whatsappPreview.invoiceId);
+  const previewStored = whatsappPreview && dbPaiements.find(item => item.id === whatsappPreview.invoiceId);
+  const previewChild = previewPayment && enfantsData.find(item => item.id === previewPayment.enfantId);
+  const previewCurrent = !!whatsappPreview && financialDataReady && !!previewPayment && !!previewStored && !!previewChild
+    && reminderBlockReason(previewPayment, reminderState) === null
+    && JSON.stringify(previewStored) === whatsappPreview.invoiceSnapshot
+    && findWhatsAppPhone(previewChild) === whatsappPreview.phone
+    && `${previewChild.prenom} ${previewChild.nom}` === whatsappPreview.childName
+    && buildWhatsAppRelanceMessage(previewPayment, previewChild, isArabic) === whatsappPreview.message;
+  useEffect(() => {
+    if (whatsappPreview && !previewCurrent) { setWhatsappPreview(null); setPreviewInvalidated(true); }
+  }, [whatsappPreview, previewCurrent]);
 
   const handleCopyRelance = async (paiement: RichPaiement, enfant?: Enfant) => {
+    if (!financialDataReady || reminderBlockReason(paiement, reminderState) !== null || !enfant) return;
+    const stored = dbPaiements.find(item => item.id === paiement.id);
+    if (!stored || !await reminderCheck.verify(stored, enfant)) return;
     const message = buildWhatsAppRelanceMessage(paiement, enfant, isArabic);
     try {
       await navigator.clipboard.writeText(message);
@@ -148,81 +269,131 @@ export default function Paiements() {
     if (isReadOnly || quickUpdatingPaiementId) return;
     setQuickUpdatingPaiementId(paiement.id);
     try {
+      const expected = dbPaiements.find(item => item.id === paiement.id);
+      if (!expected) throw new Error('finance_changed');
       if (selection.startsWith('Payé:')) {
         const moyenPaiement = selection.replace('Payé:', '') as NonNullable<RichPaiement['moyenPaiement']>;
-        await updatePaiement(paiement.id, { statut: 'Payé', moyenPaiement });
+        await updatePaiement(paiement.id, { statut: 'Payé', moyenPaiement }, expected);
       } else {
         await updatePaiement(paiement.id, {
           statut: selection as RichPaiement['statut'],
-          moyenPaiement: undefined,
-        });
+          moyenPaiement: null,
+        }, expected);
       }
     } catch (error) {
       console.error('Modification rapide facture:', error);
-      showToast(isArabic ? 'تعذر تحديث حالة الفاتورة.' : 'Le statut de la facture n’a pas pu être mis à jour.', 'error');
+      showToast(financeErrorMessage(error, isArabic), 'error');
     } finally {
       setQuickUpdatingPaiementId(null);
     }
   };
 
   const paymentSelectionValue = (paiement: RichPaiement) => paiement.statut === 'Payé'
-    ? `Payé:${paiement.moyenPaiement || 'Espèces'}`
-    : paiement.statut;
+    ? `Payé:${paiement.moyenPaiement || ''}`
+    : typeof paiement.statut === 'string' ? paiement.statut : '';
+
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (whatsappPreview) {
+        setWhatsappPreview(null);
+      } else if (selectedPaiement) {
+        setSelectedPaiement(null);
+      } else if (showModal && !savingRef.current) {
+        setShowModal(false);
+        setEditingPaiementId(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [whatsappPreview, selectedPaiement, showModal]);
 
   const [formData, setFormData] = useState({
     enfantId: enfantsData[0]?.id || '',
-    montant: creche?.tuitionFeeRate || 12000, // ✅ synchronisé avec le tarif défini dans Paramètres
+    montant: creche?.tuitionFeeRate ?? 0,
     statut: 'En attente' as 'Payé' | 'En attente' | 'Retard',
-    typeFacture: 'Mensuel' as 'Mensuel' | 'Annuel',
+    typeFacture: 'Mensuel' as '' | 'Mensuel' | 'Annuel',
     moisConcerne: currentMonthLabel,
-    moyenPaiement: 'Espèces' as 'Espèces' | 'Chèque' | 'Virement' | 'Carte',
-    dateEcheance: nextWeekDateKey,
-    reductionCode: 'Aucun',
+    moyenPaiement: '' as '' | 'Espèces' | 'Chèque' | 'Virement' | 'Carte',
+    dateEcheance: '',
+    reductionCode: '',
     notes: ''
   });
 
   // Déclenche l'édition d'une facture existante
   const handleEditClick = (p: RichPaiement) => {
     setEditingPaiementId(p.id);
+    setEditingSnapshot(dbPaiements.find(item => item.id === p.id) || null);
+    setFormError('');
     setFormData({
       enfantId: p.enfantId,
       montant: p.montant,
-      statut: p.statut,
-      typeFacture: p.typeFacture || 'Mensuel',
+      statut: dbPaiements.find(item => item.id === p.id)?.statut || p.statut,
+      typeFacture: p.typeFacture || '',
       moisConcerne: p.moisConcerne,
-      moyenPaiement: p.moyenPaiement || 'Espèces',
-      dateEcheance: p.dateEcheance || new Date().toISOString().split('T')[0],
-      reductionCode: p.reductionCode || 'Aucun',
+      moyenPaiement: p.moyenPaiement || '',
+      dateEcheance: p.dateEcheance || '',
+      reductionCode: p.reductionCode || '',
       notes: p.notes || ''
     });
     setShowModal(true);
   };
 
-  const handleAjouterOuModifier = () => {
-    if (!formData.enfantId || formData.montant <= 0 || !formData.moisConcerne) return;
+  const editingCurrent = editingPaiementId ? dbPaiements.find(item => item.id === editingPaiementId) : undefined;
+  const editingOutdated = !!editingPaiementId && (!editingSnapshot || !editingCurrent || suspectedIds.has(editingPaiementId) || JSON.stringify(editingSnapshot) !== JSON.stringify(editingCurrent));
+  const legacyPaidWithoutMethod = !!editingPaiementId
+    && editingSnapshot?.statut === 'Payé'
+    && !(editingSnapshot as RichPaiement)?.moyenPaiement;
 
-    if (editingPaiementId) {
-      // Modification
-      updatePaiement(editingPaiementId, formData);
-    } else {
-      // Ajout standard
-      addPaiement(formData);
+  const handleAjouterOuModifier = async () => {
+    if (savingRef.current || !financialDataReady || editingOutdated || isReadOnly) return;
+    if (!formData.enfantId || !Number.isFinite(formData.montant) || formData.montant <= 0 || !formData.moisConcerne.trim()) {
+      showToast(isArabic ? 'اختر الطفل وأدخل مبلغاً صحيحاً وفترة الفاتورة.' : 'Choisissez un enfant et renseignez un montant valide et une période.', 'error');
+      return;
     }
-
-    setShowModal(false);
-    setEditingPaiementId(null);
-    // Reset state
-    setFormData({
-      enfantId: enfantsData[0]?.id || '',
-      montant: creche?.tuitionFeeRate || 12000, // ✅ synchronisé avec le tarif défini dans Paramètres
-      statut: 'En attente',
-      typeFacture: 'Mensuel',
-      moisConcerne: currentMonthLabel,
-      moyenPaiement: 'Espèces',
-      dateEcheance: nextWeekDateKey,
-      reductionCode: 'Aucun',
-      notes: ''
-    });
+    if (formData.statut === 'Payé' && !formData.moyenPaiement && !legacyPaidWithoutMethod) {
+      setFormError(isArabic ? 'حدد وسيلة الدفع المصرّح بها عند اختيار حالة «مدفوعة».' : 'Précisez le moyen de règlement déclaré lorsqu’une facture est marquée payée.');
+      return;
+    }
+    savingRef.current = true;
+    setSaving(true);
+    setFormError('');
+    try {
+      const effectiveMethod = formData.statut === 'Payé' ? (formData.moyenPaiement || null) : null;
+      const mutable = {
+        montant: formData.montant,
+        statut: formData.statut,
+        moyenPaiement: effectiveMethod,
+        dateEcheance: formData.dateEcheance || null,
+        notes: formData.notes || null,
+      };
+      if (editingPaiementId) {
+        if (!editingSnapshot) throw new Error('finance_changed');
+        await updatePaiement(editingPaiementId, mutable, editingSnapshot);
+      } else {
+        const validPeriod = formData.typeFacture === 'Mensuel' ? /^\d{4}-(0[1-9]|1[0-2])$/.test(formData.moisConcerne) : formData.typeFacture === 'Annuel' && /^\d{4}$/.test(formData.moisConcerne);
+        if (!validPeriod || formData.moisConcerne.startsWith('0000')) throw new Error('finance_invalid_period');
+        await addPaiement({
+          enfantId: formData.enfantId,
+          montant: formData.montant,
+          statut: formData.statut,
+          typeFacture: formData.typeFacture,
+          moisConcerne: formData.moisConcerne,
+          periodeCle: `${formData.typeFacture === 'Mensuel' ? 'M' : 'A'}:${formData.moisConcerne}`,
+          ...(effectiveMethod ? { moyenPaiement: effectiveMethod } : {}),
+          ...(formData.dateEcheance ? { dateEcheance: formData.dateEcheance } : {}),
+          ...(formData.notes ? { notes: formData.notes } : {}),
+        });
+      }
+      setShowModal(false);
+      setEditingPaiementId(null);
+      setFormData({ enfantId: '', montant: creche?.tuitionFeeRate ?? 0, statut: 'En attente', typeFacture: 'Mensuel', moisConcerne: currentMonthLabel, moyenPaiement: '', dateEcheance: '', reductionCode: '', notes: '' });
+    } catch (error) {
+      setFormError(financeErrorMessage(error, isArabic));
+    } finally { savingRef.current = false; setSaving(false); }
   };
 
   // Mathématiques de synthèse financière
@@ -231,140 +402,466 @@ export default function Paiements() {
   const totalLate = paiements.filter(p => p.statut === 'Retard').reduce((sum, p) => sum + p.montant, 0);
   const recoveryRate = Math.round((totalPaid / (totalPaid + totalPending + totalLate)) * 100) || 0;
 
-  const localizePaymentStatus = (status: RichPaiement['statut']) => {
-    if (!isArabic) return status;
-    return status === 'Payé' ? 'مدفوعة' : status === 'Retard' ? 'متأخرة' : 'قيد الانتظار';
-  };
+  const displayPaymentPeriod = (value: string) => localizeInvoicePeriodText(value, isArabic);
 
-  const displayPaymentPeriod = (value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) return trimmed;
-    if (!isArabic) return `${trimmed.charAt(0).toLocaleUpperCase('fr-FR')}${trimmed.slice(1)}`;
-    const monthLabels: Record<string, string> = {
-      janvier: 'جانفي', février: 'فيفري', mars: 'مارس', avril: 'أفريل', mai: 'ماي', juin: 'جوان',
-      juillet: 'جويلية', août: 'أوت', septembre: 'سبتمبر', octobre: 'أكتوبر', novembre: 'نوفمبر', décembre: 'ديسمبر',
-    };
-    return trimmed.replace(/janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre/gi, month => monthLabels[month.toLowerCase()] ?? month);
-  };
-
-  const filteredPaiements = paiements.filter(p => {
-    const enfant = enfantsData.find(e => e.id === p.enfantId);
-    const matchesSearch = enfant
-      ? `${enfant.prenom} ${enfant.nom}`.toLowerCase().includes(searchTerm.toLowerCase())
-      : false;
+  const normalizedSearch = deferredSearchTerm.trim().toLowerCase();
+  const filteredPaiements = useMemo(() => paiements.filter(p => {
+    const enfant = enfantById.get(p.enfantId);
+    const childLabel = enfant ? `${enfant.prenom} ${enfant.nom}` : (isArabic ? 'الطفل غير متاح' : 'Enfant non disponible');
+    const matchesSearch = !normalizedSearch || [
+      childLabel,
+      invoicePeriod(p),
+      localizeInvoicePeriodText(invoicePeriod(p), isArabic),
+      p.moisConcerne || '',
+      p.id || '',
+      formatPaymentMethodLabel(p.moyenPaiement, isArabic, ''),
+    ].some(field => field.toLowerCase().includes(normalizedSearch));
     const matchesStatut = filterStatut === 'Tous' || p.statut === filterStatut;
 
     return matchesSearch && matchesStatut;
-  });
+  }), [enfantById, filterStatut, isArabic, normalizedSearch, paiements]);
+
+  const handleExportCsv = () => {
+    if (!filteredPaiements.length || invalidDetailsCount > 0) return;
+    const headers = isArabic
+      ? ['المعرّف', 'الطفل', 'الفترة المعتمدة', 'النص الأصلي', 'النوع', 'المبلغ (دج)', 'الحالة المسجلة', 'وسيلة الدفع المصرّح بها', 'تاريخ الاستحقاق', 'طبيعة البيانات']
+      : ['Référence', 'Enfant', 'Période retenue', 'Libellé original', 'Type', 'Montant DZD', 'Statut affiché', 'Mode déclaré', 'Échéance', 'Nature du statut'];
+    const rows = filteredPaiements.map(p => {
+      const enfant = enfantsData.find(e => e.id === p.enfantId);
+      const childLabel = enfant ? `${enfant.prenom} ${enfant.nom}` : (isArabic ? 'الطفل غير متاح' : 'Enfant non disponible');
+      const periodType = typeof p.periodeCle === 'string' && p.periodeCle.startsWith('A:')
+        ? (isArabic ? 'سنة ميلادية' : 'Année civile')
+        : typeof p.periodeCle === 'string' && p.periodeCle.startsWith('M:')
+        ? (isArabic ? 'شهري' : 'Mensuel')
+        : p.typeFacture || '—';
+      return [
+        p.id,
+        childLabel,
+        invoicePeriod(p),
+        p.moisConcerne || '',
+        periodType,
+        typeof p.montant === 'number' && Number.isFinite(p.montant) ? p.montant : '',
+        formatInvoiceStatusLabel(p.statut, isArabic),
+        formatPaymentMethodLabel(p.moyenPaiement, isArabic),
+        p.dateEcheance || '',
+        isArabic ? 'تصريح إداري (ليس وصل قبض)' : 'Statut déclaratif (pas un justificatif de paiement)',
+      ];
+    });
+    const csv = '\uFEFF' + [headers, ...rows].map(row => row.map(spreadsheetCsvCell).join(';')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `facturation-rawdha-${todayKey}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  if (!financialDataReady) return <FinanceUnavailable />;
 
   return (
-    <div className="min-w-0 space-y-4 sm:space-y-8">
-      {/* Statistiques financières */}
-      <div className="grid grid-cols-1 min-[380px]:grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-2.5 sm:gap-4 hover:shadow-md transition">
-          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-            <DollarSign className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-wider truncate">{isArabic ? 'المداخيل المحصلة' : 'Revenus Perçus'}</p>
-            <p className="text-sm sm:text-xl font-black text-emerald-600 mt-0.5 truncate">{formatCurrency(totalPaid)}</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-2.5 sm:gap-4 hover:shadow-md transition">
-          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-            <Clock className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-wider truncate">{isArabic ? 'في الانتظار' : 'En attente'}</p>
-            <p className="text-sm sm:text-xl font-black text-amber-600 mt-0.5 truncate">{formatCurrency(totalPending)}</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-2.5 sm:gap-4 hover:shadow-md transition">
-          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
-            <AlertCircle className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-wider truncate">{isArabic ? 'متأخرات الدفع' : 'Créances (En Retard)'}</p>
-            <p className="text-sm sm:text-xl font-black text-rose-600 mt-0.5 truncate">{formatCurrency(totalLate)}</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-2.5 sm:gap-4 hover:shadow-md transition">
-          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-            <TrendingUp className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-wider truncate">{isArabic ? 'نسبة الاسترداد' : 'Taux'}</p>
-            <p className="text-sm sm:text-xl font-black text-indigo-600 mt-0.5 truncate">{recoveryRate}%</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Titre & Action */}
+    <div className="min-w-0 space-y-4 sm:space-y-6">
+      {/* En-tête épuré & actions directes */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <CreditCard className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600" />
-            {isArabic ? 'تسيير الفواتير والمدفوعات' : 'Facturation & Échéances'}
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+            {isArabic ? 'الفواتير والمدفوعات' : 'Factures & règlements'}
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5 leading-tight">
-            {isArabic 
-              ? 'توليد ومتابعة فواتير التمدرس الشهرية، السنوية والخصومات العائلية' 
-              : 'Générez et suivez les cotisations mensuelles/annuelles, remises, règlements et retards.'}
+          <p className="hidden sm:block text-xs text-slate-500 mt-0.5">
+            {isArabic
+              ? 'إنشاء ومتابعة الفواتير الشهرية والسنوية؛ لا تُحسب التخفيضات تلقائياً.'
+              : 'Suivi des cotisations et échéances ; les remises ne sont pas calculées automatiquement.'}
           </p>
         </div>
-        <button 
-          className="flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-4 py-2.5 sm:px-6 sm:py-3.5 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/10 hover:shadow-indigo-600/20 transition-all cursor-pointer w-full sm:w-auto" 
-          onClick={() => {
-            setEditingPaiementId(null);
-            setShowModal(true);
-          }}
-        >
-          <Plus size={16} className="stroke-[3]" />
-          <span>{isArabic ? 'إصدار فاتورة جديدة' : 'Créer une facture'}</span>
-        </button>
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-1.5 sm:gap-2">
+          <button
+            type="button"
+            disabled={isReadOnly}
+            className="min-h-9! w-full sm:w-auto inline-flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => {
+              if (isReadOnly) return;
+              setEditingPaiementId(null);
+              setEditingSnapshot(null);
+              setFormError('');
+              setFormData({ enfantId: '', montant: creche?.tuitionFeeRate ?? 0, statut: 'En attente', typeFacture: 'Mensuel', moisConcerne: currentMonthLabel, moyenPaiement: '', dateEcheance: '', reductionCode: '', notes: '' });
+              setShowModal(true);
+            }}
+          >
+            <Plus size={16} className="stroke-[2.5]" />
+            <span>{isArabic ? 'إصدار فاتورة جديدة' : 'Créer une facture'}</span>
+          </button>
+          <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 sm:gap-2">
+            <button
+              type="button"
+              disabled={!filteredPaiements.length || invalidDetailsCount > 0}
+              onClick={handleExportCsv}
+              className="min-h-9! inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 whitespace-nowrap transition hover:bg-slate-50 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Download size={15} className="shrink-0 text-slate-500" />
+              <span className="truncate">{isArabic ? 'تصدير CSV' : 'Exporter CSV'}</span>
+            </button>
+            <button
+              type="button"
+              disabled={isReadOnly || !enfantsData.some(child => child.statut === 'Actif')}
+              onClick={() => setShowBatchModal(true)}
+              className="min-h-9! inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 whitespace-nowrap transition hover:bg-slate-50 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Calendar size={15} className="shrink-0 text-indigo-600" />
+              <span className="truncate">{isArabic ? 'تحضير فواتير الشهر' : 'Préparer le mois'}</span>
+            </button>
+          </div>
+        </div>
       </div>
+
+      {isAccountPending && (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-900">
+          {isArabic ? 'حسابك في وضع القراءة فقط إلى حين موافقة الإدارة.' : 'Votre compte reste en lecture seule jusqu’à validation par l’administration.'}
+        </p>
+      )}
+      {!isAccountPending && !canManageInvoices && (
+        <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-bold text-slate-700">
+          {isArabic
+            ? 'هذا الحساب يمتلك صلاحية الاطلاع على الفواتير دون تعديلها أو إصدارها.'
+            : 'Ce profil dispose d’un accès en consultation sur les factures (création et modification désactivées).'}
+        </p>
+      )}
+
+      <FinanceReviewWarning count={dbPaiements.filter(p => !p.periodeCle).length} suspected={dbPaiements.filter(p => suspectedIds.has(p.id)).length} invalid={invalidDetailsCount} />
+
+      {/* Synthèse financière compacte */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-2.5 sm:gap-3">
+        <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
+          <p className="text-[11px] font-medium text-slate-500 break-words">{isArabic ? 'فواتير بحالة مدفوعة' : 'Factures marquées payées'}</p>
+          <p className="text-sm sm:text-lg font-bold text-slate-900 mt-0.5 tabular-nums break-words">{invalidDetailsCount ? '—' : formatCurrency(totalPaid)}</p>
+        </div>
+
+        <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
+          <p className="text-[11px] font-medium text-slate-500 break-words">{isArabic ? 'في الانتظار' : 'En attente'}</p>
+          <p className="text-sm sm:text-lg font-bold text-amber-700 mt-0.5 tabular-nums break-words">{invalidDetailsCount ? '—' : formatCurrency(totalPending)}</p>
+        </div>
+
+        <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
+          <p className="text-[11px] font-medium text-slate-500 break-words">{isArabic ? 'فواتير متأخرة' : 'Factures en retard'}</p>
+          <p className="text-sm sm:text-lg font-bold text-rose-600 mt-0.5 tabular-nums break-words">{invalidDetailsCount ? '—' : formatCurrency(totalLate)}</p>
+        </div>
+
+        <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
+          <p className="text-[11px] font-medium text-slate-500 break-words">{isArabic ? 'نسبة الاسترداد' : 'Taux payé'}</p>
+          <p className="text-sm sm:text-lg font-bold text-indigo-600 mt-0.5 tabular-nums break-words">{invalidDetailsCount ? '—' : `${recoveryRate}%`}</p>
+        </div>
+      </div>
+
+      {/* Suivi quotidien des versements déclarés (Caisse du jour sur 1 ligne nette) */}
+      <div className="flex items-center justify-between gap-2.5 rounded-2xl border border-slate-200/80 bg-white px-3.5 py-2.5 shadow-2xs">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+            <Wallet className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-xs font-bold text-slate-900">
+              {isArabic ? 'الدفعات والتسبيقات المصرح بها اليوم' : 'Versements & acomptes déclarés aujourd’hui'}
+            </p>
+            <p className="truncate text-[11px] text-slate-500">
+              {todaySummary.count === 0
+                ? isArabic
+                  ? 'لم يُسجَّل أي وصل اليوم'
+                  : 'Aucun bon enregistré aujourd’hui'
+                : isArabic
+                  ? `${todaySummary.count} وصل · نقداً: ${formatCurrency(todaySummary.cash)}`
+                  : `${todaySummary.count} bon(s) · Espèces : ${formatCurrency(todaySummary.cash)}`}
+            </p>
+          </div>
+        </div>
+        <span className="shrink-0 whitespace-nowrap rounded-xl bg-emerald-50 px-2.5 py-1 text-xs font-extrabold text-emerald-800 tabular-nums">
+          {formatCurrency(todaySummary.total)}
+        </span>
+      </div>
+
+      <InvoicePeriodReview invoices={dbPaiements} children={enfantsData} readOnly={isReadOnly} />
+      <InvoiceCorrections invoices={dbPaiements} children={enfantsData} readOnly={isReadOnly} />
 
       {/* Barre de Recherche et Filtres */}
       <div className="min-w-0 bg-white p-3 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex flex-col md:flex-row gap-3 items-center">
         <div className="relative flex-1 w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             type="text"
-            placeholder={isArabic ? 'ابحث عن طفل...' : 'Rechercher un enfant...'}
+            placeholder={isArabic ? 'ابحث باسم الطفل أو الفترة أو رقم الفاتورة...' : 'Rechercher un enfant, une période ou une référence...'}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition-all text-xs sm:text-sm font-medium text-slate-800"
+            className="w-full ps-9 pe-9 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition-all text-xs sm:text-sm font-medium text-slate-800"
           />
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => setSearchTerm('')}
+              aria-label={isArabic ? 'مسح البحث' : 'Effacer la recherche'}
+              className="absolute end-2.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:bg-slate-200/60 hover:text-slate-600 cursor-pointer"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
-        <div className="mobile-scroll-x flex gap-2 w-full md:w-auto pb-1 md:pb-0 scrollbar-none flex-nowrap shrink-0">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-1.5 w-full md:w-auto shrink-0">
           {[
-            { key: 'Tous', label: isArabic ? 'الكل' : 'Tous', color: 'text-slate-500 hover:text-slate-800' },
-            { key: 'Payé', label: isArabic ? 'مدفوعة' : 'Payées', color: 'text-slate-500 hover:text-emerald-600' },
-            { key: 'En attente', label: isArabic ? 'في الانتظار' : 'En attente', color: 'text-slate-500 hover:text-amber-600' },
-            { key: 'Retard', label: isArabic ? 'متأخرة' : 'En retard', color: 'text-slate-500 hover:text-rose-600' }
+            { key: 'Tous', label: isArabic ? 'الكل' : 'Tous', count: paiements.length, color: 'text-slate-600 hover:text-slate-900' },
+            { key: 'Payé', label: isArabic ? 'مدفوعة' : 'Payées', count: paiements.filter(p => p.statut === 'Payé').length, color: 'text-slate-600 hover:text-emerald-700' },
+            { key: 'En attente', label: isArabic ? 'في الانتظار' : 'En attente', count: paiements.filter(p => p.statut === 'En attente').length, color: 'text-slate-600 hover:text-amber-700' },
+            { key: 'Retard', label: isArabic ? 'متأخرة' : 'En retard', count: paiements.filter(p => p.statut === 'Retard').length, color: 'text-slate-600 hover:text-rose-700' },
+            ...(paiements.some(p => p.statut === 'Annulé')
+              ? [{ key: 'Annulé', label: isArabic ? 'ملغاة' : 'Annulées', count: paiements.filter(p => p.statut === 'Annulé').length, color: 'text-slate-500 hover:text-slate-800' }]
+              : []),
           ].map(tab => (
             <button
               key={tab.key}
+              type="button"
               onClick={() => setFilterStatut(tab.key)}
-              className={`flex-grow sm:flex-none px-3.5 py-2 text-[11px] sm:text-xs font-bold rounded-xl transition whitespace-nowrap shrink-0 ${
+              className={`min-h-9! px-3 py-1.5 text-[11px] sm:text-xs font-bold rounded-xl transition cursor-pointer text-center tabular-nums ${
                 filterStatut === tab.key
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : `bg-slate-50 ${tab.color}`
+                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  : `bg-slate-50 ring-1 ring-inset ring-slate-200/80 ${tab.color}`
               }`}
             >
-              {tab.label}
+              {tab.label} ({tab.count})
             </button>
           ))}
         </div>
       </div>
 
-      {/* Tableau des factures */}
+      {/* Cartes verticales sur téléphone (<=767px) ou Tableau des factures sur tablette/ordinateur */}
+      {isMobileViewport ? (
+        <div className="space-y-3" role="region" aria-label={isArabic ? 'قائمة الفواتير' : 'Liste des factures'}>
+          {filteredPaiements.length > 0 ? (
+            filteredPaiements.map((p) => {
+              const enfant = enfantById.get(p.enfantId);
+              const isQuickUpdating = quickUpdatingPaiementId === p.id;
+              const underReview = suspectedIds.has(p.id);
+              const reminderBlocked = reminderBlockReason(p, reminderState);
+              const isLateDisplay = p.statut === 'Retard';
+              const isCancelled = p.statut === 'Annulé';
+              const statusAccent = isCancelled
+                ? 'border-s-slate-400 opacity-75'
+                : p.statut === 'Payé'
+                ? 'border-s-emerald-500'
+                : isLateDisplay
+                  ? 'border-s-rose-500'
+                  : 'border-s-amber-500';
+
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => setSelectedPaiement(p)}
+                  className={`rawdha-card-modern rounded-2xl border border-slate-200/75 border-s-4 ${statusAccent} bg-white p-4 shadow-2xs space-y-3 cursor-pointer`}
+                >
+                  <div className="flex items-start justify-between gap-2.5">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-xs flex items-center justify-center font-black text-xs shrink-0">
+                        {enfant ? `${enfant.prenom[0] || ''}${enfant.nom[0] || ''}` : '??'}
+                      </div>
+                      <div className="min-w-0">
+                        {enfant ? (
+                          <button
+                            type="button"
+                            onClick={event => {
+                              event.stopPropagation();
+                              setDossierEnfant(enfant);
+                            }}
+                            className="max-w-full truncate text-start text-sm font-extrabold text-slate-900 underline decoration-indigo-300 underline-offset-2 hover:text-indigo-700 cursor-pointer"
+                          >
+                            {enfant.prenom} {enfant.nom}
+                          </button>
+                        ) : (
+                          <p className="truncate text-sm font-extrabold text-slate-900">
+                            {isArabic ? 'الطفل غير متاح' : 'Enfant non disponible'}
+                          </p>
+                        )}
+                        <p className="truncate text-xs font-semibold text-slate-500">
+                          {displayPaymentPeriod(invoicePeriod(p))}
+                          {enfant?.groupeAge ? ` · ${enfant.groupeAge}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-end">
+                      <p className="text-sm font-black text-slate-950 tabular-nums">
+                        {typeof p.montant === 'number' && Number.isFinite(p.montant) ? formatCurrency(p.montant) : '—'}
+                      </p>
+                      {p.statut === 'Payé' ? (
+                        <p className="text-[11px] font-bold text-emerald-700">
+                          {formatPaymentMethodLabel(p.moyenPaiement, isArabic)}
+                        </p>
+                      ) : (
+                        <p className={`text-[11px] font-bold ${isLateDisplay ? 'text-rose-600' : 'text-amber-700'}`}>
+                          {p.dateEcheance || (isArabic ? 'بدون استحقاق' : 'Sans échéance')}
+                        </p>
+                      )}
+                      {p.statut !== 'Payé' && (paidSumByInvoiceId.get(p.id) || 0) > 0 && (
+                        <p className="mt-0.5 text-[10px] font-extrabold text-emerald-700 tabular-nums">
+                          {isArabic
+                            ? `مدفوع: ${formatCurrency(paidSumByInvoiceId.get(p.id) || 0)} · باقي: ${formatCurrency(Math.max(0, (Number(p.montant) || 0) - (paidSumByInvoiceId.get(p.id) || 0)))}`
+                            : `Versé : ${formatCurrency(paidSumByInvoiceId.get(p.id) || 0)} · Reste : ${formatCurrency(Math.max(0, (Number(p.montant) || 0) - (paidSumByInvoiceId.get(p.id) || 0)))}`}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {underReview && <p className="text-xs font-bold text-rose-700">{isArabic ? 'اشتباه تكرار قيد المراجعة' : 'Doublon suspect à vérifier'}</p>}
+                  {reminderBlocked === 'period' && <p className="text-xs font-bold text-amber-700">{isArabic ? 'التذكير معلّق: راجع الفترة' : 'Rappel suspendu : période à vérifier'}</p>}
+                  {reminderBlocked === 'sibling-period' && <p className="text-xs font-bold text-amber-700">{isArabic ? 'التذكير معلّق: فترة فاتورة أخرى للطفل تحتاج مراجعة' : 'Rappel suspendu : période d’une autre facture de l’enfant à vérifier'}</p>}
+                  {reminderBlocked === 'details' && <p className="text-xs font-bold text-amber-700">{isArabic ? 'التذكير معلّق: تحقق من المبلغ والحالة' : 'Rappel suspendu : montant ou statut à vérifier'}</p>}
+
+                  <div onClick={event => event.stopPropagation()}>
+                    {isCancelled ? (
+                      <div className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600 truncate">
+                        {isArabic ? 'ملغاة محاسبياً' : 'Annulée'}
+                        {p.motifAnnulation ? ` · ${p.motifAnnulation}` : ''}
+                      </div>
+                    ) : (
+                      <select
+                        value={paymentSelectionValue(p)}
+                        disabled={isReadOnly || isQuickUpdating || underReview}
+                        onChange={event => void handleQuickPaymentChange(p, event.target.value)}
+                        aria-label={isArabic ? 'تعديل حالة الفاتورة وطريقة الدفع' : 'Modifier le statut et le moyen de règlement'}
+                        className={`w-full cursor-pointer rounded-xl border px-3 py-2 text-xs font-bold outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                          p.statut === 'Payé'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : p.statut === 'En attente'
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : 'bg-rose-50 text-rose-700 border-rose-200'
+                        }`}
+                      >
+                        {!['Payé','En attente','Retard'].includes(p.statut) && <option value={p.statut || ''} disabled>{isArabic ? 'حالة غير معروفة' : 'Statut inconnu'}{typeof p.statut === 'string' && p.statut ? ` : ${p.statut}` : ''}</option>}
+                        {p.statut === 'Payé' && p.moyenPaiement && !(PAYMENT_METHODS as readonly string[]).includes(p.moyenPaiement) && <option value={`Payé:${p.moyenPaiement}`} disabled>{isArabic ? `مدفوعة — ${p.moyenPaiement}` : `Payé — ${p.moyenPaiement}`}</option>}
+                        <option value="Payé:" disabled>{isArabic ? 'مدفوعة — الوسيلة غير محددة' : 'Payé — moyen non précisé'}</option>
+                        <option value="En attente">{isArabic ? 'قيد الانتظار' : 'En attente'}</option>
+                        <option value="Retard">{isArabic ? 'متأخرة' : 'En retard'}</option>
+                        {PAYMENT_METHODS.map(method => <option key={method} value={`Payé:${method}`}>{isArabic ? `مدفوعة — ${formatPaymentMethodLabel(method, true)}` : `Payé — ${method}`}</option>)}
+                      </select>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-end gap-1.5 border-t border-slate-100 pt-2.5" onClick={event => event.stopPropagation()}>
+                    {(p.statut === 'Payé' || (paidSumByInvoiceId.get(p.id) || 0) > 0) && !isCancelled && (
+                      <button
+                        type="button"
+                        className="min-h-8! inline-flex items-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 whitespace-nowrap transition cursor-pointer disabled:opacity-40"
+                        disabled={underReview || hasInvalidFinanceDetails(p)}
+                        onClick={() => void handleOpenReceiptPdf(p)}
+                        title={isArabic ? 'وصل الدفع PDF' : 'Reçu de paiement PDF'}
+                        aria-label={isArabic ? 'وصل الدفع PDF' : 'Reçu de paiement PDF'}
+                      >
+                        <Receipt size={14} className="shrink-0" />
+                        <span>{isArabic ? 'وصل PDF' : 'Reçu'}</span>
+                      </button>
+                    )}
+                    {canRecordInstallments && !isCancelled && (
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition cursor-pointer disabled:opacity-40"
+                        disabled={underReview || hasInvalidFinanceDetails(p)}
+                        onClick={() => setInstallmentTarget(p)}
+                        title={isArabic ? 'تسجيل دفعة جزئية أو وصل' : 'Enregistrer un acompte / bon de versement'}
+                        aria-label={isArabic ? 'تسجيل دفعة جزئية أو وصل' : 'Enregistrer un acompte / bon de versement'}
+                      >
+                        <Wallet size={15} />
+                        <span>{isArabic ? 'تسبيق' : 'Acompte'}</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition cursor-pointer disabled:opacity-40"
+                      disabled={underReview || hasInvalidFinanceDetails(p)}
+                      onClick={() => {
+                        setSelectedFacturePaiement(p);
+                        setShowFacture(true);
+                      }}
+                      title={isArabic ? 'عرض بيان الفاتورة' : 'Voir l’état de la facture'}
+                      aria-label={isArabic ? 'عرض بيان الفاتورة' : 'Voir l’état de la facture'}
+                    >
+                      <FileText size={15} />
+                      <span>PDF</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 transition cursor-pointer disabled:opacity-40"
+                      disabled={underReview || isReadOnly}
+                      onClick={() => handleEditClick(p)}
+                      title={isArabic ? 'تعديل الفاتورة' : 'Modifier la facture'}
+                      aria-label={isArabic ? 'تعديل الفاتورة' : 'Modifier la facture'}
+                    >
+                      <Edit size={15} />
+                    </button>
+                    {reminderBlocked === null && canRemindParents && (
+                      <>
+                        {buildWhatsAppRelanceLink(p, enfant, isArabic) && (
+                          <button
+                            type="button"
+                            disabled={reminderCheck.busy}
+                            onClick={async (event) => {
+                              event.stopPropagation();
+                              const phone = findWhatsAppPhone(enfant);
+                              const rawPhone = enfant?.parents.find(parent => normalizeAlgerianWhatsApp(parent.telephone) === phone)?.telephone;
+                              const stored = dbPaiements.find(item => item.id === p.id);
+                              if (phone && rawPhone && enfant && stored && reminderBlockReason(p, reminderState) === null && financialDataReady
+                                && await reminderCheck.verify(stored, enfant, rawPhone)) {
+                                setPreviewInvalidated(false);
+                                setWhatsappPreview({
+                                  invoiceId: p.id, invoiceSnapshot: JSON.stringify(stored), phone,
+                                  childName: `${enfant.prenom} ${enfant.nom}`,
+                                  message: buildWhatsAppRelanceMessage(p, enfant, isArabic),
+                                });
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 rounded-xl bg-emerald-50 border border-emerald-200 px-2.5 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition cursor-pointer"
+                            title={isArabic ? 'معاينة التذكير قبل فتح واتساب' : 'Prévisualiser avant WhatsApp'}
+                            aria-label={isArabic ? 'معاينة التذكير قبل فتح واتساب' : 'Prévisualiser avant WhatsApp'}
+                          >
+                            <MessageCircle size={15} />
+                            <span>WA</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className={`inline-flex items-center rounded-xl border px-2.5 py-2 text-xs font-bold transition cursor-pointer ${
+                            copiedPaiementId === p.id
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                              : 'border-slate-200 bg-white text-indigo-600 hover:bg-indigo-50'
+                          }`}
+                          disabled={reminderCheck.busy}
+                          onClick={() => void handleCopyRelance(p, enfant)}
+                          title={isArabic ? 'نسخ رسالة التذكير' : 'Copier une relance'}
+                          aria-label={isArabic ? 'نسخ رسالة التذكير' : 'Copier une relance'}
+                        >
+                          <Copy size={15} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="rounded-2xl border border-slate-100 bg-white p-10 text-center text-slate-400">
+              <HelpCircle className="w-10 h-10 mx-auto text-slate-300 stroke-[1.5] mb-2" />
+              <p className="font-extrabold">{isArabic ? 'لا توجد فواتير مطابقة' : 'Aucun état de facturation disponible'}</p>
+              {(searchTerm || filterStatut !== 'Tous') && (
+                <button
+                  type="button"
+                  onClick={() => { setSearchTerm(''); setFilterStatut('Tous'); }}
+                  className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 cursor-pointer"
+                >
+                  {isArabic ? 'إعادة ضبط الفلاتر' : 'Réinitialiser les filtres'}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="mobile-scroll-x">
-          <table className="min-w-[760px] w-full text-left border-collapse">
+        <p className="px-4 pt-3 text-xs text-slate-500 xl:hidden">{isArabic ? 'مرر الجدول أفقياً لرؤية كل الأعمدة.' : 'Faites défiler le tableau horizontalement pour voir toutes les colonnes.'}</p>
+        <div className="mobile-scroll-x focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500" role="region" tabIndex={0} aria-label={isArabic ? 'جدول الفواتير' : 'Tableau des factures'}>
+          <table className="min-w-[760px] w-full text-start border-collapse">
             <thead>
               <tr className="bg-slate-50/70 border-b border-slate-100 text-[11px] font-black uppercase tracking-wider text-slate-400">
                 <th className="p-5">{isArabic ? 'الطفل' : 'Enfant'}</th>
@@ -379,41 +876,69 @@ export default function Paiements() {
               {filteredPaiements.length > 0 ? (
                 filteredPaiements.map((p) => {
                   const enfant = enfantsData.find(e => e.id === p.enfantId);
-                  
+
                   const isQuickUpdating = quickUpdatingPaiementId === p.id;
+                  const underReview = suspectedIds.has(p.id);
+                  const reminderBlocked = reminderBlockReason(p, reminderState);
+                  const isLateDisplay = p.statut === 'Retard';
                   return (
-                    <tr 
-                      key={p.id} 
+                    <tr
+                      key={p.id}
                       className="hover:bg-slate-50/50 transition cursor-pointer"
                       onClick={() => setSelectedPaiement(p)}
                     >
                       <td className="p-5">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm">
-                            {enfant ? `${enfant.prenom[0]}${enfant.nom[0]}` : '??'}
+                          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm shrink-0">
+                            {enfant ? `${enfant.prenom[0] || ''}${enfant.nom[0] || ''}` : '??'}
                           </div>
                           <div>
-                            <p className="text-slate-900 font-extrabold">{enfant ? `${enfant.prenom} ${enfant.nom}` : t('children.all')}</p>
+                            {enfant ? (
+                              <button
+                                type="button"
+                                onClick={event => {
+                                  event.stopPropagation();
+                                  setDossierEnfant(enfant);
+                                }}
+                                className="text-start text-slate-900 font-extrabold hover:text-indigo-600 hover:underline cursor-pointer"
+                              >
+                                {enfant.prenom} {enfant.nom}
+                              </button>
+                            ) : (
+                              <p className="text-slate-900 font-extrabold">{isArabic ? 'الطفل غير متاح' : 'Enfant non disponible'}</p>
+                            )}
                             <p className="text-xs text-slate-400 font-semibold">{enfant?.groupeAge || (isArabic ? 'غير محدد' : 'Non renseigné')}</p>
+                            {underReview && <p className="mt-1 text-xs font-bold text-rose-700">{isArabic ? 'اشتباه تكرار قيد المراجعة' : 'Doublon suspect à vérifier'}</p>}
+                            {reminderBlocked === 'period' && <p className="mt-1 text-xs font-bold text-amber-700">{isArabic ? 'التذكير معلّق: راجع الفترة' : 'Rappel suspendu : période à vérifier'}</p>}
+                            {reminderBlocked === 'sibling-period' && <p className="mt-1 text-xs font-bold text-amber-700">{isArabic ? 'التذكير معلّق: فترة فاتورة أخرى للطفل تحتاج مراجعة' : 'Rappel suspendu : période d’une autre facture de l’enfant à vérifier'}</p>}
+                            {reminderBlocked === 'details' && <p className="mt-1 text-xs font-bold text-amber-700">{isArabic ? 'التذكير معلّق: تحقق من المبلغ والحالة' : 'Rappel suspendu : montant ou statut à vérifier'}</p>}
                           </div>
                         </div>
                       </td>
 
                       <td className="p-5 whitespace-nowrap text-slate-600 font-bold">
                         <span className="flex items-center gap-1.5">
-                          <Calendar className="w-4 h-4 text-slate-400" />
+                          <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
                           <div>
-                            <p className="text-slate-900 leading-none">{displayPaymentPeriod(p.moisConcerne)}</p>
+                            <p className="text-slate-900 leading-none">{displayPaymentPeriod(invoicePeriod(p))}</p>
+                            {p.periodeCle && p.moisConcerne !== invoicePeriod(p) && <p className="mt-1 text-[10px] text-slate-500">{isArabic ? 'النص الأصلي' : 'Libellé original'} : {p.moisConcerne}</p>}
                             <span className="text-[10px] text-slate-400 font-normal">
-                              {p.typeFacture === 'Annuel' ? (isArabic ? 'سنوي' : 'Annuel') : (isArabic ? 'شهري' : 'Mensuel')}
+                              {typeof p.periodeCle === 'string' && p.periodeCle.startsWith('A:') ? (isArabic ? 'سنة ميلادية' : 'Année civile') : typeof p.periodeCle === 'string' && p.periodeCle.startsWith('M:') ? (isArabic ? 'شهري' : 'Mensuel') : p.typeFacture === 'Annuel' ? (isArabic ? 'سنوي (أصلي)' : 'Annuel (original)') : p.typeFacture === 'Mensuel' ? (isArabic ? 'شهري (أصلي)' : 'Mensuel (original)') : (isArabic ? 'غير محدد' : 'Non précisé')}
                             </span>
                           </div>
                         </span>
                       </td>
 
                       <td className="p-5 whitespace-nowrap">
-                        <p className="text-slate-950 font-black">{formatCurrency(p.montant)}</p>
-                        {p.reductionCode !== 'Aucun' && (
+                        <p className="text-slate-950 font-black">{typeof p.montant === 'number' && Number.isFinite(p.montant) ? formatCurrency(p.montant) : '—'}</p>
+                        {p.statut !== 'Payé' && (paidSumByInvoiceId.get(p.id) || 0) > 0 && (
+                          <p className="mt-0.5 text-[11px] font-bold text-emerald-700 tabular-nums">
+                            {isArabic
+                              ? `مدفوع ${formatCurrency(paidSumByInvoiceId.get(p.id) || 0)} · باقي ${formatCurrency(Math.max(0, (Number(p.montant) || 0) - (paidSumByInvoiceId.get(p.id) || 0)))}`
+                              : `Versé ${formatCurrency(paidSumByInvoiceId.get(p.id) || 0)} · Reste ${formatCurrency(Math.max(0, (Number(p.montant) || 0) - (paidSumByInvoiceId.get(p.id) || 0)))}`}
+                          </p>
+                        )}
+                        {p.reductionCode && p.reductionCode !== 'Aucun' && (
                           <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded leading-none">
                             {p.reductionCode}
                           </span>
@@ -424,115 +949,145 @@ export default function Paiements() {
                         {p.statut === 'Payé' ? (
                           <div>
                             <p className="text-xs font-bold text-slate-700 flex items-center gap-1">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                              <span>{p.moyenPaiement || 'Espèces'}</span>
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                              <span>{formatPaymentMethodLabel(p.moyenPaiement, isArabic)}</span>
                             </p>
                           </div>
                         ) : (
-                          <p className="text-xs text-rose-500 font-bold bg-rose-50/50 border border-rose-100 px-2 py-0.5 rounded-md inline-flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5 text-rose-500" />
-                              <span>{isArabic ? 'الاستحقاق' : 'Échéance'}: {p.dateEcheance || (isArabic ? 'فوري' : 'Immédiat')}</span>
+                          <p className={`text-xs font-bold px-2 py-0.5 rounded-md inline-flex items-center gap-1 border ${
+                            isLateDisplay
+                              ? 'text-rose-600 bg-rose-50/60 border-rose-100'
+                              : 'text-amber-700 bg-amber-50/60 border-amber-100'
+                          }`}>
+                            <Clock className={`w-3.5 h-3.5 shrink-0 ${isLateDisplay ? 'text-rose-500' : 'text-amber-500'}`} />
+                            <span>{isArabic ? 'الاستحقاق' : 'Échéance'}: {p.dateEcheance || (isArabic ? 'غير محدد' : 'Non précisée')}</span>
                           </p>
                         )}
                       </td>
 
                       <td className="p-5" onClick={event => event.stopPropagation()}>
-                        <select
-                          value={paymentSelectionValue(p)}
-                          disabled={isReadOnly || isQuickUpdating}
-                          onChange={event => void handleQuickPaymentChange(p, event.target.value)}
-                          aria-label={isArabic ? 'تعديل حالة الفاتورة وطريقة الدفع' : 'Modifier le statut et le moyen de règlement'}
-                          className={`min-w-[156px] cursor-pointer rounded-full border px-3 py-1.5 text-xs font-bold leading-none outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                          p.statut === 'Payé'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                            : p.statut === 'En attente'
-                            ? 'bg-amber-50 text-amber-700 border border-amber-100'
-                            : 'bg-rose-50 text-rose-700 border border-rose-100'
-                        }`}>
-                          <option value="En attente">{isArabic ? 'قيد الانتظار' : 'En attente'}</option>
-                          <option value="Retard">{isArabic ? 'متأخرة' : 'En retard'}</option>
-                          {PAYMENT_METHODS.map(method => <option key={method} value={`Payé:${method}`}>{isArabic ? `مدفوعة — ${method}` : `Payé — ${method}`}</option>)}
-                        </select>
+                        {p.statut === 'Annulé' ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">
+                            <Ban size={13} className="shrink-0" />
+                            <span>{isArabic ? 'ملغاة' : 'Annulée'}</span>
+                          </span>
+                        ) : (
+                          <select
+                            value={paymentSelectionValue(p)}
+                            disabled={isReadOnly || isQuickUpdating || underReview}
+                            onChange={event => void handleQuickPaymentChange(p, event.target.value)}
+                            aria-label={isArabic ? 'تعديل حالة الفاتورة وطريقة الدفع' : 'Modifier le statut et le moyen de règlement'}
+                            className={`min-w-[156px] cursor-pointer rounded-full border px-3 py-1.5 text-xs font-bold leading-none outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                            p.statut === 'Payé'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                              : p.statut === 'En attente'
+                              ? 'bg-amber-50 text-amber-700 border border-amber-100'
+                              : 'bg-rose-50 text-rose-700 border border-rose-100'
+                          }`}>
+                            {!['Payé','En attente','Retard'].includes(p.statut) && <option value={p.statut || ''} disabled>{isArabic ? 'حالة غير معروفة' : 'Statut inconnu'}{typeof p.statut === 'string' && p.statut ? ` : ${p.statut}` : ''}</option>}
+                            {p.statut === 'Payé' && p.moyenPaiement && !(PAYMENT_METHODS as readonly string[]).includes(p.moyenPaiement) && <option value={`Payé:${p.moyenPaiement}`} disabled>{isArabic ? `مدفوعة — ${p.moyenPaiement}` : `Payé — ${p.moyenPaiement}`}</option>}
+                            <option value="Payé:" disabled>{isArabic ? 'مدفوعة — الوسيلة غير محددة' : 'Payé — moyen non précisé'}</option>
+                            <option value="En attente">{isArabic ? 'قيد الانتظار' : 'En attente'}</option>
+                            <option value="Retard">{isArabic ? 'متأخرة' : 'En retard'}</option>
+                            {PAYMENT_METHODS.map(method => <option key={method} value={`Payé:${method}`}>{isArabic ? `مدفوعة — ${formatPaymentMethodLabel(method, true)}` : `Payé — ${method}`}</option>)}
+                          </select>
+                        )}
                         {isQuickUpdating && <p className="mt-1 text-[10px] font-bold text-slate-400">{isArabic ? 'جارٍ الحفظ…' : 'Enregistrement…'}</p>}
                       </td>
 
-                      <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-2">
-                          <button 
-                            className="p-1.5 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer" 
+                      <td className="p-4 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <div className="inline-flex items-center justify-center gap-1.5">
+                          {(p.statut === 'Payé' || (paidSumByInvoiceId.get(p.id) || 0) > 0) && p.statut !== 'Annulé' && (
+                            <button
+                              type="button"
+                              className="min-h-8! h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-xl border border-indigo-200/80 bg-indigo-50/70 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800 transition cursor-pointer disabled:opacity-40"
+                              disabled={underReview || hasInvalidFinanceDetails(p)}
+                              onClick={() => void handleOpenReceiptPdf(p)}
+                              title={isArabic ? 'وصل الدفع PDF' : 'Reçu de paiement PDF'}
+                              aria-label={isArabic ? 'وصل الدفع PDF' : 'Reçu de paiement PDF'}
+                            >
+                              <Receipt className="h-4 w-4 shrink-0" />
+                            </button>
+                          )}
+                          {canRecordInstallments && p.statut !== 'Annulé' && (
+                            <button
+                              type="button"
+                              className="min-h-8! h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-xl border border-emerald-200/80 bg-emerald-50/70 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-800 transition cursor-pointer disabled:opacity-40"
+                              disabled={underReview || hasInvalidFinanceDetails(p)}
+                              onClick={() => setInstallmentTarget(p)}
+                              title={isArabic ? 'تسجيل دفعة جزئية أو وصل' : 'Enregistrer un acompte / bon de versement'}
+                              aria-label={isArabic ? 'تسجيل دفعة جزئية أو وصل' : 'Enregistrer un acompte / bon de versement'}
+                            >
+                              <Wallet className="h-4 w-4 shrink-0" />
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            className="min-h-8! h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 transition cursor-pointer disabled:opacity-40"
+                            disabled={underReview || hasInvalidFinanceDetails(p)}
                             onClick={() => {
                               setSelectedFacturePaiement(p);
                               setShowFacture(true);
                             }}
-                            title={isArabic ? 'عرض وصل الدفع الرسمي' : 'Voir le reçu de paiement'}
-                            aria-label={isArabic ? 'عرض وصل الدفع الرسمي' : 'Voir le reçu de paiement'}
+                            title={isArabic ? 'عرض بيان الفاتورة' : 'Voir l’état de la facture'}
+                            aria-label={isArabic ? 'عرض بيان الفاتورة' : 'Voir l’état de la facture'}
                           >
-                            <FileText size={16} />
+                            <FileText className="h-4 w-4 shrink-0" />
                           </button>
-                          
+
                           {/* BOUTON MODIFIER */}
-                          <button 
-                            className="p-1.5 text-amber-500 hover:text-amber-750 hover:bg-amber-50 rounded-lg transition cursor-pointer" 
+                          <button
+                            type="button"
+                            className="min-h-8! h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-xl border border-amber-200/80 bg-amber-50/70 text-amber-600 hover:bg-amber-100 hover:text-amber-800 transition cursor-pointer disabled:opacity-40"
+                            disabled={underReview || isReadOnly}
                             onClick={() => handleEditClick(p)}
                             title={isArabic ? 'تعديل الفاتورة' : 'Modifier la facture'}
                             aria-label={isArabic ? 'تعديل الفاتورة' : 'Modifier la facture'}
                           >
-                            <Edit size={16} />
+                            <Edit className="h-4 w-4 shrink-0" />
                           </button>
 
-                              {p.statut !== 'Payé' && (
+                          {reminderBlocked === null && canRemindParents && (
                             <>
                               {buildWhatsAppRelanceLink(p, enfant, isArabic) && (
                                 <button
                                   type="button"
-                                  onClick={(event) => {
+                                  disabled={reminderCheck.busy}
+                                  onClick={async (event) => {
                                     event.stopPropagation();
                                     const phone = findWhatsAppPhone(enfant);
-                                    if (phone && enfant) {
+                                    const rawPhone = enfant?.parents.find(parent => normalizeAlgerianWhatsApp(parent.telephone) === phone)?.telephone;
+                                    const stored = dbPaiements.find(item => item.id === p.id);
+                                    if (phone && rawPhone && enfant && stored && reminderBlockReason(p, reminderState) === null && financialDataReady
+                                      && await reminderCheck.verify(stored, enfant, rawPhone)) {
+                                      setPreviewInvalidated(false);
                                       setWhatsappPreview({
-                                        phone,
+                                        invoiceId: p.id, invoiceSnapshot: JSON.stringify(stored), phone,
                                         childName: `${enfant.prenom} ${enfant.nom}`,
                                         message: buildWhatsAppRelanceMessage(p, enfant, isArabic),
                                       });
                                     }
                                   }}
-                                  className="inline-flex rounded-lg bg-emerald-50 p-2 text-emerald-700 transition hover:bg-emerald-100"
+                                  className="min-h-8! h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-xl border border-emerald-200/80 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 cursor-pointer disabled:opacity-40"
                                   title={isArabic ? 'معاينة التذكير قبل فتح واتساب' : 'Prévisualiser avant WhatsApp'}
                                   aria-label={isArabic ? 'معاينة التذكير قبل فتح واتساب' : 'Prévisualiser avant WhatsApp'}
                                 >
-                                  <MessageCircle size={15} />
+                                  <MessageCircle className="h-4 w-4 shrink-0" />
                                 </button>
                               )}
                               <button
                                 type="button"
-                                className={`inline-flex rounded-lg p-2 transition cursor-pointer ${copiedPaiementId === p.id ? 'bg-emerald-50 text-emerald-600' : 'text-indigo-600 hover:bg-indigo-50'}`}
-                                onClick={() => handleCopyRelance(p, enfant)}
+                                className={`min-h-8! h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-xl border transition cursor-pointer disabled:opacity-40 ${copiedPaiementId === p.id ? 'border-emerald-200 bg-emerald-50 text-emerald-600' : 'border-slate-200 bg-white text-indigo-600 hover:bg-indigo-50'}`}
+                                disabled={reminderCheck.busy}
+                                onClick={() => void handleCopyRelance(p, enfant)}
                                 title={isArabic ? 'نسخ رسالة التذكير' : 'Copier une relance'}
                                 aria-label={isArabic ? 'نسخ رسالة التذكير' : 'Copier une relance'}
                               >
-                                <Copy size={15} />
+                                <Copy className="h-4 w-4 shrink-0" />
                               </button>
                             </>
                           )}
-
-                          <button 
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer" 
-                            onClick={async () => {
-                              const confirmed = await confirm({
-                                title: isArabic ? 'تأكيد حذف الفاتورة' : 'Confirmer la suppression de la facture',
-                                message: isArabic
-                                  ? 'سيتم حذف هذه الفاتورة نهائياً.'
-                                  : 'Cette facture sera supprimée définitivement.',
-                                confirmLabel: isArabic ? 'حذف الفاتورة' : 'Supprimer la facture',
-                                variant: 'danger',
-                              });
-                              if (confirmed) await deletePaiement(p.id);
-                            }}
-                            title={isArabic ? 'حذف' : 'Supprimer'}
-                            aria-label={isArabic ? 'حذف الفاتورة' : 'Supprimer la facture'}
-                          >
-                            <Trash2 size={16} />
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -542,8 +1097,21 @@ export default function Paiements() {
                 <tr>
                   <td colSpan={6} className="p-12 text-center text-slate-400">
                     <HelpCircle className="w-10 h-10 mx-auto text-slate-300 stroke-[1.5] mb-2" />
-                    <p className="font-extrabold">{isArabic ? 'لا توجد فواتير' : 'Aucun état de facturation disponible'}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">{isArabic ? 'اضغط على إصدار فاتورة للبدء.' : 'Engagez une nouvelle facturation en cliquant sur le bouton d\'émission.'}</p>
+                    <p className="font-extrabold">{isArabic ? 'لا توجد فواتير مطابقة' : 'Aucun état de facturation disponible'}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {(searchTerm || filterStatut !== 'Tous')
+                        ? (isArabic ? 'عدّل معايير البحث أو الفلترة لعرض الفواتير.' : 'Modifiez la recherche ou le filtre de statut pour afficher les factures.')
+                        : (isArabic ? 'اضغط على إصدار فاتورة للبدء.' : 'Engagez une nouvelle facturation en cliquant sur le bouton d\'émission.')}
+                    </p>
+                    {(searchTerm || filterStatut !== 'Tous') && (
+                      <button
+                        type="button"
+                        onClick={() => { setSearchTerm(''); setFilterStatut('Tous'); }}
+                        className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-100 cursor-pointer"
+                      >
+                        {isArabic ? 'إعادة ضبط الفلاتر' : 'Réinitialiser les filtres'}
+                      </button>
+                    )}
                   </td>
                 </tr>
               )}
@@ -551,8 +1119,12 @@ export default function Paiements() {
           </table>
         </div>
       </div>
+      )}
 
-      {whatsappPreview && (
+      {reminderCheck.error && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-xs font-bold text-rose-900">{reminderCheck.error}</p>}
+      {reminderCheck.busy && <p role="status" className="rounded-xl bg-indigo-50 p-3 text-xs font-bold text-indigo-900">{isArabic ? 'جارٍ التحقق من البيانات…' : 'Vérification préalable en cours…'}</p>}
+      {previewInvalidated && <p role="status" className="rounded-xl bg-amber-50 p-3 text-xs font-bold text-amber-900">{isArabic ? 'أُغلقت المعاينة لأن البيانات المحلية تغيرت أو أصبحت غير متاحة. أعد التحميل والتحقق قبل إعداد رسالة جديدة.' : 'Aperçu fermé : les données locales ont changé ou sont indisponibles. Rechargez et vérifiez avant de préparer un nouveau message.'}</p>}
+      {whatsappPreview && previewCurrent && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm" onClick={() => setWhatsappPreview(null)}>
           <motion.div
             initial={{ scale: 0.96, opacity: 0 }}
@@ -569,6 +1141,7 @@ export default function Paiements() {
               </div>
               <button type="button" onClick={() => setWhatsappPreview(null)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label={isArabic ? 'إغلاق' : 'Fermer'}><X className="h-5 w-5" /></button>
             </div>
+            <p className="mt-3 text-xs font-bold text-amber-800">{isArabic ? 'التحقق لحظي وقد تتغير البيانات بعده من جهاز آخر. راجع الفاتورة والتحصيل قبل التواصل؛ واتساب خدمة خارجية.' : 'La vérification est ponctuelle : un autre appareil peut modifier les données ensuite. Vérifiez la facture et les encaissements avant de contacter la famille ; WhatsApp est un service externe.'}</p>
             <p className="mt-4 whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">{whatsappPreview.message}</p>
             <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button type="button" onClick={() => setWhatsappPreview(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-50">{isArabic ? 'إلغاء' : 'Annuler'}</button>
@@ -586,17 +1159,21 @@ export default function Paiements() {
         </div>
       )}
 
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">{isArabic ? 'الحالة المسجلة ليست إثباتاً للدفع؛ راجع الوثائق وأعد تحميل البيانات قبل أي تذكير أو نسخ. توليد الفواتير تلقائياً وحذفها متوقفان. يجب مراجعة الفواتير القديمة للطفل قبل إنشاء فاتورة جديدة؛ الفواتير المتعارضة تحتاج معالجة منفصلة لم تكتمل بعد. الفترات الجديدة شهرية أو حسب السنة الميلادية.' : 'Les statuts enregistrés ne prouvent pas un encaissement ; vérifiez les pièces et rechargez les données avant toute relance ou copie. La génération automatique et la suppression sont suspendues. Les factures anciennes doivent être rapprochées avant toute nouvelle création pour l’enfant ; le traitement des doublons reste à construire. Les nouvelles périodes utilisent le mois ou l’année civile.'}</div>
       {/* Modal Ajout & Edition */}
       <AnimatePresence>
         {showModal && (
-          <div 
+          <div
             className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-start sm:items-center justify-center z-[999] p-2 sm:p-4 pt-2 sm:pt-4 cursor-pointer overflow-y-auto"
+            role="dialog"
+            aria-modal="true"
             onClick={() => {
+              if (savingRef.current) return;
               setShowModal(false);
               setEditingPaiementId(null);
             }}
           >
-            <motion.div 
+            <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
@@ -606,19 +1183,21 @@ export default function Paiements() {
               <div className="p-4 sm:p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center gap-3 flex-shrink-0">
                 <div>
                   <h3 className="text-xl font-black">
-                    {editingPaiementId 
-                      ? (isArabic ? 'تعديل تفاصيل الفاتورة' : 'Modifier la Facture') 
+                    {editingPaiementId
+                      ? (isArabic ? 'تعديل تفاصيل الفاتورة' : 'Modifier la Facture')
                       : (isArabic ? 'إصدار فاتورة جديدة' : 'Création de Facture')
                     }
                   </h3>
                   <p className="text-xs text-indigo-100 mt-0.5">
-                    {isArabic 
-                      ? 'إعداد فواتير المدارس والخدمات مع حساب الخصومات والمدفوعات' 
-                      : 'Fiche d\'appel de fonds, remises scolarité fratrie & règlement'}
+                    {isArabic ? 'أدخل المبلغ النهائي يدوياً؛ لا يتم حساب الخصومات تلقائياً.' : 'Saisissez le montant final : les remises ne sont pas calculées automatiquement.'}
                   </p>
                 </div>
-                <button 
+                <button
+                  type="button"
+                  disabled={saving}
+                  aria-label={isArabic ? 'إغلاق' : 'Fermer'}
                   onClick={() => {
+                    if (savingRef.current) return;
                     setShowModal(false);
                     setEditingPaiementId(null);
                   }}
@@ -637,26 +1216,26 @@ export default function Paiements() {
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       { key: 'Mensuel', label: isArabic ? 'شهري' : 'Mensuelle' },
-                      { key: 'Annuel', label: isArabic ? 'سنوي' : 'Annuelle' }
+                      { key: 'Annuel', label: isArabic ? 'سنوي (السنة الميلادية)' : 'Annuelle (année civile)' }
                     ].map(type => (
                       <button
                         key={type.key}
                         type="button"
+                        disabled={!!editingPaiementId}
                         onClick={() => {
                           const isAnnuel = type.key === 'Annuel';
-                          const monthlyRate = creche?.tuitionFeeRate || 12000; // ✅ synchronisé avec Paramètres
                           setFormData({
-                            ...formData, 
+                            ...formData,
                             typeFacture: type.key as any,
-                            montant: isAnnuel ? monthlyRate * 12 : monthlyRate,
+                            montant: isAnnuel ? 0 : (creche?.tuitionFeeRate ?? 0),
                             moisConcerne: isAnnuel
-                              ? `Année Scolaire ${today.getFullYear()}/${today.getFullYear() + 1}`
+                              ? String(today.getFullYear())
                               : currentMonthLabel
                           });
                         }}
-                        className={`p-3 text-xs font-bold rounded-xl border transition cursor-pointer text-center ${
-                          formData.typeFacture === type.key 
-                            ? 'bg-indigo-600 text-white border-transparent' 
+                        className={`p-3 text-xs font-bold rounded-xl border transition cursor-pointer text-center disabled:cursor-not-allowed disabled:opacity-60 ${
+                          formData.typeFacture === type.key
+                            ? 'bg-indigo-600 text-white border-transparent'
                             : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
                         }`}
                       >
@@ -671,11 +1250,13 @@ export default function Paiements() {
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
                     {isArabic ? 'الطفل المستفيد *' : 'Sélectionner l\'Enfant Récepteur *'}
                   </label>
-                  <select 
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800" 
-                    value={formData.enfantId} 
+                  <select
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800 disabled:opacity-70"
+                    value={formData.enfantId}
+                    disabled={!!editingPaiementId}
                     onChange={e => setFormData({...formData, enfantId: e.target.value})}
                   >
+                    <option value="">{isArabic ? 'اختر الطفل' : 'Choisir un enfant'}</option>
                     {enfantsData.map(e => <option key={e.id} value={e.id}>{e.prenom} {e.nom}</option>)}
                   </select>
                 </div>
@@ -686,107 +1267,90 @@ export default function Paiements() {
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
                       {isArabic ? 'مبلغ الفاتورة (دج) *' : 'Montant Principal (DZD) *'}
                     </label>
-                    <input 
-                      type="number" 
-                      placeholder="Ex: 12000"
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-bold text-slate-800" 
-                      value={formData.montant || ''} 
-                      onChange={e => setFormData({...formData, montant: parseInt(e.target.value) || 0})} 
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder={isArabic ? 'مثال: 12000' : 'Ex. : 12000'}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-bold text-slate-800"
+                      value={formData.montant || ''}
+                      onChange={e => setFormData({...formData, montant: Number(e.target.value) || 0})}
                     />
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {formData.typeFacture === 'Annuel' 
-                        ? (isArabic ? 'السنة الدراسية المعنية *' : 'Année Scolaire *')
+                      {formData.typeFacture === 'Annuel'
+                        ? (isArabic ? 'السنة الميلادية المعنية *' : 'Année civile concernée *')
                         : (isArabic ? 'الشهر المعني *' : 'Période Facturée (Mois) *')
                       }
                     </label>
-                    {formData.typeFacture === 'Annuel' ? (
-                      <select
-                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800"
-                        value={formData.moisConcerne}
-                        onChange={e => setFormData({...formData, moisConcerne: e.target.value})}
-                      >
-                        <option value={`Année Scolaire ${today.getFullYear() - 1}/${today.getFullYear()}`}>{`Année Scolaire ${today.getFullYear() - 1}/${today.getFullYear()}`}</option>
-                        <option value={`Année Scolaire ${today.getFullYear()}/${today.getFullYear() + 1}`}>{`Année Scolaire ${today.getFullYear()}/${today.getFullYear() + 1}`}</option>
-                        <option value={`Année Scolaire ${today.getFullYear() + 1}/${today.getFullYear() + 2}`}>{`Année Scolaire ${today.getFullYear() + 1}/${today.getFullYear() + 2}`}</option>
-                      </select>
-                    ) : (
-                      <select
-                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800"
-                        value={formData.moisConcerne}
-                        onChange={e => setFormData({...formData, moisConcerne: e.target.value})}
-                      >
-                        {Array.from({ length: 12 }, (_, index) => {
-                          const monthDate = new Date(today.getFullYear(), today.getMonth() - 5 + index, 1);
-                          const label = new Intl.DateTimeFormat(isArabic ? 'ar-DZ' : 'fr-FR', { month: 'long', year: 'numeric' }).format(monthDate);
-                          return <option key={label} value={label}>{label}</option>;
-                        })}
-                      </select>
-                    )}
-                  </div>
-                </div>
-
-                {/* Remise & Mode de règlement */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {isArabic ? 'معدل الخصم / الاتفاقية *' : 'Remise pour convention / Fratrie *'}
-                    </label>
-                    <select 
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800"
-                      value={formData.reductionCode}
-                      onChange={e => setFormData({...formData, reductionCode: e.target.value})}
-                    >
-                      <option value="Aucun">Aucune remise (Tarif Plein)</option>
-                      <option value="Fratrie -10%">Fratrie (-10%)</option>
-                      <option value="Scolarité Réduite">Rentrée décalée (-15%)</option>
-                      <option value="Partenaire Social">Tarif Partenaire Social</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {isArabic ? 'وسيلة الدفع المفضلة *' : 'Type de Règlement *'}
-                    </label>
-                    <select 
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800"
-                      value={formData.moyenPaiement}
-                      onChange={e => setFormData({...formData, moyenPaiement: e.target.value as any})}
-                    >
-                      <option value="Espèces">Espèces</option>
-                      <option value="Chèque">Chèque Bancaire</option>
-                      <option value="Virement">Virement Postaux / CCP</option>
-                      <option value="Carte">Carte Bancaire / CIB</option>
-                    </select>
+                    <input type={!editingPaiementId && formData.typeFacture === 'Mensuel' ? 'month' : 'text'} placeholder={formData.typeFacture === 'Annuel' ? 'AAAA' : 'AAAA-MM'} disabled={!!editingPaiementId} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold disabled:opacity-70" value={formData.moisConcerne} onChange={e => setFormData({...formData, moisConcerne: e.target.value})} />
+                    {editingPaiementId && <p className="mt-1 text-xs text-slate-500">{isArabic ? 'لا يمكن تعديل الطفل والفترة لحماية التاريخ.' : 'Enfant et période non modifiables pour protéger l’historique.'}</p>}
                   </div>
                 </div>
 
                 {/* Choix du statut */}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    {isArabic ? 'حالة الفاتورة والتحصيل *' : 'Statut d\'Émission *'}
+                    {isArabic ? 'حالة الفاتورة المصرّح بها *' : 'Statut d\'Émission *'}
                   </label>
                   <div className="grid grid-cols-1 min-[380px]:grid-cols-3 gap-2">
                     {[
-                      { key: 'Payé', label: isArabic ? 'تم الدفع بالكامل' : 'Déjà Réglé', activeBg: 'bg-emerald-600 text-white border-transparent' },
+                      { key: 'Payé', label: isArabic ? 'مسجلة مدفوعة' : 'Déjà Réglé', activeBg: 'bg-emerald-600 text-white border-transparent' },
                       { key: 'En attente', label: isArabic ? 'قيد الانتظار' : 'En attente', activeBg: 'bg-amber-500 text-white border-transparent' },
-                      { key: 'Retard', label: isArabic ? 'متأخر في الدفع' : 'En Retard', activeBg: 'bg-rose-600 text-white border-transparent' }
+                      { key: 'Retard', label: isArabic ? 'متأخرة' : 'En Retard', activeBg: 'bg-rose-600 text-white border-transparent' }
                     ].map(status => (
                       <button
                         key={status.key}
                         type="button"
-                        onClick={() => setFormData({...formData, statut: status.key as any})}
+                        onClick={() => {
+                          const nextStatut = status.key as 'Payé' | 'En attente' | 'Retard';
+                          setFormError('');
+                          setFormData({
+                            ...formData,
+                            statut: nextStatut,
+                            moyenPaiement: nextStatut === 'Payé' ? formData.moyenPaiement : '',
+                          });
+                        }}
                         className={`p-3 text-xs font-bold rounded-xl border transition cursor-pointer ${
-                          formData.statut === status.key 
-                            ? status.activeBg 
+                          formData.statut === status.key
+                            ? status.activeBg
                             : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
                         }`}
                       >
                         {status.label}
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                {/* Remise & Mode de règlement */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+                  <p className="rounded-xl bg-amber-50/80 border border-amber-100 p-3 text-xs font-medium text-amber-800">
+                    {isArabic ? 'أدخل المبلغ النهائي يدوياً؛ لا يتم حساب الخصومات أو الدفعات الجزئية تلقائياً.' : 'Saisissez le montant final manuellement ; aucune remise ni paiement partiel n’est calculé automatiquement.'}
+                  </p>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                      {formData.statut === 'Payé'
+                        ? (isArabic ? 'وسيلة الدفع المصرّح بها *' : 'Mode de règlement déclaré *')
+                        : (isArabic ? 'وسيلة الدفع (عند التسديد)' : 'Mode de règlement (si payé)')}
+                    </label>
+                    <select
+                      disabled={formData.statut !== 'Payé'}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      value={formData.moyenPaiement}
+                      onChange={e => {
+                        setFormError('');
+                        setFormData({...formData, moyenPaiement: e.target.value as any});
+                      }}
+                    >
+                      <option value="">{formData.statut === 'Payé' ? (isArabic ? 'اختر وسيلة الدفع' : 'Choisir un mode') : (isArabic ? 'غير مطبق قبل الدفع' : 'Non applicable avant règlement')}</option>
+                      {PAYMENT_METHODS.map(method => (
+                        <option key={method} value={method}>
+                          {formatPaymentMethodLabel(method, isArabic)}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
@@ -797,7 +1361,7 @@ export default function Paiements() {
                       <Calendar className="w-3.5 h-3.5 text-indigo-500" />
                       {isArabic ? 'تاريخ استحقاق الفاتورة' : 'Date limite de paiement'}
                     </label>
-                    <input 
+                    <input
                       type="date"
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800"
                       value={formData.dateEcheance}
@@ -809,34 +1373,39 @@ export default function Paiements() {
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
                       {isArabic ? 'ملاحظات إضافية' : 'Notes administratives'}
                     </label>
-                    <input 
-                      type="text" 
-                      placeholder="Commentaires ou informations du chèque..."
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800" 
-                      value={formData.notes} 
-                      onChange={e => setFormData({...formData, notes: e.target.value})} 
+                    <input
+                      type="text"
+                      placeholder={isArabic ? 'مرجع التحويل أو رقم الشيك أو ملاحظة داخلية...' : 'Référence de virement, n° de chèque ou note interne...'}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
+                      value={formData.notes}
+                      onChange={e => setFormData({...formData, notes: e.target.value})}
                     />
                   </div>
                 </div>
 
               </div>
 
+              {editingOutdated && <p role="alert" className="mx-6 rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-900">{isArabic ? 'تغيرت الفاتورة أو أصبحت مرتبطة باشتباه. أغلق النموذج وراجع البيانات قبل إعادة فتحه.' : 'La facture a changé ou est liée à un soupçon. Fermez ce formulaire et vérifiez les données avant de le rouvrir.'}</p>}
+              {formError && <p role="alert" className="mx-6 rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-900">{formError}</p>}
               {/* Pied de page actions */}
               <div className="p-6 pt-4 border-t border-slate-100 flex gap-3 flex-shrink-0 bg-slate-50/50">
-                <button 
+                <button
                   type="button"
                   className="flex-1 p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer text-sm"
+                  disabled={saving}
                   onClick={() => {
+                    if (savingRef.current) return;
                     setShowModal(false);
                     setEditingPaiementId(null);
                   }}
                 >
                   {t('common.cancel')}
                 </button>
-                <button 
+                <button
                   type="button"
-                  className="flex-1 p-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-bold rounded-xl transition cursor-pointer text-sm shadow-md"
-                  onClick={handleAjouterOuModifier}
+                  className="flex-1 p-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-bold rounded-xl transition cursor-pointer text-sm shadow-md disabled:opacity-50"
+                  disabled={saving || !financialDataReady || editingOutdated || isReadOnly}
+                  onClick={() => void handleAjouterOuModifier()}
                 >
                   {editingPaiementId ? (isArabic ? 'حفظ التعديلات' : 'Enregistrer les modifications') : t('common.save')}
                 </button>
@@ -846,19 +1415,22 @@ export default function Paiements() {
         )}
       </AnimatePresence>
 
-      {/* Reçu détaillé (au clic sur une ligne) */}
+      {/* Fiche détaillée de la facture (au clic sur une ligne) */}
       <AnimatePresence>
         {selectedPaiement && (() => {
           const enfant = enfantsData.find(e => e.id === selectedPaiement.enfantId);
-          const originPrice = selectedPaiement.montant;
-          const reductionStr = selectedPaiement.reductionCode !== 'Aucun' ? selectedPaiement.reductionCode : null;
-          
+          const reductionStr = selectedPaiement.reductionCode && selectedPaiement.reductionCode !== 'Aucun' ? selectedPaiement.reductionCode : null;
+          const selectedUnderReview = suspectedIds.has(selectedPaiement.id);
+          const selectedInvalidDetails = hasInvalidFinanceDetails(selectedPaiement);
+
           return (
-            <div 
+            <div
               className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-start sm:items-center justify-center z-[999] p-2 sm:p-4 pt-2 sm:pt-4 cursor-pointer overflow-y-auto"
+              role="dialog"
+              aria-modal="true"
               onClick={() => setSelectedPaiement(null)}
             >
-              <motion.div 
+              <motion.div
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.95, opacity: 0 }}
@@ -866,14 +1438,18 @@ export default function Paiements() {
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="p-4 sm:p-6 bg-slate-50 border-b border-dashed border-slate-200 text-slate-800 relative flex-shrink-0">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">{isArabic ? 'وصل الدفع الرسمي' : 'REÇU DE PAIEMENT'}</span>
-                      <h4 className="text-lg font-black text-slate-900 mt-1">N° #{selectedPaiement.id?.slice(0, 8).toUpperCase() || '2938173'}</h4>
+                  <div className="flex justify-between items-start gap-3">
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">{isArabic ? 'بيان الفاتورة — ليس إثبات دفع' : 'ÉTAT DE FACTURE — PAS UN JUSTIFICATIF'}</span>
+                      <h4 className="text-lg font-black text-slate-900 mt-1 break-all">
+                        {isArabic ? `المعرّف: ${selectedPaiement.id || '—'}` : `Réf. ${selectedPaiement.id || '—'}`}
+                      </h4>
                     </div>
-                    <button 
+                    <button
+                      type="button"
+                      aria-label={isArabic ? 'إغلاق' : 'Fermer'}
                       onClick={() => setSelectedPaiement(null)}
-                      className="p-1.5 rounded-lg bg-slate-200/50 hover:bg-slate-200/80 text-slate-500 transition cursor-pointer"
+                      className="p-1.5 rounded-lg bg-slate-200/50 hover:bg-slate-200/80 text-slate-500 transition cursor-pointer shrink-0"
                     >
                       <X size={16} />
                     </button>
@@ -884,58 +1460,58 @@ export default function Paiements() {
 
                 <div className="p-4 sm:p-6 space-y-5 overflow-y-auto flex-1 min-h-0">
                   <div>
-                    <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider block mb-2">{isArabic ? 'المستلم والمعلومات العائلية' : 'Bénéficiaire / Élève'}</span>
+                    <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider block mb-2">{isArabic ? 'الطفل والقسم' : 'Bénéficiaire / Élève'}</span>
                     <div className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-100 rounded-2xl">
-                      <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-700 font-extrabold flex items-center justify-center text-xs">
-                        {enfant ? `${enfant.prenom[0]}${enfant.nom[0]}` : 'E'}
+                      <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-700 font-extrabold flex items-center justify-center text-xs shrink-0">
+                        {enfant ? `${enfant.prenom[0] || ''}${enfant.nom[0] || ''}` : '??'}
                       </div>
-                      <div>
-                        <p className="text-sm font-black text-slate-900 leading-none">{enfant ? `${enfant.prenom} ${enfant.nom}` : 'Enfant Inscrit'}</p>
-                        <p className="text-[11px] text-slate-500 font-bold mt-1">{isArabic ? 'قسم:' : 'Groupe Age'}: {enfant?.groupeAge || 'N/A'}</p>
+                      <div className="min-w-0">
+                        <p className="text-sm font-black text-slate-900 leading-none break-words">
+                          {enfant ? `${enfant.prenom} ${enfant.nom}` : (isArabic ? 'الطفل غير متاح' : 'Enfant non disponible')}
+                        </p>
+                        <p className="text-[11px] text-slate-500 font-bold mt-1">
+                          {isArabic ? 'القسم' : 'Groupe d’âge'} : {enfant?.groupeAge || (isArabic ? 'غير محدد' : 'Non renseigné')}
+                        </p>
                       </div>
                     </div>
                   </div>
 
                   <div className="space-y-2 border-t border-b border-slate-100 py-4 text-xs font-bold text-slate-500">
-                    <div className="flex justify-between">
-                      <span>{isArabic ? 'النوع والتاريخ' : 'Type de facturation'}:</span>
-                      <span className="text-slate-800 font-extrabold">
-                        {selectedPaiement.typeFacture === 'Annuel' ? (isArabic ? 'سنوي' : 'Annuel') : (isArabic ? 'شهري' : 'Mensuel')}
+                    <div className="flex justify-between gap-2">
+                      <span>{isArabic ? 'النوع الأصلي المسجل' : 'Type original enregistré'}:</span>
+                      <span className="text-slate-800 font-extrabold text-end">
+                        {selectedPaiement.typeFacture === 'Annuel' ? (isArabic ? 'سنوي' : 'Annuel') : selectedPaiement.typeFacture === 'Mensuel' ? (isArabic ? 'شهري' : 'Mensuel') : (isArabic ? 'غير محدد' : 'Non précisé')}
                       </span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between gap-2">
                       <span>{isArabic ? 'الفترة المعنية' : 'Période administrative'}:</span>
-                      <span className="text-slate-800 font-extrabold">{selectedPaiement.moisConcerne}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>{isArabic ? 'المبلغ الأصلي' : 'Prix initial scolarité'}:</span>
-                      <span className="text-slate-800">{formatCurrency(originPrice)}</span>
+                      <span className="text-slate-800 font-extrabold text-end">{displayPaymentPeriod(invoicePeriod(selectedPaiement))}</span>
                     </div>
                     {reductionStr && (
-                      <div className="flex justify-between text-indigo-600">
-                        <span>Convention / Remise ({reductionStr}):</span>
-                        <span>-{isArabic ? 'خصم مسجل' : 'Appliqué'}</span>
+                      <div className="flex justify-between gap-2 text-indigo-600">
+                        <span>{isArabic ? 'وصف الخصم المسجل' : 'Libellé de remise enregistré'}:</span><span className="text-end">{reductionStr}</span>
                       </div>
                     )}
-                    <div className="flex justify-between text-slate-800 text-sm font-black pt-3 border-t border-dashed border-slate-200">
-                      <span>{isArabic ? 'المبلغ المستحق' : 'Net à payer'} (DZD):</span>
-                      <span className="text-indigo-600 text-base">{formatCurrency(selectedPaiement.montant)}</span>
+                    <p className="text-xs text-amber-700">{isArabic ? 'الخصم غير محسوب آلياً؛ تحقق من المبلغ المسجل.' : 'Remise non calculée automatiquement ; vérifiez le montant enregistré.'}</p>
+                    <div className="flex justify-between gap-2 text-slate-800 text-sm font-black pt-3 border-t border-dashed border-slate-200">
+                      <span>{isArabic ? 'المبلغ المسجل' : 'Montant enregistré'}:</span>
+                      <span className="text-indigo-600 text-base text-end">{typeof selectedPaiement.montant === 'number' && Number.isFinite(selectedPaiement.montant) ? formatCurrency(selectedPaiement.montant) : '—'}</span>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 text-xs">
                     <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase block tracking-wider mb-1">{isArabic ? 'وسيلة الدفع' : 'Mode de versement'}</span>
-                      <span className="font-extrabold text-slate-800">{selectedPaiement.moyenPaiement || 'Espèces'}</span>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase block tracking-wider mb-1">{isArabic ? 'وسيلة الدفع المصرّح بها' : 'Mode déclaré'}</span>
+                      <span className="font-extrabold text-slate-800">{formatPaymentMethodLabel(selectedPaiement.moyenPaiement, isArabic)}</span>
                     </div>
                     <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase block tracking-wider mb-1">{isArabic ? 'تاريخ الاستحقاق' : 'Date de limite'}</span>
-                      <span className="font-extrabold text-slate-800">{selectedPaiement.dateEcheance || 'Complété'}</span>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase block tracking-wider mb-1">{isArabic ? 'تاريخ الاستحقاق' : 'Date limite'}</span>
+                      <span className="font-extrabold text-slate-800">{selectedPaiement.dateEcheance || (isArabic ? 'غير محدد' : 'Non précisée')}</span>
                     </div>
                   </div>
 
                   <div className="flex justify-center pt-2">
-                    <span className={`inline-flex items-center gap-1.5 px-6 py-2.5 rounded-full text-xs font-black uppercase tracking-widest leading-none border shadow-xs ${
+                    <span className={`inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full text-xs font-black uppercase tracking-widest leading-none border shadow-xs ${
                       selectedPaiement.statut === 'Payé'
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                         : selectedPaiement.statut === 'En attente'
@@ -945,15 +1521,87 @@ export default function Paiements() {
                       <span className={`w-2 h-2 rounded-full ${
                         selectedPaiement.statut === 'Payé' ? 'bg-emerald-500' : selectedPaiement.statut === 'En attente' ? 'bg-amber-500' : 'bg-rose-500'
                       }`} />
-                      {selectedPaiement.statut === 'Payé' ? (isArabic ? 'خالصة الدفع' : 'COMPLÈTEMENT RÉGLÉ') : selectedPaiement.statut}
+                      {selectedPaiement.statut === 'Payé'
+                        ? (isArabic ? 'مسجلة بحالة مدفوعة' : 'STATUT ENREGISTRÉ : PAYÉ')
+                        : formatInvoiceStatusLabel(selectedPaiement.statut, isArabic)}
                     </span>
                   </div>
 
                   {selectedPaiement.notes && (
-                    <div className="p-3 bg-slate-50 rounded-xl text-[11px] font-bold text-slate-400 italic text-center">
-                      "{selectedPaiement.notes}"
+                    <div className="p-3 bg-slate-50 rounded-xl text-[11px] font-bold text-slate-500 italic text-center break-words">
+                      « {selectedPaiement.notes} »
                     </div>
                   )}
+                </div>
+
+                <div className="p-4 border-t border-slate-100 bg-slate-50/70 flex flex-wrap justify-end gap-2 flex-shrink-0">
+                  {selectedPaiement.statut !== 'Annulé' && (selectedPaiement.statut === 'Payé' || (paidSumByInvoiceId.get(selectedPaiement.id) || 0) > 0) && (
+                    <button
+                      type="button"
+                      disabled={selectedUnderReview || selectedInvalidDetails}
+                      onClick={() => {
+                        const target = selectedPaiement;
+                        setSelectedPaiement(null);
+                        void handleOpenReceiptPdf(target);
+                      }}
+                      className="min-h-9! inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-800 whitespace-nowrap transition hover:bg-emerald-100 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Receipt size={14} />
+                      <span>{isArabic ? 'وصل PDF' : 'Reçu PDF'}</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={selectedUnderReview || selectedInvalidDetails}
+                    onClick={() => {
+                      const target = selectedPaiement;
+                      setSelectedPaiement(null);
+                      setSelectedFacturePaiement(target);
+                      setShowFacture(true);
+                    }}
+                    className="min-h-9! inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-xs font-bold text-indigo-700 whitespace-nowrap transition hover:bg-indigo-100 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <FileText size={14} />
+                    <span>{isArabic ? 'طباعة / PDF' : 'Imprimer / PDF'}</span>
+                  </button>
+                  {selectedPaiement.statut !== 'Annulé' && typeof invoiceReviewAction === 'function' && (
+                    <button
+                      type="button"
+                      disabled={isReadOnly}
+                      onClick={() => {
+                        const target = selectedPaiement;
+                        setSelectedPaiement(null);
+                        setCancelReason('');
+                        setCancelTarget(target);
+                      }}
+                      className="min-h-9! inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-bold text-rose-700 whitespace-nowrap transition hover:bg-rose-100 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Ban size={14} />
+                      <span>{isArabic ? 'إلغاء' : 'Annuler'}</span>
+                    </button>
+                  )}
+                  {selectedPaiement.statut !== 'Annulé' && (
+                    <button
+                      type="button"
+                      disabled={selectedUnderReview || isReadOnly}
+                      onClick={() => {
+                        const target = selectedPaiement;
+                        setSelectedPaiement(null);
+                        handleEditClick(target);
+                      }}
+                      className="min-h-9! inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-bold text-amber-800 whitespace-nowrap transition hover:bg-amber-100 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Edit size={14} />
+                      <span>{isArabic ? 'تعديل' : 'Modifier'}</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPaiement(null)}
+                    className="min-h-9! rounded-xl bg-slate-200/80 px-4 py-2 text-xs font-bold text-slate-700 whitespace-nowrap transition hover:bg-slate-300/80 cursor-pointer"
+                  >
+                    {isArabic ? 'إغلاق' : 'Fermer'}
+                  </button>
                 </div>
               </motion.div>
             </div>
@@ -963,14 +1611,133 @@ export default function Paiements() {
 
       {/* Modal d'Affichage & Impression de la Facture PDF */}
       {showFacture && selectedFacturePaiement && (
-        <Facture 
+        <Facture
           paiement={selectedFacturePaiement}
-          enfant={enfantsData.find(e => e.id === selectedFacturePaiement.enfantId)!}
+          enfant={enfantsData.find(e => e.id === selectedFacturePaiement.enfantId)}
           onClose={() => {
             setShowFacture(false);
             setSelectedFacturePaiement(null);
           }}
         />
+      )}
+
+      <BatchMonthlyInvoicesModal
+        isOpen={showBatchModal}
+        onClose={() => setShowBatchModal(false)}
+        enfants={enfantsData}
+        paiements={dbPaiements}
+        defaultFeeRate={creche?.tuitionFeeRate ?? 0}
+        defaultMonth={currentMonthLabel}
+        isReadOnly={isReadOnly}
+        addPaiement={addPaiement}
+      />
+
+      {dossierEnfant && (
+        <EnfantDetails
+          enfant={enfantsData.find(e => e.id === dossierEnfant.id) || dossierEnfant}
+          onClose={() => setDossierEnfant(null)}
+        />
+      )}
+
+      {installmentTarget && (
+        <InvoiceInstallmentsModal
+          paiement={paiements.find(item => item.id === installmentTarget.id) || installmentTarget}
+          enfant={enfantsData.find(e => e.id === installmentTarget.enfantId)}
+          creche={creche}
+          installments={installmentsByInvoice.get(installmentTarget.id) || []}
+          readOnly={isReadOnly}
+          recordedBy={activeProfile?.name}
+          isArabic={isArabic}
+          onAddInstallment={addInstallment}
+          onRemoveInstallment={removeInstallment}
+          onCompleteInvoice={async (finalMethod) => {
+            const stored = dbPaiements.find(item => item.id === installmentTarget.id);
+            if (!stored || stored.statut === 'Payé') return;
+            await updatePaiement(
+              stored.id,
+              {
+                montant: stored.montant,
+                statut: 'Payé',
+                moyenPaiement: finalMethod,
+                dateEcheance: stored.dateEcheance || null,
+                notes: stored.notes || null,
+              },
+              stored
+            );
+          }}
+          onClose={() => setInstallmentTarget(null)}
+        />
+      )}
+      {receiptViewerSource && (
+        <InAppPdfViewerModal
+          documentSource={receiptViewerSource}
+          isArabic={isArabic}
+          onClose={() => setReceiptViewerSource(null)}
+        />
+      )}
+
+      {cancelTarget && (
+        <div
+          className="fixed inset-0 z-[1050] flex items-end sm:items-center justify-center bg-slate-950/65 p-0 sm:p-4 backdrop-blur-xs"
+          role="dialog"
+          aria-modal="true"
+          dir={isArabic ? 'rtl' : 'ltr'}
+          onClick={() => !cancellingInvoice && setCancelTarget(null)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="truncate text-base font-black text-slate-900">
+                {isArabic ? 'إلغاء الفاتورة محاسبياً' : 'Annuler cette facture'}
+              </h3>
+              <button
+                type="button"
+                disabled={cancellingInvoice}
+                onClick={() => setCancelTarget(null)}
+                aria-label={isArabic ? 'إغلاق' : 'Fermer'}
+                className="min-h-8! rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs font-semibold text-slate-600">
+              {isArabic
+                ? 'تُستبعد الفاتورة من المجاميع مع حفظ أثرها في السجل.'
+                : 'La facture sort des totaux tout en restant tracée dans l’historique.'}
+            </p>
+            <label className="block text-xs font-bold text-slate-700">
+              {isArabic ? 'سبب الإلغاء *' : 'Motif de l’annulation *'}
+              <input
+                type="text"
+                value={cancelReason}
+                onChange={e => setCancelReason(e.target.value.slice(0, 300))}
+                placeholder={isArabic ? 'مثال: خطأ في المبلغ أو فاتورة مكررة' : 'Ex : erreur de montant ou doublon'}
+                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-900 outline-none focus:border-rose-500 focus:bg-white"
+              />
+            </label>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                disabled={cancellingInvoice}
+                onClick={() => setCancelTarget(null)}
+                className="min-h-9! rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 whitespace-nowrap cursor-pointer"
+              >
+                {isArabic ? 'تراجع' : 'Fermer'}
+              </button>
+              <button
+                type="button"
+                disabled={cancellingInvoice || !cancelReason.trim()}
+                onClick={() => void handleConfirmCancelInvoice()}
+                className="min-h-9! inline-flex items-center gap-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 px-4 py-2 text-xs font-black text-white whitespace-nowrap transition disabled:opacity-40 cursor-pointer"
+              >
+                <Ban size={14} />
+                <span>{cancellingInvoice ? (isArabic ? 'جارٍ الحفظ…' : 'Annulation…') : (isArabic ? 'تأكيد الإلغاء' : 'Confirmer l’annulation')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

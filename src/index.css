@@ -1,6 +1,5 @@
-/* Style context — Vitrine Rawdha+ : français Outfit affirmé et arabe Alexandria élégant,
-   afin de garder une lecture chaleureuse, solide et stable sur toute la plateforme ; les champs métier restent contrastés et lisibles. */
-@import url('https://fonts.googleapis.com/css2?family=Alexandria:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Style context — Vitrine & Plateforme Rawdha+ : français Plus Jakarta Sans / Outfit affirmé
+   et arabe Alexandria élégant sur toute l’application, avec rendu mobile fluide à 60 fps. */
 @import "tailwindcss";
 
 @theme {
@@ -14,11 +13,29 @@
   --color-primary-700: #1d4ed8;
 }
 
+html {
+  -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
+}
+
 body {
   font-family: var(--font-sans);
   background-color: #f8fafc;
   color: #0f172a;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html[dir='rtl'] body,
+html[dir='rtl'] .font-sans,
+[dir='rtl'].font-sans,
+[dir='rtl'] .font-sans,
+html[dir='rtl'] button,
+html[dir='rtl'] input,
+html[dir='rtl'] select,
+html[dir='rtl'] textarea {
+  font-family: var(--font-arabic), var(--font-sans);
+  letter-spacing: 0;
 }
 
 /* Rawdha+ landing typography: strong editorial French hierarchy and premium Arabic RTL. */
@@ -152,9 +169,16 @@ body {
 }
 
 img,
-svg,
 video,
 canvas {
+  max-width: 100%;
+}
+
+svg {
+  flex-shrink: 0;
+}
+
+svg:not(.lucide) {
   max-width: 100%;
 }
 
@@ -166,17 +190,20 @@ textarea {
   max-width: 100%;
 }
 
+/* Wide tables and filter rows must also remain reachable on tablets and
+   intermediate desktop widths, not just below the mobile breakpoint. */
+.mobile-scroll-x {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
 @media (max-width: 639px) {
   .mobile-safe-wrap {
     min-width: 0;
     overflow-wrap: anywhere;
-  }
-
-  .mobile-scroll-x {
-    max-width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: thin;
   }
 
   .mobile-safe-modal {
@@ -197,6 +224,66 @@ textarea {
 button,
 [role="button"] {
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Accessibilité clavier (WCAG 2.4.1 & 2.4.7) : lien d’évitement et contour focus-visible net */
+.rawdha-skip-link {
+  position: fixed;
+  top: 0.75rem;
+  inset-inline-start: 0.75rem;
+  z-index: 100;
+  border-radius: 0.75rem;
+  background-color: #0f172a;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+  padding: 0.625rem 1rem;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.35);
+  text-decoration: none;
+}
+
+.rawdha-skip-link:not(:focus):not(:focus-visible) {
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+}
+
+a:focus-visible,
+button:focus-visible,
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+}
+
+.rawdha-card-modern {
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+@media (hover: hover) {
+  .rawdha-card-modern:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 4px 12px -4px rgba(15, 23, 42, 0.06);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Contrôle de formulaire partagé uniquement par le module Achats. */
@@ -259,5 +346,27 @@ button,
     display: inline-flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .mobile-safe-modal {
+    border-radius: 1.75rem;
+    box-shadow: 0 24px 60px -12px rgba(15, 23, 42, 0.28);
+  }
+}
+
+/* In landscape on a short phone, pinning the account panel left only a
+   few pixels for the menu. Let the entire drawer scroll instead. */
+@media (max-width: 1023px) and (max-height: 520px) {
+  .rawdha-sidebar {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .rawdha-sidebar .rawdha-sidebar-scroll {
+    flex: none;
+    overflow: visible;
+  }
+  .rawdha-sidebar > div,
+  .rawdha-sidebar .rawdha-sidebar-footer {
+    flex-shrink: 0;
   }
 }

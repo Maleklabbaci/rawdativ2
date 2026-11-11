@@ -137,6 +137,7 @@ export async function registerAndroidPushNotifications(userId: string): Promise<
         importance: 5,
         visibility: 1,
         vibration: true,
+        sound: 'default',
       });
 
       await PushNotifications.addListener('registration', async (token) => {

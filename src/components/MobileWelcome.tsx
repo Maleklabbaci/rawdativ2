@@ -60,7 +60,7 @@ export default function MobileWelcome({ onContinue }: MobileWelcomeProps) {
           <div className="flex items-center gap-3">
             <img
               src="/rawdah-logo.png"
-              alt="Logo Rawdha+"
+              alt={isFrench ? 'Logo Rawdha+' : 'شعار روضة+'}
               className="h-14 w-14 rounded-2xl border border-white/35 shadow-lg"
             />
             <div>
