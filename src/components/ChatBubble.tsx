@@ -149,6 +149,8 @@ export default function ChatBubble() {
       setShowAvisPopup(false);
       localStorage.setItem(`avis_dismissed_${user.id}`, 'true');
       showToast(isFrench ? 'Merci pour votre avis.' : 'شكراً على تقييمك.', 'success');
+    } catch {
+      showToast(isFrench ? 'Envoi non confirmé. Vérifiez votre avis avant de réessayer.' : 'لم يتأكد الإرسال. تحقق من تقييمك قبل المحاولة مجدداً.', 'error');
     } finally {
       setSendingAvis(false);
     }

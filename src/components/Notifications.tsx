@@ -1,5 +1,5 @@
 /** Style Rawdha+ Communications: poste de commande clair, ciblage lisible, prévisualisation fidèle, aucune diffusion automatique non confirmée. */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { BellRing, CheckCheck, CircleAlert, Clock3, ExternalLink, Eye, Link2, Megaphone, MonitorSmartphone, Send, Sparkles, Target, Trash2, Users } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -55,9 +55,11 @@ export default function Notifications() {
   const [repeatCount, setRepeatCount] = useState(0);
   const [repeatInterval, setRepeatInterval] = useState(60);
   const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+  const [publishUncertain, setPublishUncertain] = useState(false);
   const [deliveryStatus, setDeliveryStatus] = useState<{ tone: 'success' | 'warning'; text: string } | null>(null);
 
-  const directeurs = useMemo(() => comptes.filter(account => account.role === 'directeur' && account.approvalStatus !== 'pending'), [comptes]);
+  const directeurs = useMemo(() => comptes.filter(account => account.role === 'directeur' && account.approvalStatus === 'approved'), [comptes]);
   const audienceDirectors = useMemo(() => {
     if (audience === 'trial') return directeurs.filter(account => account.commercialStage === 'essai');
     if (audience === 'expiring') return directeurs.filter(account => account.abonnementActif && (dateDaysFromNow(account.dateFinAbonnement) ?? 999) <= 7);
@@ -68,7 +70,7 @@ export default function Notifications() {
   }, [audience, directeurs, individualId]);
   const currentTheme = themes.find(theme => theme.id === themeId) || themes[0];
   const mesAnnonces = useMemo(() => [...notifications].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [notifications]);
-  const unreadTotal = useMemo(() => mesAnnonces.reduce((sum, item) => sum + Math.max(0, audienceForNotification(item, directeurs).length - (item.readBy || []).length), 0), [mesAnnonces, directeurs]);
+  const unreadTotal = useMemo(() => mesAnnonces.reduce((sum, item) => sum + audienceForNotification(item, directeurs).filter(account => !item.readBy?.includes(account.id)).length, 0), [mesAnnonces, directeurs]);
 
   const audienceOptions: Array<{ id: Audience; label: string; description: string }> = [
     { id: 'all', label: t('Toutes les Directrices', 'كل المديرات'), description: t('Communication plateforme générale', 'تواصل عام للمنصة') },
@@ -84,7 +86,7 @@ export default function Notifications() {
   const selectedAudienceIds = audienceDirectors.map(account => account.id);
 
   const publish = async () => {
-    if (sending || !title.trim() || !message.trim()) return;
+    if (sendingRef.current || publishUncertain || !title.trim() || !message.trim()) return;
     if (!selectedAudienceValid) {
       showToast(t('Aucune Directrice ne correspond à cette audience.', 'لا توجد مديرة مطابقة لهذا الجمهور.'), 'error');
       return;
@@ -93,7 +95,11 @@ export default function Notifications() {
       showToast(t('Le lien d’action doit commencer par https:// ou http://.', 'يجب أن يبدأ رابط الإجراء بـ https:// أو http://.'), 'error');
       return;
     }
-    const accepted = await confirm({
+    sendingRef.current = true;
+    setSending(true);
+    let accepted = false;
+    try {
+      accepted = await confirm({
       title: priorityPopup ? t('Publier une communication prioritaire ?', 'نشر تواصل ذي أولوية؟') : t('Publier cette communication ?', 'نشر هذا التواصل؟'),
       message: t(
         `« ${title.trim()} » sera publiée immédiatement auprès de ${audienceDirectors.length} Directrice(s) : ${audienceLabel}.`,
@@ -101,11 +107,9 @@ export default function Notifications() {
       ),
       confirmLabel: t('Publier maintenant', 'النشر الآن'),
     });
-    if (!accepted) return;
+      if (!accepted) return;
 
-    setSending(true);
-    setDeliveryStatus(null);
-    try {
+      setDeliveryStatus(null);
       const notification = await publishAdminNotification({
         title: title.trim(),
         message: message.trim(),
@@ -118,23 +122,33 @@ export default function Notifications() {
         repeatIntervalSeconds: priorityPopup ? repeatInterval : undefined,
         audienceLabel,
         ...(ctaLabel.trim() ? { ctaLabel: ctaLabel.trim(), ctaType, ...(ctaType === 'link' ? { ctaUrl: ctaUrl.trim() } : { ctaPage }) } : {}),
-      }, selectedAudienceIds.length === directeurs.length ? undefined : selectedAudienceIds);
+      }, audience === 'all' ? undefined : selectedAudienceIds);
 
-      const pushTarget = selectedAudienceIds.length === directeurs.length ? 'all_directeurs' : selectedAudienceIds.length === 1 ? selectedAudienceIds[0] : null;
+      const pushTarget = audience === 'all' ? 'all_directeurs' : selectedAudienceIds.length === 1 ? selectedAudienceIds[0] : null;
       if (pushTarget) {
-        const { data, error } = await supabase.functions.invoke('send-push-notification', {
-          body: { target: pushTarget, title: title.trim(), message: message.trim(), notificationId: notification.id, page: ctaLabel.trim() && ctaType === 'page' ? ctaPage : 'notifications', url: ctaLabel.trim() && ctaType === 'link' ? ctaUrl.trim() : '' },
-        });
-        setDeliveryStatus(error || !data?.attempted
-          ? { tone: 'warning', text: t('Communication enregistrée. La notification Android n’a pas été envoyée sur cet envoi.', 'تم حفظ التواصل. لم يُرسل إشعار أندرويد لهذا الإرسال.') }
-          : { tone: data.failed ? 'warning' : 'success', text: t(`Communication publiée. Android : ${data.delivered}/${data.attempted} appareil(s) livré(s).`, `تم نشر التواصل. أندرويد: تم التسليم إلى ${data.delivered} من ${data.attempted} جهاز.`) });
+        try {
+          const { data, error } = await supabase.functions.invoke('send-push-notification', {
+            body: { target: pushTarget, title: title.trim(), message: message.trim(), notificationId: notification.id, page: ctaLabel.trim() && ctaType === 'page' ? ctaPage : 'notifications', url: ctaLabel.trim() && ctaType === 'link' ? ctaUrl.trim() : '' },
+          });
+          setDeliveryStatus(error || !data?.attempted
+            ? { tone: 'warning', text: t('Communication enregistrée. L’envoi Android n’a pas été confirmé.', 'تم حفظ التواصل. لم يتأكد إرسال إشعار أندرويد.') }
+            : { tone: data.failed ? 'warning' : 'success', text: t(`Communication publiée. Android : ${data.delivered}/${data.attempted} appareil(s) livré(s).`, `تم نشر التواصل. أندرويد: تم التسليم إلى ${data.delivered} من ${data.attempted} جهاز.`) });
+        } catch {
+          setDeliveryStatus({ tone: 'warning', text: t('Communication enregistrée. L’envoi Android n’a pas été confirmé.', 'تم حفظ التواصل. لم يتأكد إرسال إشعار أندرويد.') });
+        }
       } else {
         setDeliveryStatus({ tone: 'success', text: t('Communication segmentée publiée dans Rawdha+. Les envois Android restent disponibles pour une audience globale ou individuelle.', 'تم نشر التواصل الموجّه داخل Rawdha+. تبقى إشعارات أندرويد متاحة للجمهور العام أو للفرد فقط.') });
       }
       setTitle(''); setMessage(''); setCtaLabel(''); setCtaUrl(''); setPriorityPopup(false); setRepeatCount(0);
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : t('Impossible de publier la communication.', 'تعذر نشر التواصل.'), 'error');
+    } catch {
+      if (accepted) {
+        setPublishUncertain(true);
+        setDeliveryStatus({ tone: 'warning', text: t('Publication non confirmée. Vérifiez l’historique avant de tenter un nouvel envoi.', 'لم يتأكد النشر. تحققوا من السجل قبل محاولة إرسال جديدة.') });
+      } else {
+        showToast(t('Impossible d’ouvrir la confirmation.', 'تعذر فتح التأكيد.'), 'error');
+      }
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   };
@@ -144,10 +158,14 @@ export default function Notifications() {
     if (!accepted) return;
     try {
       await deleteNotification(notification.id);
-      await logAdminAction('notification_deleted' as never, 'notification', notification.id, notification.title);
-      showToast(t('Communication retirée.', 'تم حذف التواصل.'), 'success');
+      try {
+        await logAdminAction('notification_deleted' as never, 'notification', notification.id, notification.title);
+        showToast(t('Communication retirée.', 'تم حذف التواصل.'), 'success');
+      } catch {
+        showToast(t('Communication retirée, mais journalisation non confirmée.', 'تم حذف التواصل، لكن لم يتأكد تسجيل العملية.'), 'error');
+      }
     } catch (error) {
-      showToast(error instanceof Error ? error.message : t('Impossible de retirer la communication.', 'تعذر حذف التواصل.'), 'error');
+      showToast(t('Suppression non confirmée. Vérifiez l’historique avant de réessayer.', 'لم يتأكد الحذف. تحققوا من السجل قبل المحاولة مجدداً.'), 'error');
     }
   };
 
@@ -161,7 +179,7 @@ export default function Notifications() {
       <div className="mt-5 grid gap-3"><label className="text-xs font-black text-slate-600">{t('Titre', 'العنوان')}<input value={title} onChange={event => setTitle(event.target.value.slice(0, 140))} placeholder={t('Ex. Mise à jour importante de Rawdha+', 'مثال: تحديث مهم في Rawdha+')} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold outline-none focus:border-indigo-500" /></label><label className="text-xs font-black text-slate-600">{t('Message', 'الرسالة')}<textarea value={message} onChange={event => setMessage(event.target.value.slice(0, 3000))} rows={5} placeholder={t('Rédigez une information claire, utile et actionnable...', 'اكتبوا معلومة واضحة ومفيدة وقابلة للتنفيذ...')} className="mt-1.5 w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm leading-6 outline-none focus:border-indigo-500" /></label></div>
       <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-indigo-600" /><h3 className="text-xs font-black text-slate-800">{t('Présentation et priorité', 'التقديم والأولوية')}</h3></div><div className="mt-3 flex flex-wrap gap-2">{themes.map(theme => <button key={theme.id} type="button" onClick={() => setThemeId(theme.id)} aria-label={theme.label} className={`h-9 w-9 rounded-full border-2 transition ${themeId === theme.id ? 'border-slate-950 scale-110' : 'border-white shadow-sm'}`} style={{ background: theme.bg }} />)}<div className="ms-2 flex items-center gap-1.5 border-s border-slate-200 ps-3">{symbols.map(value => <button key={value} type="button" onClick={() => setSymbol(value)} className={`grid h-9 w-9 place-items-center rounded-lg text-base font-black transition ${symbol === value ? 'bg-indigo-600 text-white' : 'bg-white text-slate-700 shadow-sm'}`}>{value}</button>)}</div></div><label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-indigo-100 bg-white p-3"><input type="checkbox" checked={priorityPopup} onChange={event => setPriorityPopup(event.target.checked)} className="mt-0.5 h-4 w-4 accent-indigo-600" /><span><span className="block text-xs font-black text-slate-900">{t('Afficher en annonce prioritaire', 'عرض كإعلان ذي أولوية')}</span><span className="mt-0.5 block text-[11px] leading-5 text-slate-500">{t('La Directrice verra une carte prioritaire à l’ouverture. Utilisez cette option seulement pour une information importante.', 'سترى المديرة بطاقة ذات أولوية عند الفتح. استخدموا هذا الخيار للمعلومات المهمة فقط.')}</span></span></label>{priorityPopup && <div className="mt-3 grid grid-cols-2 gap-3"><label className="text-xs font-black text-slate-600">{t('Rappels supplémentaires', 'تكرارات إضافية')}<input type="number" min="0" max="3" value={repeatCount} onChange={event => setRepeatCount(Math.max(0, Math.min(3, Number(event.target.value) || 0)))} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold outline-none focus:border-indigo-500" /></label><label className="text-xs font-black text-slate-600">{t('Intervalle (secondes)', 'الفاصل (ثوانٍ)')}<input type="number" min="30" max="3600" value={repeatInterval} onChange={event => setRepeatInterval(Math.max(30, Math.min(3600, Number(event.target.value) || 60)))} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold outline-none focus:border-indigo-500" /></label></div>}</div>
       <div className="mt-5 rounded-2xl border border-slate-100 p-4"><div className="flex items-center gap-2"><Link2 className="h-4 w-4 text-indigo-600" /><h3 className="text-xs font-black text-slate-800">{t('Action optionnelle', 'إجراء اختياري')}</h3></div><input value={ctaLabel} onChange={event => setCtaLabel(event.target.value.slice(0, 50))} placeholder={t('Ex. Voir mes factures', 'مثال: عرض فواتيري')} className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-500" />{ctaLabel.trim() && <div className="mt-3 grid gap-3 sm:grid-cols-2"><select value={ctaType} onChange={event => setCtaType(event.target.value as 'link' | 'page')} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold outline-none focus:border-indigo-500"><option value="page">{t('Page Rawdha+', 'صفحة Rawdha+')}</option><option value="link">{t('Lien externe', 'رابط خارجي')}</option></select>{ctaType === 'link' ? <input value={ctaUrl} onChange={event => setCtaUrl(event.target.value)} placeholder="https://..." className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-500" /> : <select value={ctaPage} onChange={event => setCtaPage(event.target.value)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold outline-none focus:border-indigo-500"><option value="paiements">{t('Paiements', 'المدفوعات')}</option><option value="achats">{t('Achats', 'المشتريات')}</option><option value="enfants">{t('Enfants', 'الأطفال')}</option><option value="parametres">{t('Paramètres', 'الإعدادات')}</option></select>}</div>}</div>
-      <button type="button" disabled={sending || !title.trim() || !message.trim() || !selectedAudienceValid} onClick={() => void publish()} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3.5 text-sm font-black text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"><Send className="h-4 w-4" />{sending ? t('Publication...', 'جارٍ النشر...') : t(`Publier pour ${audienceDirectors.length} Directrice(s)`, `النشر إلى ${audienceDirectors.length} مديرة`)}</button>{deliveryStatus && <p className={`mt-3 flex items-start gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold ${deliveryStatus.tone === 'success' ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}><CheckCheck className="mt-0.5 h-4 w-4 shrink-0" />{deliveryStatus.text}</p>}</section>
+      <button type="button" disabled={sending || publishUncertain || !title.trim() || !message.trim() || !selectedAudienceValid} onClick={() => void publish()} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3.5 text-sm font-black text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"><Send className="h-4 w-4" />{sending ? t('Publication...', 'جارٍ النشر...') : t(`Publier pour ${audienceDirectors.length} Directrice(s)`, `النشر إلى ${audienceDirectors.length} مديرة`)}</button>{publishUncertain && <button type="button" onClick={() => { setPublishUncertain(false); setDeliveryStatus(null); }} className="mt-3 rounded-xl border border-amber-300 px-3 py-2 text-xs font-bold text-amber-900">{t('J’ai vérifié l’historique, autoriser une nouvelle tentative', 'تحققت من السجل، السماح بمحاولة جديدة')}</button>}{deliveryStatus && <p role="status" className={`mt-3 flex items-start gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold ${deliveryStatus.tone === 'success' ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}><CheckCheck className="mt-0.5 h-4 w-4 shrink-0" />{deliveryStatus.text}</p>}</section>
 
       <aside className="space-y-5"><section className="sticky top-4 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm"><div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4"><Eye className="h-4 w-4 text-indigo-600" /><h2 className="text-xs font-black uppercase tracking-[0.14em] text-slate-600">{t('Aperçu Directrice', 'معاينة المديرة')}</h2></div><div className="bg-slate-100 p-5 sm:p-7"><div className="mx-auto max-w-sm rounded-3xl p-5 text-center shadow-2xl" style={{ backgroundColor: currentTheme.bg, color: currentTheme.text }}><div className="mx-auto grid h-11 w-11 place-items-center rounded-2xl bg-white/15 text-xl font-black">{symbol}</div><p className="mt-4 text-[10px] font-black uppercase tracking-[0.16em] opacity-75">{priorityPopup ? t('Information prioritaire', 'معلومة ذات أولوية') : t('Annonce Rawdha+', 'إعلان Rawdha+')}</p><h3 className="mt-2 text-lg font-black">{title || t('Titre de votre communication', 'عنوان تواصلكم')}</h3><p className="mt-3 whitespace-pre-line text-sm leading-6 opacity-90">{message || t('Votre message apparaîtra ici de façon claire et lisible.', 'ستظهر رسالتكم هنا بشكل واضح وسهل القراءة.')}</p>{ctaLabel.trim() && <button className="mt-5 w-full rounded-xl py-3 text-sm font-black" style={{ backgroundColor: currentTheme.button, color: currentTheme.bg }}>{ctaLabel}</button>}<button className="mt-3 w-full rounded-xl bg-white/15 py-3 text-sm font-black">{t('Compris', 'فهمت')}</button></div></div><div className="flex items-center gap-2 px-5 py-4 text-[11px] leading-5 text-slate-500"><MonitorSmartphone className="h-4 w-4 shrink-0 text-indigo-500" />{t('Les annonces segmentées restent visibles uniquement pour les Directrices ciblées.', 'تظل الإعلانات الموجّهة مرئية فقط للمديرات المستهدفات.')}</div></section></aside></div>
 

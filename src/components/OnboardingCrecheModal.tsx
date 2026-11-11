@@ -62,7 +62,7 @@ export default function OnboardingCrecheModal({ onDone }: { onDone: () => void }
   const labelClass = "text-xs font-semibold text-slate-600 mb-1 block";
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-900/60 p-2 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-900/60 p-2 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:items-center sm:p-4" dir={isFrench ? 'ltr' : 'rtl'} role="dialog" aria-modal="true">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -70,7 +70,7 @@ export default function OnboardingCrecheModal({ onDone }: { onDone: () => void }
       >
         <div className="p-4 sm:p-6 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center shrink-0">
               <Building2 className="w-5 h-5 text-indigo-600" />
             </div>
             <div>
@@ -78,7 +78,7 @@ export default function OnboardingCrecheModal({ onDone }: { onDone: () => void }
                 {isFrench ? 'Bienvenue sur RAWDHA+' : 'مرحبًا بك في RAWDHA+'}
               </h2>
               <p className="text-sm text-slate-500">
-                {isFrench ? 'Quelques infos pour configurer ta crèche' : 'بعض المعلومات لإعداد حضانتك'}
+                {isFrench ? 'Quelques informations pour configurer votre crèche' : 'بعض المعلومات لإعداد حضانتك'}
               </p>
             </div>
           </div>
@@ -110,7 +110,7 @@ export default function OnboardingCrecheModal({ onDone }: { onDone: () => void }
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className={labelClass}><User className="w-3.5 h-3.5 inline mr-1" />{isFrench ? 'Prénom *' : 'الاسم الأول *'}</label>
+              <label className={labelClass}><User className="w-3.5 h-3.5 inline me-1" />{isFrench ? 'Prénom *' : 'الاسم الأول *'}</label>
               <input className={inputClass} value={prenom} onChange={e => setPrenom(e.target.value)} />
             </div>
             <div>
@@ -120,33 +120,33 @@ export default function OnboardingCrecheModal({ onDone }: { onDone: () => void }
           </div>
 
           <div>
-            <label className={labelClass}><Building2 className="w-3.5 h-3.5 inline mr-1" />{isFrench ? 'Nom de la crèche *' : 'اسم الحضانة *'}</label>
-            <input className={inputClass} value={nomCreche} onChange={e => setNomCreche(e.target.value)} placeholder={isFrench ? 'Ex: Crèche Les Marguerites' : ''} />
+            <label className={labelClass}><Building2 className="w-3.5 h-3.5 inline me-1" />{isFrench ? 'Nom de la crèche *' : 'اسم الحضانة *'}</label>
+            <input className={inputClass} value={nomCreche} onChange={e => setNomCreche(e.target.value)} placeholder={isFrench ? 'Ex. : Crèche Les Marguerites' : 'مثال: روضة الياسمين'} />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className={labelClass}><DollarSign className="w-3.5 h-3.5 inline mr-1" />{isFrench ? 'Tarif mensuel (DA) *' : 'الرسوم الشهرية *'}</label>
-              <input className={inputClass} type="number" value={tarif} onChange={e => setTarif(e.target.value)} />
+              <label className={labelClass}><DollarSign className="w-3.5 h-3.5 inline me-1" />{isFrench ? 'Tarif mensuel (DA) *' : 'الرسوم الشهرية *'}</label>
+              <input className={inputClass} type="number" min="0" value={tarif} onChange={e => setTarif(e.target.value)} />
             </div>
             <div>
-              <label className={labelClass}><Phone className="w-3.5 h-3.5 inline mr-1" />{isFrench ? 'Téléphone *' : 'الهاتف *'}</label>
+              <label className={labelClass}><Phone className="w-3.5 h-3.5 inline me-1" />{isFrench ? 'Téléphone *' : 'الهاتف *'}</label>
               <input className={inputClass} value={telephone} onChange={e => setTelephone(e.target.value)} placeholder="+213 ..." />
             </div>
           </div>
 
           <div>
-            <label className={labelClass}><MapPin className="w-3.5 h-3.5 inline mr-1" />{isFrench ? 'Adresse *' : 'العنوان *'}</label>
+            <label className={labelClass}><MapPin className="w-3.5 h-3.5 inline me-1" />{isFrench ? 'Adresse *' : 'العنوان *'}</label>
             <input className={inputClass} value={adresse} onChange={e => setAdresse(e.target.value)} />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className={labelClass}><Mail className="w-3.5 h-3.5 inline mr-1" />{isFrench ? 'Email (si dispo)' : 'البريد الإلكتروني'}</label>
+              <label className={labelClass}><Mail className="w-3.5 h-3.5 inline me-1" />{isFrench ? 'Email (si dispo)' : 'البريد الإلكتروني'}</label>
               <input className={inputClass} type="email" value={email} onChange={e => setEmail(e.target.value)} />
             </div>
             <div>
-              <label className={labelClass}><Globe className="w-3.5 h-3.5 inline mr-1" />{isFrench ? 'Site web (si dispo)' : 'الموقع الإلكتروني'}</label>
+              <label className={labelClass}><Globe className="w-3.5 h-3.5 inline me-1" />{isFrench ? 'Site web (si dispo)' : 'الموقع الإلكتروني'}</label>
               <input className={inputClass} value={siteWeb} onChange={e => setSiteWeb(e.target.value)} placeholder="https://..." />
             </div>
           </div>

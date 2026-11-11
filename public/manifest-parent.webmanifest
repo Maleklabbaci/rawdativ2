@@ -1,0 +1,21 @@
+{
+  "name": "Rawdha+ — Espace Parent",
+  "short_name": "Espace Parent",
+  "description": "Suivi quotidien de vos enfants, programme du jour et notifications de la crèche",
+  "lang": "fr-DZ",
+  "dir": "auto",
+  "start_url": "/espace-parent",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#4f46e5",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

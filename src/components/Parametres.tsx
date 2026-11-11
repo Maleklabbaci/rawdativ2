@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Settings, 
-  Building, 
-  MapPin, 
-  Mail, 
-  Phone, 
-  Bell, 
-  Clock, 
-  DollarSign, 
-  Save, 
-  ShieldCheck, 
-  Activity, 
+import {
+  Settings,
+  Building,
+  MapPin,
+  Mail,
+  Phone,
+  Bell,
+  Clock,
+  DollarSign,
+  Save,
+  ShieldCheck,
+  Activity,
   HelpCircle,
   Database,
   Users,
@@ -32,11 +32,19 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { setCollectionDocument, getCollectionDocument } from '../supabase';
+import { buildLegalHref, LEGAL_CONFIG } from '../config/legal';
+import TeamAccessManager from './TeamAccessManager';
+import SubscriptionRenewalModal from './SubscriptionRenewalModal';
+import { loadSubscriptionRenewals, type SubscriptionRenewalRequest } from '../utils/subscriptionRenewal';
+import { isNotificationSoundEnabled, setNotificationSoundEnabled, playNotificationChime } from '../utils/notificationSound';
+import { useWorkspaceProfile } from '../contexts/WorkspaceProfileContext';
 import { motion, AnimatePresence } from 'motion/react';
 
-export default function Parametres() {
+export default function Parametres({ onNavigate }: { onNavigate?: (page: string) => void } = {}) {
   const { t, language } = useLanguage();
   const { user, refreshCreche, updateProfile } = useAuth();
+  const { hasPagePermission } = useWorkspaceProfile();
+  const canManageSettings = hasPagePermission('parametres', 'manage');
   const { confirm } = useConfirmDialog();
   const isFrench = language === 'fr';
   const isArabic = language === 'ar';
@@ -45,6 +53,30 @@ export default function Parametres() {
   const [saveLoading, setSaveLoading] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [showRenewalModal, setShowRenewalModal] = useState(false);
+  const [latestRenewal, setLatestRenewal] = useState<SubscriptionRenewalRequest | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => isNotificationSoundEnabled());
+
+  useEffect(() => {
+    if (!user?.id || user.role !== 'directeur') return;
+    let active = true;
+    const syncRenewal = () => {
+      void loadSubscriptionRenewals(user.id).then(items => {
+        if (!active) return;
+        const mine = items.find(r => r.directorId === user.id) || null;
+        setLatestRenewal(mine);
+      });
+    };
+    syncRenewal();
+    const onSoundPref = () => setSoundEnabled(isNotificationSoundEnabled());
+    window.addEventListener('rawdha-subscription-renewals-updated', syncRenewal);
+    window.addEventListener('rawdha:notification-sound-pref', onSoundPref);
+    return () => {
+      active = false;
+      window.removeEventListener('rawdha-subscription-renewals-updated', syncRenewal);
+      window.removeEventListener('rawdha:notification-sound-pref', onSoundPref);
+    };
+  }, [user?.id, user?.role]);
 
   // 1. Admin/Platform global state
   const [platformData, setPlatformData] = useState({
@@ -129,7 +161,7 @@ export default function Parametres() {
       try {
         setLoading(true);
         setErrorMessage('');
-        
+
         let docId = '';
         if (user.role === 'admin') {
           docId = 'platform_general';
@@ -137,6 +169,28 @@ export default function Parametres() {
           docId = `creche_${user.id}`;
         } else {
           docId = `parent_${user.id}`;
+        }
+
+        if (import.meta.env.DEV && import.meta.env.VITE_ARENA_DEMO === 'true') {
+          const raw = localStorage.getItem(`rawdha_demo_settings_${docId}`);
+          const cached = raw ? JSON.parse(raw) : null;
+          if (user.role === 'admin' && cached) {
+            setPlatformData(prev => ({ ...prev, ...cached }));
+          } else if (user.role === 'directeur') {
+            setCrecheData(prev => ({
+              ...prev,
+              crecheName: user.nomCreche || prev.crecheName,
+              licenseCode: prev.licenseCode || 'AGR-09-BLIDA-2024',
+              principalEmail: user.email || 'direction@petitssoleils.dz',
+              phoneNumbers: user.telephone || '0550 12 34 56',
+              addressLocation: 'Boulevard Kritli Mokhtar, Blida 09000',
+              tuitionFeeRate: 15000,
+              ...(cached || {}),
+            }));
+          } else if (cached) {
+            setParentData(prev => ({ ...prev, ...cached }));
+          }
+          return;
         }
 
         const cloudData = await getCollectionDocument<any>('parametres', docId);
@@ -186,8 +240,8 @@ export default function Parametres() {
             ? 'Ces paramètres peuvent modifier l’accès, les abonnements et l’affichage de la plateforme pour tous les comptes.'
             : 'قد تؤثر هذه الإعدادات على الدخول والاشتراكات والعرض لجميع الحسابات.')
           : (isFrench
-            ? 'Les horaires, tarifs et alertes seront mis à jour pour votre équipe.'
-            : 'سيتم تحديث الأوقات والأسعار والتنبيهات لفريقكم.'),
+            ? 'Les coordonnées et informations saisies seront enregistrées. Les options indiquées comme indisponibles ne seront pas activées.'
+            : 'سيتم حفظ المعلومات المدخلة. الخيارات غير المتاحة لن يتم تفعيلها.'),
         confirmLabel: isFrench ? 'Enregistrer' : 'حفظ',
       });
       if (!confirmed) return;
@@ -221,7 +275,11 @@ export default function Parametres() {
         dataToSave = { id: docId, ...parentData };
       }
 
-      await setCollectionDocument('parametres', docId, dataToSave);
+      if (import.meta.env.DEV && import.meta.env.VITE_ARENA_DEMO === 'true') {
+        localStorage.setItem(`rawdha_demo_settings_${docId}`, JSON.stringify(dataToSave));
+      } else {
+        await setCollectionDocument('parametres', docId, dataToSave);
+      }
 
       // ✅ Propage immédiatement le nom / logo / tarif dans toute l'appli
       // (sidebar, header, factures) sans que le directeur ait besoin de se reconnecter.
@@ -253,29 +311,28 @@ export default function Parametres() {
   }
 
   return (
-    <div className="space-y-6 sm:space-y-8 font-sans">
+    <div className="space-y-5 sm:space-y-6">
       {/* Header and description banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <Settings className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600" />
-            <span>{t('settings')}</span>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+            {t('settings')}
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 font-bold">
+          <p className="text-xs sm:text-sm text-slate-500 mt-0.5 font-medium">
             {user?.role === 'admin' && (
-              isFrench 
-                ? 'Super-administration de la plateforme globale Rawdha+, licences crèches et infrastructure.' 
-                : 'التحكم الإداري الأعلى لمنصة روضتي الشاملة وتراخيص المؤسسات الشريكة.'
+              isFrench
+                ? 'Paramètres globaux de la plateforme et licences.'
+                : 'الإعدادات العامة للمنصة وتراخيص المؤسسات.'
             )}
             {user?.role === 'directeur' && (
-              isFrench 
-                ? `Configuration de l'établissement : ${crecheData.crecheName || user.nomCreche}` 
-                : `تخصيص معلومات الحضانة والبروتوكول التعليمي والتعرفة لـ: ${crecheData.crecheName}`
+              isFrench
+                ? `Établissement : ${crecheData.crecheName || user.nomCreche}`
+                : `معلومات الحضانة والتعريفة: ${crecheData.crecheName}`
             )}
             {user?.role === 'parent' && (
-              isFrench 
-                ? 'Vos autorisations parentales, droits à l’image et relais de communication.' 
-                : 'الأذونات الخاصة بولي الأمر، حقوق تصوير الطفل وتفضيلات استلام الرسائل.'
+              isFrench
+                ? 'Autorisations parentales et préférences.'
+                : 'الأذونات وتفضيلات التواصل.'
             )}
           </p>
         </div>
@@ -289,13 +346,13 @@ export default function Parametres() {
       )}
 
       <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
-        
+
         {/* ==================== A. PLATFORM ADMIN VIEW ==================== */}
         {user?.role === 'admin' && (
           <>
             {/* Core Institutional & Identity Settings */}
             <div className="lg:col-span-2 space-y-6">
-              
+
               {/* Box 1: Platform identity & core defaults */}
               <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200 shadow-sm space-y-5">
                 <h2 className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wider pb-3 border-b border-slate-100 flex items-center gap-2">
@@ -308,9 +365,9 @@ export default function Parametres() {
                     <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
                       {isFrench ? 'Nom du Service Platforme' : 'اسم المنصة العام المعروض'}
                     </label>
-                    <input 
-                      type="text" 
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800" 
+                    <input
+                      type="text"
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
                       value={platformData.platformName}
                       onChange={e => setPlatformData({...platformData, platformName: e.target.value})}
                       required
@@ -321,9 +378,9 @@ export default function Parametres() {
                     <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
                       {isFrench ? 'Version de l’Application' : 'نسخة برمجيات المنصة'}
                     </label>
-                    <input 
-                      type="text" 
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800" 
+                    <input
+                      type="text"
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800"
                       value={platformData.platformVersion}
                       onChange={e => setPlatformData({...platformData, platformVersion: e.target.value})}
                       required
@@ -337,10 +394,10 @@ export default function Parametres() {
                       {isFrench ? 'Email Support Administrateur' : 'بريد الدعم الفني المركزي للاستقبال'}
                     </label>
                     <div className="relative">
-                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                      <input 
-                        type="email" 
-                        className="w-full pl-10 pr-4 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800" 
+                      <Mail className="absolute start-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="email"
+                        className="w-full ps-10 pe-4 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
                         value={platformData.platformSupportEmail}
                         onChange={e => setPlatformData({...platformData, platformSupportEmail: e.target.value})}
                         required
@@ -353,10 +410,10 @@ export default function Parametres() {
                       {isFrench ? 'Téléphone Support Technique' : 'هاتف الدعم للمدراء والمؤسسات'}
                     </label>
                     <div className="relative">
-                      <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                      <input 
-                        type="text" 
-                        className="w-full pl-10 pr-4 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800" 
+                      <Phone className="absolute start-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        className="w-full ps-10 pe-4 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800"
                         value={platformData.platformSupportPhone}
                         onChange={e => setPlatformData({...platformData, platformSupportPhone: e.target.value})}
                         required
@@ -378,9 +435,9 @@ export default function Parametres() {
                     <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
                       {isFrench ? 'Coût d’abonnement mensuel de base (DA)' : 'سعر الاشتراك الشهري الافتراضي للروضة المضافة'}
                     </label>
-                    <input 
-                      type="number" 
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-black text-slate-800" 
+                    <input
+                      type="number"
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-black text-slate-800"
                       value={platformData.baseLicensingFee}
                       onChange={e => setPlatformData({...platformData, baseLicensingFee: e.target.value})}
                     />
@@ -390,9 +447,9 @@ export default function Parametres() {
                     <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
                       {isFrench ? 'Période d\'abonnement par défaut (Jours)' : 'مدة صلاحية التنشيط المبدئية عند الإضافة (أيام)'}
                     </label>
-                    <input 
-                      type="number" 
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800" 
+                    <input
+                      type="number"
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800"
                       value={platformData.defaultGracePeriodDays}
                       onChange={e => setPlatformData({...platformData, defaultGracePeriodDays: e.target.value})}
                     />
@@ -403,81 +460,25 @@ export default function Parametres() {
 
             {/* Sidebar Controls Panel */}
             <div className="space-y-6">
-              <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200 shadow-sm space-y-5">
-                <h2 className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wider pb-3 border-b border-slate-101 flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-indigo-600" />
-                  <span>{isFrench ? 'Options d\'infrastructure' : 'أزرار تحكم المنصة الأساسية'}</span>
+              <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                <h2 className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wider pb-3 border-b border-slate-100 flex items-center gap-2">
+                  <DollarSign className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span className="truncate">{isFrench ? 'Offre publique & encaissement' : 'العرض العام والتحصيل'}</span>
                 </h2>
 
-                <div className="space-y-4">
-                  {/* Option 1: automatic expiry block */}
-                  <label className="flex items-start gap-3 cursor-pointer justify-between group">
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-slate-800 block">
-                        {isFrench ? 'Dépassement de date bloquant' : 'الإغلاق التلقائي للمنتهين'}
-                      </span>
-                      <span className="text-[10px] text-slate-400 block leading-normal">
-                        {isFrench ? 'Bloque instantanément l\'établissement si la date fin est dépassée' : 'حظر الروضة فوراً بمجرد تجاوز تاريخ النهاية'}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setPlatformData({...platformData, automaticExpiryCheck: !platformData.automaticExpiryCheck})}
-                      className="text-indigo-600 cursor-pointer"
-                    >
-                      {platformData.automaticExpiryCheck ? (
-                        <ToggleRight className="w-9 h-9 text-emerald-500" />
-                      ) : (
-                        <ToggleLeft className="w-9 h-9 text-slate-300" />
-                      )}
-                    </button>
-                  </label>
-
-                  {/* Option 2: Maintenance mode simulation */}
-                  <label className="flex items-start gap-3 cursor-pointer justify-between group pt-3 border-t border-slate-100">
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-slate-800 block">
-                        {isFrench ? 'Mode Maintenance Plateforme' : 'تفعيل وضع الصيانة العام'}
-                      </span>
-                      <span className="text-[10px] text-slate-400 block leading-normal">
-                        {isFrench ? 'Affiche un bandeau pour signaler une indisponibilité temporaire' : 'إظهار شارة لإبلاغ المستخدمين بتوقف مؤقت للخدمة'}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setPlatformData({...platformData, maintenanceMode: !platformData.maintenanceMode})}
-                      className="text-indigo-600 cursor-pointer"
-                    >
-                      {platformData.maintenanceMode ? (
-                        <ToggleRight className="w-9 h-9 text-amber-500 animate-pulse" />
-                      ) : (
-                        <ToggleLeft className="w-9 h-9 text-slate-300" />
-                      )}
-                    </button>
-                  </label>
-
-                  {/* Option 3: Direct signup */}
-                  <label className="flex items-start gap-3 cursor-pointer justify-between group pt-3 border-t border-slate-100">
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-slate-800 block">
-                        {isFrench ? 'Inscriptions directes autorisées' : 'التسجيل الذاتي المباشر'}
-                      </span>
-                      <span className="text-[10px] text-slate-400 block leading-normal">
-                        {isFrench ? 'Permet aux directeurs de candidater via le web' : 'السماح للروضات بالتقديم المبدئي المباشر'}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setPlatformData({...platformData, allowSelfRegistration: !platformData.allowSelfRegistration})}
-                      className="text-indigo-600 cursor-pointer"
-                    >
-                      {platformData.allowSelfRegistration ? (
-                        <ToggleRight className="w-9 h-9 text-emerald-500" />
-                      ) : (
-                        <ToggleLeft className="w-9 h-9 text-slate-300" />
-                      )}
-                    </button>
-                  </label>
+                <div className="space-y-3 text-xs">
+                  <div className="flex items-center justify-between gap-2 rounded-2xl bg-indigo-50/70 px-3.5 py-2.5">
+                    <span className="font-bold text-slate-700 truncate">{isFrench ? 'Abonnement mensuel' : 'الاشتراك الشهري'}</span>
+                    <span className="shrink-0 font-black text-indigo-700 tabular-nums">{LEGAL_CONFIG.monthlyPlanPriceDzd.toLocaleString('fr-FR')} {isFrench ? 'DA / mois' : 'د.ج / شهر'}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 rounded-2xl bg-slate-50 px-3.5 py-2.5">
+                    <span className="font-bold text-slate-600 truncate">{isFrench ? 'Paiement carte' : 'الدفع بالبطاقة'}</span>
+                    <span className="shrink-0 text-[11px] font-black text-indigo-700">CIB / Edahabia</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 rounded-2xl bg-slate-50 px-3.5 py-2.5">
+                    <span className="font-bold text-slate-600 truncate">{isFrench ? 'Activation directe' : 'تفعيل مباشر'}</span>
+                    <span className="shrink-0 text-[11px] font-black text-emerald-700">WhatsApp</span>
+                  </div>
                 </div>
               </div>
 
@@ -486,19 +487,19 @@ export default function Parametres() {
                 <button
                   type="submit"
                   disabled={saveLoading}
-                  className="w-full flex items-center justify-center gap-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white p-4 rounded-2xl font-black text-sm tracking-wide shadow-lg shadow-indigo-600/15 hover:shadow-indigo-600/25 transition cursor-pointer disabled:opacity-50"
+                  className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-3 px-4 rounded-xl font-bold text-sm transition cursor-pointer disabled:opacity-50"
                 >
                   {saveLoading ? (
-                    <RefreshCw className="w-4.5 h-4.5 animate-spin" />
+                    <RefreshCw className="w-4 h-4 animate-spin" />
                   ) : (
-                    <Save size={18} className="stroke-[3]" />
+                    <Save size={16} className="stroke-[2.5]" />
                   )}
                   <span>{isFrench ? 'Enregistrer la plateforme' : 'حفظ التغييرات العامه للمنصة'}</span>
                 </button>
                 <div className="p-3.5 bg-slate-50 border border-slate-150 rounded-2xl text-[11px] text-slate-500 font-medium leading-relaxed">
-                  <Info className="w-4 h-4 text-indigo-500 inline mr-1 -mt-0.5" />
+                  <Info className="w-4 h-4 text-indigo-500 inline me-1 -mt-0.5" />
                   <span>
-                    {isFrench 
+                    {isFrench
                       ? 'Ces réglages s’appliquent à tous les comptes. Vérifiez les valeurs avant de confirmer l’enregistrement.'
                       : 'تطبق هذه الإعدادات على جميع الحسابات. يرجى التحقق من القيم قبل تأكيد الحفظ.'}
                   </span>
@@ -513,7 +514,7 @@ export default function Parametres() {
         {user?.role === 'directeur' && (
           <>
             <div className="lg:col-span-2 space-y-6">
-              
+
               {/* Box 1: Creche Legal Info */}
               <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
                 <h2 className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wider pb-3 border-b border-slate-100 flex items-center gap-2">
@@ -521,21 +522,21 @@ export default function Parametres() {
                   <span>{isFrench ? '1. Identité & Registre Légal de l’Établissement' : '1. الهوية الرسمية وترخيص الروضة'}</span>
                 </h2>
 
-                {/* Logo Upload — apparaît dans la sidebar, le header, les factures et l'onglet du navigateur */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 pb-4 border-b border-slate-100">
-                  <div className="w-20 h-20 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                {/* Logo Upload compact côte-à-côte sur mobile comme sur ordinateur */}
+                <div className="flex items-center gap-3.5 pb-4 border-b border-slate-100">
+                  <div className="w-16 h-16 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
                     {crecheData.logoUrl ? (
                       <img src={crecheData.logoUrl} alt="Logo" className="w-full h-full object-contain p-1.5" />
                     ) : (
-                      <ImageIcon className="w-7 h-7 text-slate-300" />
+                      <ImageIcon className="w-6 h-6 text-slate-300" />
                     )}
                   </div>
-                  <div className="flex-1 space-y-2">
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase">
-                      {isFrench ? 'Logo de la Crèche (PNG uniquement)' : 'شعار الروضة (بصيغة PNG فقط)'}
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase truncate">
+                      {isFrench ? 'Logo de la Crèche (PNG · 2 Mo max)' : 'شعار الروضة (PNG · 2 ميغابايت)'}
                     </label>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <label className="px-4 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl text-xs font-bold cursor-pointer transition">
+                      <label className="min-h-8! inline-flex items-center px-3.5 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition">
                         {isFrench ? 'Choisir un fichier PNG' : 'اختر ملف PNG'}
                         <input type="file" accept="image/png,.png" onChange={handleLogoUpload} className="hidden" />
                       </label>
@@ -543,19 +544,15 @@ export default function Parametres() {
                         <button
                           type="button"
                           onClick={handleRemoveLogo}
-                          className="px-3 py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-xs font-bold cursor-pointer transition flex items-center gap-1.5"
+                          className="min-h-8! px-2.5 py-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-xs font-bold cursor-pointer transition inline-flex items-center gap-1"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                           {isFrench ? 'Retirer' : 'إزالة'}
                         </button>
                       )}
                     </div>
-                    {logoError ? (
+                    {logoError && (
                       <p className="text-[11px] text-rose-500 font-semibold">{logoError}</p>
-                    ) : (
-                      <p className="text-[10px] text-slate-400">
-                        {isFrench ? 'Remplace le logo par défaut partout : menu, factures, onglet du navigateur. 2 Mo max.' : 'يستبدل الشعار الافتراضي في كل مكان: القائمة، الفواتير، تبويب المتصفح. 2 ميغابايت كحد أقصى.'}
-                      </p>
                     )}
                   </div>
                 </div>
@@ -565,9 +562,9 @@ export default function Parametres() {
                     <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
                       {isFrench ? 'Dénomination de la Crèche *' : 'اسم الروضة الرسمي *'}
                     </label>
-                    <input 
-                      type="text" 
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800" 
+                    <input
+                      type="text"
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
                       value={crecheData.crecheName}
                       onChange={e => setCrecheData({...crecheData, crecheName: e.target.value})}
                       required
@@ -582,11 +579,11 @@ export default function Parametres() {
                       <Lock className="w-3 h-3 text-slate-400" />
                       {isFrench ? 'Code de Licence d\'Agrément' : 'رقم رخصة الاعتماد المالي'}
                     </label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       disabled
                       title={isFrench ? 'Attribué par la plateforme, non modifiable. Contactez le support pour toute correction.' : 'يُحدَّد من طرف المنصة ولا يمكن تعديله. تواصل مع الدعم الفني لأي تصحيح.'}
-                      className="w-full p-3 bg-slate-100 border border-slate-200 rounded-xl outline-none text-sm font-bold text-slate-500 cursor-not-allowed" 
+                      className="w-full p-3 bg-slate-100 border border-slate-200 rounded-xl outline-none text-sm font-bold text-slate-500 cursor-not-allowed"
                       value={crecheData.licenseCode}
                     />
                     <p className="text-[10px] text-slate-400 mt-1.5">
@@ -602,12 +599,12 @@ export default function Parametres() {
                       {isFrench ? 'Email de Support Parents *' : 'بريد الاتصال واستقبال الأولياء *'}
                     </label>
                     <div className="relative">
-                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                      <input 
-                        type="email" 
+                      <Mail className="absolute start-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="email"
                         disabled
                         title={isFrench ? 'Attribué par la plateforme, non modifiable. Contactez le support pour toute correction.' : 'يُحدَّد من طرف المنصة ولا يمكن تعديله. تواصل مع الدعم الفني لأي تصحيح.'}
-                        className="w-full pl-10 pr-4 p-3 bg-slate-100 border border-slate-200 rounded-xl outline-none text-sm font-semibold text-slate-500 cursor-not-allowed" 
+                        className="w-full ps-10 pe-4 p-3 bg-slate-100 border border-slate-200 rounded-xl outline-none text-sm font-semibold text-slate-500 cursor-not-allowed"
                         value={crecheData.principalEmail}
                       />
                     </div>
@@ -621,12 +618,12 @@ export default function Parametres() {
                       {isFrench ? 'Téléphone d\'urgence de la Crèche *' : 'رقم هاتف الاتصال السريع *'}
                     </label>
                     <div className="relative">
-                      <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                      <input 
+                      <Phone className="absolute start-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
                         type="tel"
                         inputMode="tel"
                         placeholder={isFrench ? 'Ex. : 0555 12 34 56' : 'مثال: 0555 12 34 56'}
-                        className="w-full pl-10 pr-4 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800" 
+                        className="w-full ps-10 pe-4 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800"
                         value={crecheData.phoneNumbers}
                         onChange={e => setCrecheData({...crecheData, phoneNumbers: e.target.value})}
                         required
@@ -640,10 +637,10 @@ export default function Parametres() {
                     {isFrench ? 'Adresse Géographique Officielle' : 'العنوان البريدي والجغرافي الحالي'}
                   </label>
                   <div className="relative">
-                    <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input 
-                      type="text" 
-                      className="w-full pl-10 pr-4 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800" 
+                    <MapPin className="absolute start-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      className="w-full ps-10 pe-4 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
                       value={crecheData.addressLine}
                       onChange={e => setCrecheData({...crecheData, addressLine: e.target.value})}
                     />
@@ -653,7 +650,7 @@ export default function Parametres() {
 
               {/* Box 2: Operating constraints */}
               <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-                <h2 className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wider pb-3 border-b border-slate-101 flex items-center gap-2">
+                <h2 className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wider pb-3 border-b border-slate-100 flex items-center gap-2">
                   <Clock className="w-4 h-4 text-indigo-600" />
                   <span>{isFrench ? '2. Tarifs & Horaires de Garde' : '2. أوقات العمل والأسعار التعليمية'}</span>
                 </h2>
@@ -663,9 +660,9 @@ export default function Parametres() {
                     <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
                       {isFrench ? 'Amplitude d\'Ouverture *' : 'ساعات ترحيب الأطفال يومياً *'}
                     </label>
-                    <input 
-                      type="text" 
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800" 
+                    <input
+                      type="text"
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
                       value={crecheData.workingHours}
                       onChange={e => setCrecheData({...crecheData, workingHours: e.target.value})}
                       required
@@ -677,10 +674,10 @@ export default function Parametres() {
                       {isFrench ? 'Frais Scolarité Mensuel de Base (DA)' : 'رسوم اشتراك الروضة الشهري لكل طفل (DA)'}
                     </label>
                     <div className="relative">
-                      <DollarSign className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-600" />
-                      <input 
-                        type="number" 
-                        className="w-full pl-10 pr-4 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-black text-slate-800" 
+                      <DollarSign className="absolute start-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-600" />
+                      <input
+                        type="number"
+                        className="w-full ps-10 pe-4 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-black text-slate-800"
                         value={crecheData.tuitionFeeRate}
                         onChange={e => setCrecheData({...crecheData, tuitionFeeRate: e.target.value})}
                       />
@@ -697,9 +694,9 @@ export default function Parametres() {
                     <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
                       {isFrench ? 'Tarif Repas Cantine par Jour (DA)' : 'تعرفة الوجبة اليومية للطفل في المطعم'}
                     </label>
-                    <input 
-                      type="number" 
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-850" 
+                    <input
+                      type="number"
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-850"
                       value={crecheData.mealPricePerDay}
                       onChange={e => setCrecheData({...crecheData, mealPricePerDay: e.target.value})}
                     />
@@ -709,9 +706,9 @@ export default function Parametres() {
                     <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
                       {isFrench ? 'Devise de facture' : 'العملة الرسمية'}
                     </label>
-                    <input 
-                      type="text" 
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-850" 
+                    <input
+                      type="text"
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-850"
                       value={crecheData.currencyType}
                       onChange={e => setCrecheData({...crecheData, currencyType: e.target.value})}
                     />
@@ -736,102 +733,101 @@ export default function Parametres() {
               </section>
               <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
                 <h2 className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wider pb-3 border-b border-slate-100 flex items-center gap-2">
-                  <Bell className="w-4 h-4 text-indigo-600" />
-                  <span>{isFrench ? '3. Notifications & Alertes' : '3. الإشعارات والبروتوكول'}</span>
+                  <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span className="truncate">{isFrench ? '3. Mon abonnement Rawdha+' : '3. اشتراكي في Rawdha+'}</span>
                 </h2>
 
-                <div className="space-y-4">
-                  {/* SMS Presence */}
-                  <div className="flex items-start justify-between gap-2.5">
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-slate-800 block">{isFrench ? 'SMS des absences à 09 h 00' : 'رسائل الغياب على الساعة 09:00'}</span>
-                      <p className="text-[10px] text-slate-400 leading-normal">{isFrench ? 'Alerte les parents si le pointage de leur enfant n’est pas enregistré.' : 'تنبيه الأولياء إذا لم يتم تسجيل حضور طفلهم.'}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCrecheData({...crecheData, sendSmsAlerts: !crecheData.sendSmsAlerts})}
-                      className="text-indigo-600 cursor-pointer"
-                    >
-                      {crecheData.sendSmsAlerts ? (
-                        <ToggleRight className="w-9 h-9 text-emerald-500" />
-                      ) : (
-                        <ToggleLeft className="w-9 h-9 text-slate-300" />
-                      )}
-                    </button>
+                <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 p-4 text-white space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-100 truncate">
+                      {isFrench ? 'Formule Complète' : 'الباقة الشاملة'}
+                    </span>
+                    <span className="shrink-0 rounded-full bg-white/15 px-2.5 py-0.5 text-[10.5px] font-bold">
+                      {user?.dateFinAbonnement
+                        ? `${isFrench ? 'Jusqu’au' : 'إلى غاية'} ${user.dateFinAbonnement}`
+                        : isFrench ? 'Essai 15j' : 'تجربة 15 يوم'}
+                    </span>
                   </div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-2xl font-black tabular-nums">{LEGAL_CONFIG.monthlyPlanPriceDzd.toLocaleString('fr-FR')} {isFrench ? 'DA' : 'د.ج'}</span>
+                    <span className="text-xs text-indigo-100">/ {isFrench ? 'mois' : 'شهر'}</span>
+                  </div>
+                  {latestRenewal?.status === 'pending' && (
+                    <div className="rounded-xl bg-white/15 px-3 py-1.5 text-[11px] font-bold text-white truncate">
+                      {isFrench
+                        ? `Reçu ${latestRenewal.paymentChannel} envoyé · validation en cours`
+                        : `تم إرسال وصل ${latestRenewal.paymentChannel} · قيد التفعيل`}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onNavigate) {
+                        onNavigate('abonnement');
+                      } else {
+                        setShowRenewalModal(true);
+                      }
+                    }}
+                    className="min-h-9! w-full rounded-xl bg-white px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-50 whitespace-nowrap truncate transition cursor-pointer"
+                  >
+                    {isFrench ? 'Gérer / Renouveler mon abonnement' : 'إدارة / تجديد اشتراكي'}
+                  </button>
+                </div>
 
-                  {/* Mail Weekly */}
-                  <div className="flex items-start justify-between gap-2.5 pt-3 border-t border-slate-100">
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-slate-800 block">{isFrench ? 'Rapport hebdomadaire par e-mail' : 'التقرير الأسبوعي عبر البريد الإلكتروني'}</span>
-                      <p className="text-[10px] text-slate-400 leading-normal">{isFrench ? 'Envoie chaque samedi le bilan des activités et des photos.' : 'إرسال حصيلة الأنشطة والصور كل يوم سبت.'}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCrecheData({...crecheData, weeklyFicheEmail: !crecheData.weeklyFicheEmail})}
-                      className="text-indigo-600 cursor-pointer"
-                    >
-                      {crecheData.weeklyFicheEmail ? (
-                        <ToggleRight className="w-9 h-9 text-emerald-500" />
-                      ) : (
-                        <ToggleLeft className="w-9 h-9 text-slate-300" />
-                      )}
-                    </button>
+                {/* Réglage sonore actif */}
+                <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-100">
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-slate-800 block truncate">
+                      {isFrench ? 'Sonnerie des notifications' : 'نغمة الإشعارات'}
+                    </span>
+                    <span className="text-[11px] text-slate-500 block truncate">
+                      {isFrench ? 'Alerte sonore sur cet appareil' : 'تنبيه صوتي على هذا الجهاز'}
+                    </span>
                   </div>
-
-                  {/* Security check */}
-                  <div className="flex items-start justify-between gap-2.5 pt-3 border-t border-slate-100">
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-slate-800 block">{isFrench ? 'Vérification d’identité à la sortie' : 'التحقق من الهوية عند المغادرة'}</span>
-                      <p className="text-[10px] text-slate-400 leading-normal">{isFrench ? 'Exige deux pièces d’identité autorisées pour remettre l’enfant.' : 'يشترط وثيقتي هوية معتمدتين لتسليم الطفل.'}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCrecheData({...crecheData, securityCheckRequired: !crecheData.securityCheckRequired})}
-                      className="text-indigo-600 cursor-pointer"
-                    >
-                      {crecheData.securityCheckRequired ? (
-                        <ToggleRight className="w-9 h-9 text-rose-500" />
-                      ) : (
-                        <ToggleLeft className="w-9 h-9 text-slate-300" />
-                      )}
-                    </button>
-                  </div>
-
-                  {/* Bio Foods */}
-                  <div className="flex items-start justify-between gap-2.5 pt-3 border-t border-slate-100">
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-slate-800 block">{isFrench ? 'Mettre en avant les ingrédients bio' : 'إبراز المكونات العضوية'}</span>
-                      <p className="text-[10px] text-slate-400 leading-normal">{isFrench ? 'Affiche le label bio lorsque la fiche repas le permet.' : 'إظهار علامة العضوي عندما تسمح بطاقة الوجبة بذلك.'}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCrecheData({...crecheData, mealsOrganicPriority: !crecheData.mealsOrganicPriority})}
-                      className="text-indigo-600 cursor-pointer"
-                    >
-                      {crecheData.mealsOrganicPriority ? (
-                        <ToggleRight className="w-9 h-9 text-emerald-500" />
-                      ) : (
-                        <ToggleLeft className="w-9 h-9 text-slate-300" />
-                      )}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    aria-pressed={soundEnabled}
+                    onClick={() => {
+                      const next = !soundEnabled;
+                      setNotificationSoundEnabled(next);
+                      setSoundEnabled(next);
+                      if (next) void playNotificationChime({ force: true });
+                    }}
+                    className={`min-h-8! shrink-0 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold whitespace-nowrap transition cursor-pointer ${
+                      soundEnabled
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-slate-100 text-slate-600 border border-slate-200'
+                    }`}
+                  >
+                    <Bell className="h-3.5 w-3.5 shrink-0" />
+                    <span>{soundEnabled ? (isFrench ? 'Activé' : 'مفعّل') : (isFrench ? 'Muet' : 'صامت')}</span>
+                  </button>
                 </div>
               </div>
+
+              {user && (
+                <SubscriptionRenewalModal
+                  isOpen={showRenewalModal}
+                  onClose={() => setShowRenewalModal(false)}
+                  isArabic={isArabic}
+                  director={user}
+                  onSubmitted={req => setLatestRenewal(req)}
+                />
+              )}
 
               {/* Action buttons */}
               <div className="space-y-3">
                 <button
                   type="submit"
                   disabled={saveLoading}
-                  className="w-full flex items-center justify-center gap-2.5 bg-gradient-to-r from-rose-500 to-indigo-600 text-white p-4 rounded-2xl font-black text-sm tracking-wide shadow-lg shadow-indigo-600/15 hover:shadow-indigo-600/25 transition cursor-pointer disabled:opacity-50"
+                  className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-3 px-4 rounded-xl font-bold text-sm transition cursor-pointer disabled:opacity-50"
                 >
                   {saveLoading ? (
-                    <RefreshCw className="w-4.5 h-4.5 animate-spin" />
+                    <RefreshCw className="w-4 h-4 animate-spin" />
                   ) : (
-                    <Save size={18} className="stroke-[3]" />
+                    <Save size={16} className="stroke-[2.5]" />
                   )}
-                  <span>{isFrench ? 'Mettre à jour ma Crèche' : 'تحديث إعدادات كراسة الروضة'}</span>
+                  <span>{isFrench ? 'Enregistrer les paramètres' : 'حفظ الإعدادات'}</span>
                 </button>
               </div>
             </div>
@@ -843,7 +839,7 @@ export default function Parametres() {
         {user?.role === 'parent' && (
           <>
             <div className="lg:col-span-2 space-y-6">
-              
+
               {/* Box 1: Parent Authorization settings */}
               <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200 shadow-sm space-y-5">
                 <h2 className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wider pb-3 border-b border-slate-101 flex items-center gap-2">
@@ -859,8 +855,8 @@ export default function Parametres() {
                         {isFrench ? 'Autoriser la publication des photos scolaires' : 'الموافقة على تصوير الأنشطة التعليمية لولدي'}
                       </span>
                       <p className="text-[11px] text-slate-500 leading-normal">
-                        {isFrench 
-                          ? 'Permet à l\'enseignante d\'ajouter l\'enfant dans l\'album d\'activité pédagogique sécurisé et visible uniquement par vous.' 
+                        {isFrench
+                          ? 'Permet à l\'enseignante d\'ajouter l\'enfant dans l\'album d\'activité pédagogique sécurisé et visible uniquement par vous.'
                           : 'يسمح للمشرفة بإدراج طفلك في ألبوم الصور المغلق والتوجيهي المحمي بقيم الأمان، للمتابعة الشخصية فقط.'}
                       </p>
                     </div>
@@ -885,8 +881,8 @@ export default function Parametres() {
                         {isFrench ? 'Recevoir le menu traiteur hebdomadaire' : 'استلام قائمة طعام الحضانة أسبوعياً'}
                       </span>
                       <p className="text-[11px] text-slate-500 leading-normal">
-                        {isFrench 
-                          ? 'Envoi automatique par courrier électronique de la liste des plats et des allergènes.' 
+                        {isFrench
+                          ? 'Envoi automatique par courrier électronique de la liste des plats et des allergènes.'
                           : 'الحصول على المخطط الغذائي بالوجبات اليومية والمقادير مباشرة على البريد الإلكتروني.'}
                       </p>
                     </div>
@@ -911,8 +907,8 @@ export default function Parametres() {
                         {isFrench ? 'Alerte SMS de confirmation de sortie' : 'رسالة إشعار فورية عند خروج الطفل'}
                       </span>
                       <p className="text-[11px] text-slate-500 leading-normal">
-                        {isFrench 
-                          ? 'Recevez un SMS de sécurité gratuit dès que l\'enfant quitte l\'enceinte de l\'école.' 
+                        {isFrench
+                          ? 'Recevez un SMS de sécurité gratuit dès que l\'enfant quitte l\'enceinte de l\'école.'
                           : 'استلام رسالة نصية قصيرة فور تسليم الطفل للولي المعتمد من قبل المربيات.'}
                       </p>
                     </div>
@@ -943,7 +939,7 @@ export default function Parametres() {
                   <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
                     {isFrench ? 'Numéro de Téléphone Urgent (WhatsApp)' : 'رقم الهاتف البديل لتنبيهات الواتساب العاجلة'}
                   </label>
-                  <input 
+                  <input
                     type="text"
                     value={parentData.emergencyWhatsappContact}
                     onChange={(e) => setParentData({...parentData, emergencyWhatsappContact: e.target.value})}
@@ -955,32 +951,32 @@ export default function Parametres() {
             </div>
 
             {/* Sidebar support help contact */}
-            <div className="space-y-6">
-              <div className="bg-gradient-to-br from-indigo-900 to-indigo-950 p-6 rounded-3xl border border-indigo-950 text-white shadow-md space-y-4">
-                <HelpCircle className="w-8 h-8 text-amber-400" />
-                <div className="space-y-1">
-                  <h4 className="text-sm font-bold">{isFrench ? 'Besoin d\'assistance technique ?' : 'هل تحتاج لمساعدة تقنية؟'}</h4>
-                  <p className="text-[11px] text-indigo-200 font-semibold leading-relaxed">
-                    {isFrench 
-                      ? 'N\'hésitez pas à contacter le support centralisé Rawdha+ ou l\'administration de votre crèche pour tout problème de licence.' 
-                      : 'يمكنك التواصل مباشرة مع إدارة الروضة أو الدعم البرمجي لشركة روضتي لمراجعة تفاصيل حسابك وربط طفلك.'}
-                  </p>
-                </div>
+            <div className="space-y-4">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-2">
+                <HelpCircle className="w-5 h-5 text-indigo-600" />
+                <h4 className="text-sm font-bold text-slate-900">{isFrench ? 'Besoin d’assistance ?' : 'هل تحتاج لمساعدة؟'}</h4>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  {isFrench
+                    ? 'Contactez l’administration de votre crèche ou le support Rawdha+ en cas de besoin.'
+                    : 'يمكنك التواصل مع إدارة الروضة أو دعم المنصة لمراجعة تفاصيل حسابك.'}
+                </p>
               </div>
 
               <div className="space-y-3">
-                <button
-                  type="submit"
-                  disabled={saveLoading}
-                  className="w-full flex items-center justify-center gap-2.5 bg-gradient-to-r from-indigo-600 to-indigo-800 text-white p-4 rounded-2xl font-black text-sm tracking-wide shadow-lg hover:shadow-indigo-605/20 transition cursor-pointer"
-                >
-                  {saveLoading ? (
-                    <RefreshCw className="w-4.5 h-4.5 animate-spin" />
-                  ) : (
-                    <Save size={18} className="stroke-[3]" />
-                  )}
-                  <span>{isFrench ? 'Sauvegarder mes Préférences' : 'حفظ تفضيلاتي الشخصية'}</span>
-                </button>
+                {canManageSettings && (
+                  <button
+                    type="submit"
+                    disabled={saveLoading}
+                    className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-3 px-4 rounded-xl font-bold text-sm transition cursor-pointer"
+                  >
+                    {saveLoading ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save size={16} className="stroke-[2.5]" />
+                    )}
+                    <span>{isFrench ? 'Sauvegarder mes préférences' : 'حفظ تفضيلاتي'}</span>
+                  </button>
+                )}
               </div>
             </div>
           </>
@@ -988,10 +984,55 @@ export default function Parametres() {
 
       </form>
 
+      {/* Gestion centralisée des profils d'équipe & permissions par page (réservée à l'Admin Crèche) */}
+      <TeamAccessManager />
+
+      {/* Abonnement, résiliation sans frais & droits sur les données (Points #18 & #20) */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1 max-w-2xl">
+            <h2 className="text-sm font-bold text-slate-900">
+              {isArabic
+                ? 'الاشتراك، إلغاء التجديد وحقوق البيانات (القانون 18-07)'
+                : 'Abonnement, résiliation & droits sur vos données (Loi 18-07)'}
+            </h2>
+            <p className="text-xs leading-5 text-slate-600">
+              {isArabic
+                ? 'لا يوجد أي تجديد إجباري أو رسوم خفية: يمكنكم طلب إيقاف تجديد الاشتراك الشهري أو طلب حذف حسابكم وبياناتكم الشخصية في أي وقت.'
+                : 'Aucun renouvellement forcé ni frais caché : vous pouvez demander l’arrêt de votre abonnement mensuel ou la suppression de votre compte et de vos données à tout moment.'}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {user?.role !== 'admin' && (
+              <a
+                href="/support?sujet=resiliation"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
+              >
+                {isArabic ? 'إلغاء تجديد الاشتراك' : 'Ne pas renouveler l’abonnement'}
+              </a>
+            )}
+            <a
+              href={buildLegalHref('suppression')}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100"
+            >
+              <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>{isArabic ? 'طلب حذف البيانات' : 'Suppression des données'}</span>
+            </a>
+            <a
+              href={buildLegalHref('confidentialite')}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+            >
+              {isArabic ? 'المركز القانوني والشروط' : 'Centre légal & CGU'}
+            </a>
+          </div>
+        </div>
+      </section>
+
       {/* Save Confirmation Notification banner */}
       <AnimatePresence>
         {savedSuccess && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -15 }}
@@ -999,11 +1040,11 @@ export default function Parametres() {
           >
             <ShieldCheck className="w-5 h-5 text-emerald-100 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-xs font-black">{isFrench ? 'Paramètres sauvegardés avec succès !' : 'تم حفظ وتوثيق الإعدادات بنجاح!'}</p>
-              <p className="text-[10.5px] text-emerald-100/90 mt-1 leading-normal">
-                {isFrench 
-                  ? 'Vos données ont été enregistrées en toute sécurité dans votre espace cloud Firestore.' 
-                  : 'لقد تم تدوين خياراتك وتحديثها مباشرة على قواعد بيانات السحاب الآمنة.'}
+              <p className="text-xs font-bold">{isFrench ? 'Paramètres enregistrés' : 'تم حفظ الإعدادات'}</p>
+              <p className="text-[11px] text-emerald-100/90 mt-0.5 leading-normal">
+                {isFrench
+                  ? 'Vos modifications ont bien été prises en compte.'
+                  : 'تم تحديث إعداداتك بنجاح.'}
               </p>
             </div>
           </motion.div>

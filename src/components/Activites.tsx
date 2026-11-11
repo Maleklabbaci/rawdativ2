@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -14,12 +14,15 @@ import {
   Target, 
   Wand2, 
   MapPin,
-  Compass
+  Compass,
+  Edit3
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
+import { useWorkspaceProfile } from '../contexts/WorkspaceProfileContext';
 import { Activite } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -36,68 +39,106 @@ export default function Activites() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
   const { confirm } = useConfirmDialog();
+  const toast = useToast();
+  const { hasPagePermission } = useWorkspaceProfile();
+  const canManageActivites = hasPagePermission('activites', 'manage');
 
-  const { activites: allDbActivites, personnel: personnelData, addActivite, deleteActivite } = useDb();
+  const { activites: allDbActivites, personnel: personnelData, addActivite, updateActivite, deleteActivite } = useDb();
   const { user } = useAuth();
   const isDirecteur = user?.role === 'directeur';
-  const dbActivites = isDirecteur ? allDbActivites.filter((a: any) => a.crecheId === user!.id) : allDbActivites;
+  const dbActivites = isDirecteur ? allDbActivites.filter((a: any) => !a.crecheId || a.crecheId === user!.id) : allDbActivites;
 
-  const activites: RichActivite[] = dbActivites.map((a: any, idx: number) => {
-    const skills = ['Motricité Fine', 'Éveil Musical', 'Autonomie & Tri', 'Savoir-vivre & Coopération'];
-    const places = ['Atelier Peinture', 'Salle d\'Éveil', 'Jardin de la crèche', 'Salle Polyvalente'];
-    return {
-      ...a,
-      competenceVisee: a.competenceVisee || skills[idx % skills.length],
-      heureDebut: a.heureDebut || '10:00',
-      heureFin: a.heureFin || '11:15',
-      materielRequis: a.materielRequis || (idx % 2 === 0 ? 'Pâte à modeler, Peinture, Tabliers' : 'Instruments en bois, CD de comptines'),
-      lieu: a.lieu || places[idx % places.length],
-      educateurRef: a.educateurRef || (personnelData[idx % personnelData.length] 
-        ? `${personnelData[idx % personnelData.length].prenom} ${personnelData[idx % personnelData.length].nom}` 
-        : 'Mme. Nassima'),
-    };
-  });
+  // Missing fields remain unknown; never synthesize a teacher, time or location.
+  const activites: RichActivite[] = dbActivites;
+  const personnel = isDirecteur ? personnelData.filter((p: any) => !p.crecheId || p.crecheId === user!.id) : personnelData;
+  const unknown = isArabic ? 'غير محدد' : 'Non renseigné';
+  const localDate = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  };
+  const today = localDate();
+  const todayActivities = activites.filter(a => a.date === today);
 
   const [showModal, setShowModal] = useState(false);
+  const [editingActiviteId, setEditingActiviteId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const savingRef = useRef(false);
   const [selectedActivite, setSelectedActivite] = useState<any | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [scopeFilter, setScopeFilter] = useState<'all' | 'today'>('all');
 
-  const [formData, setFormData] = useState({
+  const emptyActivityForm = (presetDate = localDate()) => ({
     titre: '',
-    date: new Date().toISOString().split('T')[0],
+    date: presetDate,
     groupe: 'Bébés' as 'Bébés' | 'Moyens' | 'Grands',
-    competenceVisee: 'Motricité Fine',
-    heureDebut: '10:00',
-    heureFin: '11:00',
-    materielRequis: 'Feuilles, Gommettes colorées, Colle',
-    lieu: 'Salle d\'Éveil',
-    educateurRef: personnelData[0] ? `${personnelData[0].prenom} ${personnelData[0].nom}` : 'Mme. Nassima'
+    competenceVisee: '',
+    heureDebut: '',
+    heureFin: '',
+    materielRequis: '',
+    lieu: '',
+    educateurRef: ''
   });
 
-  const handleAjouter = () => {
-    if (!formData.titre || !formData.date) return;
-    addActivite({ ...formData, crecheId: isDirecteur ? user!.id : undefined } as any);
-    setShowModal(false);
-    // Reset form
+  const [formData, setFormData] = useState(emptyActivityForm());
+
+  const openCreateModal = (presetDate = localDate()) => {
+    setEditingActiviteId(null);
+    setFormData(emptyActivityForm(presetDate));
+    setSaveError('');
+    setShowModal(true);
+  };
+
+  const openEditModal = (act: RichActivite) => {
+    setSelectedActivite(null);
+    setEditingActiviteId(act.id);
     setFormData({
-      titre: '',
-      date: new Date().toISOString().split('T')[0],
-      groupe: 'Bébés',
-      competenceVisee: 'Motricité Fine',
-      heureDebut: '10:00',
-      heureFin: '11:00',
-      materielRequis: 'Feuilles, Gommettes colorées, Colle',
-      lieu: 'Salle d\'Éveil',
-      educateurRef: personnelData[0] ? `${personnelData[0].prenom} ${personnelData[0].nom}` : 'Mme. Nassima'
+      titre: act.titre || '',
+      date: act.date || localDate(),
+      groupe: (act.groupe as 'Bébés' | 'Moyens' | 'Grands') || 'Bébés',
+      competenceVisee: act.competenceVisee || '',
+      heureDebut: act.heureDebut || '',
+      heureFin: act.heureFin || '',
+      materielRequis: act.materielRequis || '',
+      lieu: act.lieu || '',
+      educateurRef: act.educateurRef || '',
     });
+    setSaveError('');
+    setShowModal(true);
+  };
+
+  const handleAjouter = async () => {
+    if (savingRef.current || saveError.startsWith('Enregistrement non confirmé') || saveError.startsWith('لم يتأكد الحفظ')) return;
+    if (!formData.titre.trim() || !formData.date) {
+      setSaveError(isArabic ? 'العنوان والتاريخ مطلوبان.' : 'Le titre et la date sont obligatoires.');
+      return;
+    }
+    savingRef.current = true; setSaving(true);
+    try {
+      if (editingActiviteId) {
+        await updateActivite(editingActiviteId, {
+          ...formData,
+          titre: formData.titre.trim(),
+        } as any);
+        toast.success(isArabic ? 'تم تحديث النشاط بنجاح' : 'Activité mise à jour');
+      } else {
+        await addActivite({ ...formData, titre: formData.titre.trim(), crecheId: isDirecteur ? user!.id : undefined } as any);
+      }
+      setEditingActiviteId(null);
+      setShowModal(false);
+      setFormData(emptyActivityForm());
+    } catch {
+      setSaveError(isArabic ? 'لم يتأكد الحفظ. أغلق النافذة وأعد تحميل القائمة وتحقق قبل المحاولة مجدداً.' : 'Enregistrement non confirmé. Fermez la fenêtre, rechargez et vérifiez la liste avant de réessayer.');
+    } finally { savingRef.current = false; setSaving(false); }
   };
 
   const filteredActivites = activites.filter(a => {
+    if (scopeFilter === 'today' && a.date !== today) return false;
     const term = searchTerm.toLowerCase();
     return (
-      a.titre.toLowerCase().includes(term) ||
+      (a.titre || '').toLowerCase().includes(term) ||
       a.competenceVisee?.toLowerCase().includes(term) ||
-      a.groupe.toLowerCase().includes(term)
+      (a.groupe || '').toLowerCase().includes(term)
     );
   });
 
@@ -113,72 +154,134 @@ export default function Activites() {
   };
 
   return (
-    <div className="space-y-4 sm:space-y-8 font-sans">
-      {/* Upper overview counts */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6">
-        <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4 hover:shadow-md transition">
-          <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-            <Sparkles className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest">
-              {isArabic ? 'الأنشطة المخططة' : 'Activités au Programme'}
-            </p>
-            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{activites.length} {isArabic ? 'حصة نشاط' : 'ateliers'}</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4 hover:shadow-md transition">
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-            <Compass className="w-6 h-6 animate-spin" />
-          </div>
-          <div>
-            <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest">
-              {isArabic ? 'مجالات المهارات المكتسبة' : 'Piliers d\'Apprentissage'}
-            </p>
-            <p className="text-xl sm:text-2xl font-black text-indigo-600 mt-0.5">{isArabic ? '4 ركائز ذكاء' : '4 Piliers Cognitifs'}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Header title & add action */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <Sparkles className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600" />
+    <div className="space-y-3.5 sm:space-y-5">
+      {/* Header title & add action sur 1 ligne nette */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="text-lg sm:text-2xl font-bold text-slate-900 tracking-tight truncate">
             {t('activities')}
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5 leading-tight">
-            {isArabic 
-              ? 'إنشاء ومتابعة الأنشطة البيداغوجية، الألعاب التفاعلية والأهداف الحسية والحركية للأطفال' 
-              : 'Planifiez les activités d\'éveil sensoriel, d\'éducation physique, d\'arts plastiques et de comptines.'}
+          <p className="hidden sm:block text-xs text-slate-500 mt-0.5 font-medium">
+            {activites.length} {isArabic ? 'حصة نشاط مبرمجة' : 'atelier(s) programmé(s)'} · {todayActivities.length} {isArabic ? 'اليوم' : 'aujourd’hui'}
           </p>
         </div>
-        <button 
-          className="flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-4 py-2.5 sm:px-6 sm:py-3.5 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/10 hover:shadow-indigo-600/20 transition-all cursor-pointer w-full sm:w-auto" 
-          onClick={() => setShowModal(true)}
-        >
-          <Plus size={16} className="stroke-[3]" />
-          <span>{t('activities.add')}</span>
-        </button>
+        {canManageActivites && (
+          <button
+            className="min-h-9! shrink-0 whitespace-nowrap inline-flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer"
+            onClick={() => openCreateModal(today)}
+          >
+            <Plus size={15} className="stroke-[2.5] shrink-0" />
+            <span>{t('activities.add')}</span>
+          </button>
+        )}
       </div>
 
-      {/* Search Input bar */}
-      <div className="bg-white p-3 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center">
+      {/* Encart Activités du jour */}
+      <div className="bg-gradient-to-br from-teal-50/80 via-white to-emerald-50/50 border border-teal-200/70 rounded-2xl p-3.5 sm:p-4 shadow-2xs space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="h-8 w-8 shrink-0 rounded-xl bg-teal-100 text-teal-700 inline-flex items-center justify-center">
+              <Sparkles className="h-4 w-4 shrink-0" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-xs sm:text-sm font-black text-slate-900 truncate">
+                {isArabic ? `أنشطة اليوم · ${today}` : `Activités du jour · ${today}`}
+              </h2>
+              <p className="text-[11px] font-medium text-slate-500 truncate">
+                {todayActivities.length > 0
+                  ? (isArabic ? `${todayActivities.length} ورشة تربوية مبرمجة اليوم` : `${todayActivities.length} atelier(s) prévu(s) aujourd’hui`)
+                  : (isArabic ? 'لا يوجد نشاط مبرمج لهذا اليوم بعد' : 'Aucun atelier programmé pour aujourd’hui')}
+              </p>
+            </div>
+          </div>
+          {canManageActivites && (
+            <button
+              type="button"
+              onClick={() => openCreateModal(today)}
+              className="min-h-8! shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded-xl border border-teal-200 bg-white px-2.5 py-1.5 text-xs font-bold text-teal-800 hover:bg-teal-50 transition cursor-pointer"
+            >
+              <Plus className="h-3.5 w-3.5 shrink-0" />
+              <span>{isArabic ? 'نشاط اليوم' : '+ Atelier du jour'}</span>
+            </button>
+          )}
+        </div>
+
+        {todayActivities.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {todayActivities.slice(0, 4).map((ta) => (
+              <div
+                key={`today-act-${ta.id}`}
+                onClick={() => (canManageActivites ? openEditModal(ta) : setSelectedActivite(ta))}
+                className="flex items-center justify-between gap-2.5 rounded-xl border border-teal-200/70 bg-white px-3 py-2 shadow-2xs hover:border-teal-300 transition cursor-pointer"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold border ${getGroupBadgeStyles(ta.groupe)}`}>
+                      {ta.groupe}
+                    </span>
+                    {(ta.heureDebut || ta.heureFin) && (
+                      <span className="text-[10px] font-semibold text-slate-500 tabular-nums">
+                        {ta.heureDebut || '—'}{ta.heureFin ? ` - ${ta.heureFin}` : ''}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs font-bold text-slate-800 truncate">{ta.titre}</p>
+                </div>
+                {canManageActivites && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEditModal(ta);
+                    }}
+                    className="min-h-8! h-8 px-2.5 shrink-0 inline-flex items-center justify-center gap-1 rounded-xl border border-indigo-200/80 bg-indigo-50/70 text-indigo-700 hover:bg-indigo-100 text-[11px] font-bold transition cursor-pointer"
+                  >
+                    <Edit3 className="h-3.5 w-3.5 shrink-0" />
+                    <span>{isArabic ? 'تعديل' : 'Modifier'}</span>
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Search & Scope Filter bar */}
+      <div className="bg-white p-2.5 sm:p-3.5 rounded-2xl border border-slate-200/80 shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+        <div className="grid grid-cols-2 sm:inline-flex gap-1 rounded-xl bg-slate-100/90 p-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => setScopeFilter('all')}
+            className={`min-h-8! px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap truncate ${
+              scopeFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            {isArabic ? `الكل (${activites.length})` : `Toutes (${activites.length})`}
+          </button>
+          <button
+            type="button"
+            onClick={() => setScopeFilter('today')}
+            className={`min-h-8! px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap truncate ${
+              scopeFilter === 'today' ? 'bg-teal-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            {isArabic ? `اليوم (${todayActivities.length})` : `Activités du jour (${todayActivities.length})`}
+          </button>
+        </div>
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             type="text"
-            placeholder={isArabic ? 'ابحث عن نشاط أو مهارة مستهدفة...' : 'Rechercher un atelier ou une compétence d\'éveil...'}
+            placeholder={isArabic ? 'ابحث عن نشاط أو مهارة مستهدفة...' : 'Rechercher un atelier ou une compétence...'}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition-all text-xs sm:text-sm font-medium text-slate-800"
+            className="w-full ps-9 pe-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition-all text-xs sm:text-sm font-medium text-slate-800"
           />
         </div>
       </div>
 
-      {/* Activities Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-slide-up">
+      {/* Activities Grid — cartes nettes, compactes, zéro paragraphe */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {filteredActivites.length > 0 ? (
           filteredActivites.map((a) => {
             const grpStyle = getGroupBadgeStyles(a.groupe);
@@ -186,82 +289,87 @@ export default function Activites() {
           return (
             <div 
               key={a.id} 
-              className="bg-white rounded-2xl border border-slate-100 p-6 shadow-xs hover:shadow-lg hover:-translate-y-1 transition-all duration-200 flex flex-col justify-between cursor-pointer"
-              onClick={() => setSelectedActivite(a)}
+              className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs hover:border-indigo-200 transition flex flex-col justify-between gap-2.5 cursor-pointer"
+              onClick={() => (canManageActivites ? openEditModal(a) : setSelectedActivite(a))}
             >
-              <div>
+              <div className="space-y-2">
                 {/* Card top banner */}
-                <div className="flex items-center justify-between mb-4">
-                  <span className={`px-2.5 py-1 text-xs font-bold rounded-lg border ${grpStyle}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`shrink-0 whitespace-nowrap px-2.5 py-0.5 text-[11px] font-bold rounded-lg border ${grpStyle}`}>
                     {a.groupe}
                   </span>
-                  <span className="text-[11px] text-slate-400 font-bold flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                  <span className="text-[11px] text-slate-500 font-semibold flex items-center gap-1 tabular-nums">
+                    <Calendar className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                     {a.date}
                   </span>
                 </div>
 
                 {/* Activity Title */}
-                <h3 className="text-lg font-extrabold text-slate-900 tracking-tight leading-snug">{a.titre}</h3>
+                <h3 className="text-sm sm:text-base font-bold text-slate-900 leading-snug line-clamp-1">{a.titre}</h3>
 
                 {/* Target Skill Row */}
-                <div className="mt-4 flex items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-xl">
-                  <Target className="w-4 h-4 text-rose-500" />
-                  <div className="text-xs">
-                    <p className="text-slate-400 font-bold leading-none">{isArabic ? 'المهارة البيداغوجية' : 'Axe d\'Épanouissement'}</p>
-                    <p className="text-slate-800 font-black mt-1">{a.competenceVisee}</p>
-                  </div>
+                <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                  <Target className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  <span className="truncate font-semibold text-slate-700">{a.competenceVisee || unknown}</span>
                 </div>
 
                 {/* Scheduled slots and Physical Place */}
-                <div className="mt-4 space-y-2 text-xs font-semibold text-slate-500">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{a.heureDebut} - {a.heureFin}</span>
+                <div className="grid grid-cols-2 gap-x-2.5 gap-y-1.5 pt-1 text-[11px] font-medium text-slate-500">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="truncate tabular-nums">{a.heureDebut || '—'} - {a.heureFin || '—'}</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{isArabic ? 'المكان: ' : 'Lieu : '}<strong className="text-slate-700">{a.lieu}</strong></span>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="truncate"><strong className="text-slate-700">{a.lieu || unknown}</strong></span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <User className="w-3.5 h-3.5 text-emerald-500" />
-                    <span>{isArabic ? 'المشرف: ' : 'Éducateur : '}<strong className="text-slate-700">{a.educateurRef}</strong></span>
+                  <div className="flex items-center gap-1.5 col-span-2 min-w-0">
+                    <User className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                    <span className="truncate">{isArabic ? 'المشرف: ' : 'Éducateur : '}<strong className="text-slate-700">{a.educateurRef || unknown}</strong></span>
                   </div>
                 </div>
 
                 {/* Material Supplies requirements */}
                 {a.materielRequis && (
-                  <div className="mt-5 pt-3 border-t border-slate-50">
-                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">{isArabic ? 'المستلزمات المطلوبة' : 'Matériel à préparer'}</p>
-                    <p className="text-xs text-indigo-700 bg-indigo-50/50 rounded-lg p-2 font-medium leading-relaxed border border-indigo-100/30">
-                      {a.materielRequis}
-                    </p>
-                  </div>
+                  <p className="text-[11px] text-indigo-700 bg-indigo-50/60 rounded-lg px-2.5 py-1.5 font-medium truncate border border-indigo-100/50">
+                    {a.materielRequis}
+                  </p>
                 )}
 
               </div>
 
               {/* Quick actions row */}
-              <div className="mt-6 pt-4 border-t border-slate-50 flex justify-end">
-                <button 
-                  className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer z-10"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    const confirmed = await confirm({
-                      title: isArabic ? 'تأكيد حذف النشاط' : 'Confirmer la suppression de l’activité',
-                      message: isArabic
-                        ? 'سيتم حذف هذا النشاط المبرمج نهائياً.'
-                        : 'Cette activité planifiée sera supprimée définitivement.',
-                      confirmLabel: isArabic ? 'حذف النشاط' : 'Supprimer l’activité',
-                      variant: 'danger',
-                    });
-                    if (confirmed) await deleteActivite(a.id);
-                  }}
-                >
-                  <Trash2 size={15} />
-                  <span>{isArabic ? 'حذف' : 'Supprimer'}</span>
-                </button>
-              </div>
+              {canManageActivites && (
+                <div className="pt-2.5 border-t border-slate-100 flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    aria-label={isArabic ? 'تعديل النشاط' : 'Modifier l’activité'}
+                    className="min-h-8! h-8 px-2.5 shrink-0 inline-flex items-center justify-center gap-1 rounded-xl border border-indigo-200/80 bg-indigo-50/70 text-xs font-bold text-indigo-700 hover:bg-indigo-100 whitespace-nowrap transition cursor-pointer"
+                    onClick={() => openEditModal(a)}
+                  >
+                    <Edit3 className="h-3.5 w-3.5 shrink-0" />
+                    <span>{isArabic ? 'تعديل' : 'Modifier'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={isArabic ? 'حذف النشاط' : 'Supprimer l’activité'}
+                    className="min-h-8! h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-xl border border-rose-200/80 bg-rose-50/70 text-rose-600 hover:bg-rose-100 transition cursor-pointer"
+                    onClick={async () => {
+                      const confirmed = await confirm({
+                        title: isArabic ? 'تأكيد حذف النشاط' : 'Confirmer la suppression de l’activité',
+                        message: isArabic
+                          ? 'سيتم حذف هذا النشاط المبرمج نهائياً.'
+                          : 'Cette activité planifiée sera supprimée définitivement.',
+                        confirmLabel: isArabic ? 'حذف النشاط' : 'Supprimer l’activité',
+                        variant: 'danger',
+                      });
+                      if (confirmed) await deleteActivite(a.id);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                  </button>
+                </div>
+              )}
             </div>
           );
           })
@@ -279,7 +387,7 @@ export default function Activites() {
         {showModal && (
           <div 
             className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-center justify-center z-[999] p-4 cursor-pointer"
-            onClick={() => setShowModal(false)}
+            onClick={() => { if (!saving) setShowModal(false); }}
           >
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
@@ -290,11 +398,15 @@ export default function Activites() {
             >
               <div className="p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
                 <div>
-                  <h3 className="text-xl font-black">{isArabic ? 'تخطيط نشاط ترفيهي وبيداغوجي جديد' : 'Planification d\'Atelier Éducatif'}</h3>
+                  <h3 className="text-xl font-black">
+                    {editingActiviteId
+                      ? (isArabic ? 'تعديل النشاط البيداغوجي' : 'Modifier l’atelier éducatif')
+                      : (isArabic ? 'تخطيط نشاط ترفيهي وبيداغوجي جديد' : 'Planification d\'Atelier Éducatif')}
+                  </h3>
                   <p className="text-xs text-indigo-100 mt-0.5">{isArabic ? 'تحديد الأهداف، المربيات، المعدات، الموقع والفترات الزمنية للورشات' : 'Fiche d\'animation, équipement, aires de jeu & heures'}</p>
                 </div>
                 <button 
-                  onClick={() => setShowModal(false)}
+                  onClick={() => { if (!saving) { setEditingActiviteId(null); setShowModal(false); } }}
                   className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
                 >
                   <X size={20} />
@@ -327,11 +439,12 @@ export default function Activites() {
                       value={formData.competenceVisee}
                       onChange={e => setFormData({...formData, competenceVisee: e.target.value})}
                     >
-                      <option value="Motricité Fine">Motricité Fine & Coordination</option>
-                      <option value="Éveil Musical">Éveil Musical & Sensoriel</option>
-                      <option value="Sortie & Jardin">Éco-citoyenneté & Extérieur</option>
-                      <option value="Graphisme et Couleurs">Graphisme, Dessin et Peinture</option>
-                      <option value="Coopération">Jeu Social & Collaboration</option>
+                      <option value="">{unknown}</option>
+                      <option value="Motricité Fine">{isArabic ? 'المهارات الحركية الدقيقة والتنسيق' : 'Motricité Fine & Coordination'}</option>
+                      <option value="Éveil Musical">{isArabic ? 'التنشيط الموسيقي والحسي' : 'Éveil Musical & Sensoriel'}</option>
+                      <option value="Sortie & Jardin">{isArabic ? 'البيئة والنشاط الخارجي' : 'Éco-citoyenneté & Extérieur'}</option>
+                      <option value="Graphisme et Couleurs">{isArabic ? 'الرسم والألوان' : 'Graphisme, Dessin et Peinture'}</option>
+                      <option value="Coopération">{isArabic ? 'اللعب الجماعي والتعاون' : 'Jeu Social & Collaboration'}</option>
                     </select>
                   </div>
 
@@ -344,9 +457,9 @@ export default function Activites() {
                       value={formData.groupe} 
                       onChange={e => setFormData({...formData, groupe: e.target.value as any})}
                     >
-                      <option value="Bébés">Bébés (0-2 ans)</option>
-                      <option value="Moyens">Moyens (2-4 ans)</option>
-                      <option value="Grands">Grands (4-6 ans)</option>
+                      <option value="Bébés">{isArabic ? 'الرضع (0-2 سنوات)' : 'Bébés (0-2 ans)'}</option>
+                      <option value="Moyens">{isArabic ? 'المتوسطون (2-4 سنوات)' : 'Moyens (2-4 ans)'}</option>
+                      <option value="Grands">{isArabic ? 'الكبار (4-6 سنوات)' : 'Grands (4-6 ans)'}</option>
                     </select>
                   </div>
                 </div>
@@ -371,7 +484,7 @@ export default function Activites() {
                     </label>
                     <input 
                       type="text" 
-                      placeholder="10:00"
+                      placeholder="10:00" inputMode="numeric"
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800" 
                       value={formData.heureDebut} 
                       onChange={e => setFormData({...formData, heureDebut: e.target.value})} 
@@ -384,7 +497,7 @@ export default function Activites() {
                     </label>
                     <input 
                       type="text" 
-                      placeholder="11:00"
+                      placeholder="11:00" inputMode="numeric"
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800" 
                       value={formData.heureFin} 
                       onChange={e => setFormData({...formData, heureFin: e.target.value})} 
@@ -396,14 +509,15 @@ export default function Activites() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {isArabic ? 'المربي المشرف المنشط *' : 'Animateur Référent *'}
+                      {isArabic ? 'المربي المشرف' : 'Animateur référent'}
                     </label>
                     <select
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
                       value={formData.educateurRef}
                       onChange={e => setFormData({...formData, educateurRef: e.target.value})}
                     >
-                      {personnelData.map(p => (
+                      <option value="">{unknown}</option>
+                      {personnel.map(p => (
                         <option key={p.id} value={`${p.prenom} ${p.nom}`}>
                           {p.prenom} {p.nom} ({p.poste})
                         </option>
@@ -413,7 +527,7 @@ export default function Activites() {
 
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {isArabic ? 'مكان النشاط وصالة التدريب *' : 'Espace choisi *'}
+                      {isArabic ? 'مكان النشاط' : 'Espace choisi'}
                     </label>
                     <input 
                       type="text" 
@@ -441,19 +555,21 @@ export default function Activites() {
 
               </div>
 
+              {saveError && <p role="alert" className="mx-4 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-700">{saveError}</p>}
               {/* Buttons */}
               <div className="p-6 pt-4 border-t border-slate-100 flex gap-3 flex-shrink-0 bg-slate-50/50">
                 <button 
                   type="button"
                   className="flex-1 p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer text-sm"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => { if (!saving) setShowModal(false); }}
                 >
                   {t('common.cancel')}
                 </button>
                 <button 
                   type="button"
                   className="flex-1 p-3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-750 text-white font-bold rounded-xl transition cursor-pointer text-sm shadow-md"
-                  onClick={handleAjouter}
+                  disabled={saving || saveError.startsWith('Enregistrement non confirmé') || saveError.startsWith('لم يتأكد الحفظ')}
+                  onClick={() => void handleAjouter()}
                 >
                   {t('common.save')}
                 </button>
@@ -498,11 +614,11 @@ export default function Activites() {
                   </div>
                   <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
                     <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">{isArabic ? 'الموقع' : 'Lieu / Espace'}</span>
-                    <span className="text-xs font-black text-slate-855">{selectedActivite.lieu}</span>
+                    <span className="text-xs font-black text-slate-855">{selectedActivite.lieu || unknown}</span>
                   </div>
                   <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
                     <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">{isArabic ? 'الوقت' : 'Plage Horaire'}</span>
-                    <span className="text-xs font-black text-slate-800">{selectedActivite.heureDebut} - {selectedActivite.heureFin}</span>
+                    <span className="text-xs font-black text-slate-800">{selectedActivite.heureDebut || '—'} - {selectedActivite.heureFin || '—'}</span>
                   </div>
                   <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
                     <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">{isArabic ? 'التاريخ الفني' : 'Date de réalisation'}</span>
@@ -514,13 +630,13 @@ export default function Activites() {
                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">{isArabic ? 'محور الكفاءة المستهدف' : 'Compétence & Développement Visé'}</span>
                   <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
                     <Target className="w-5 h-5 text-rose-500 stroke-[2.5]" />
-                    <span>{selectedActivite.competenceVisee}</span>
+                    <span>{selectedActivite.competenceVisee || unknown}</span>
                   </div>
                 </div>
 
                 <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">{isArabic ? 'المشرف المسؤول' : 'Éducateur Leader'}</span>
-                  <span className="text-sm font-black text-indigo-600">{selectedActivite.educateurRef}</span>
+                  <span className="text-sm font-black text-indigo-600">{selectedActivite.educateurRef || unknown}</span>
                 </div>
 
                 {selectedActivite.materielRequis && (

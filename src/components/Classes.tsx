@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -18,6 +18,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { usePagination } from '../hooks/usePagination';
 import { Classe } from '../types';
+import { checkClassAssignment } from '../utils/classAssignment';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface RichClasse extends Classe {
@@ -43,10 +44,8 @@ export default function Classes() {
       const themes: RichClasse['couleurTheme'][] = ['emerald', 'sky', 'indigo', 'rose', 'amber'];
       return {
         ...c,
-        educateurChef: c.educateurChef || (personnelData[idx % personnelData.length] 
-          ? `${personnelData[idx % personnelData.length].prenom} ${personnelData[idx % personnelData.length].nom}` 
-          : 'Non assigné'),
-        salleNom: c.salleNom || `Salle B-${102 + idx}`,
+        educateurChef: c.educateurChef || '',
+        salleNom: c.salleNom || '',
         couleurTheme: c.couleurTheme || themes[idx % themes.length],
         childrenIds: c.childrenIds || []
       };
@@ -55,19 +54,23 @@ export default function Classes() {
 
   // State
   const [showModal, setShowModal] = useState(false);
+  const [savingClass, setSavingClass] = useState(false);
+  const [classSaveUncertain, setClassSaveUncertain] = useState(false);
+  const savingClassRef = useRef(false);
   const [editingClasseId, setEditingClasseId] = useState<string | null>(null); // State pour savoir si on édite
   const [selectedClasse, setSelectedClasse] = useState<RichClasse | null>(null);
   const [expandedClasseId, setExpandedClasseId] = useState<string | null>(null);
   const [showAddChildrenModal, setShowAddChildrenModal] = useState(false);
   const [selectedChildrenToAdd, setSelectedChildrenToAdd] = useState<Set<string>>(new Set());
   const [searchChildTerm, setSearchChildTerm] = useState('');
+  const [savingAssignment, setSavingAssignment] = useState(false);
 
   const [formData, setFormData] = useState({
     nom: '',
     niveau: 'Bébés' as Classe['niveau'],
-    capacite: 12,
-    educateurChef: personnelData[0] ? `${personnelData[0].prenom} ${personnelData[0].nom}` : '',
-    salleNom: 'Salle C-201',
+    capacite: 0,
+    educateurChef: '',
+    salleNom: '',
     couleurTheme: 'indigo' as 'emerald' | 'sky' | 'indigo' | 'rose' | 'amber'
   });
 
@@ -80,11 +83,14 @@ export default function Classes() {
   // ===== MEMOIZED: Get available children to add =====
   const availableChildrenToAdd = useMemo(() => {
     if (!selectedClasse) return [];
-    return enfantsData.filter(e => 
+    const assignedElsewhere = new Set(classes.filter(c => c.id !== selectedClasse.id).flatMap(c => c.childrenIds || []));
+    return enfantsData.filter(e =>
+      e.statut === 'Actif' &&
       !selectedClasse.childrenIds?.includes(e.id) &&
+      !assignedElsewhere.has(e.id) &&
       `${e.prenom} ${e.nom}`.toLowerCase().includes(searchChildTerm.toLowerCase())
     );
-  }, [selectedClasse, enfantsData, searchChildTerm]);
+  }, [selectedClasse, enfantsData, searchChildTerm, classes]);
 
   // ===== PAGINATION for children in class =====
   const {
@@ -107,6 +113,7 @@ export default function Classes() {
   // Ouvrir le formulaire pré-rempli pour modification
   const handleEditClick = (e: React.MouseEvent, classe: RichClasse) => {
     e.stopPropagation(); // Évite de fermer l'onglet déroulant
+    setClassSaveUncertain(false);
     setEditingClasseId(classe.id);
     setFormData({
       nom: classe.nom,
@@ -120,10 +127,18 @@ export default function Classes() {
   };
 
   const handleAjouterOuModifier = useCallback(async () => {
-    if (!formData.nom || formData.capacite <= 0) {
+    if (savingClassRef.current || classSaveUncertain) return;
+    if (!formData.nom.trim() || !Number.isInteger(formData.capacite) || formData.capacite <= 0) {
       showToast(isArabic ? 'يرجى ملء جميع الحقول' : 'Veuillez remplir tous les champs', 'error');
       return;
     }
+    const editingClasse = classes.find(c => c.id === editingClasseId);
+    if (editingClasse && formData.capacite < new Set(editingClasse.childrenIds || []).size) {
+      showToast(isArabic ? 'لا يمكن أن تكون السعة أقل من عدد الأطفال المسجلين.' : 'La capacité ne peut pas être inférieure au nombre d’enfants affectés.', 'error');
+      return;
+    }
+    savingClassRef.current = true;
+    setSavingClass(true);
     try {
       if (editingClasseId) {
         // Mode Modification
@@ -141,16 +156,17 @@ export default function Classes() {
       setFormData({
         nom: '',
         niveau: 'Bébés',
-        capacite: 12,
-        educateurChef: personnelData[0] ? `${personnelData[0].prenom} ${personnelData[0].nom}` : '',
-        salleNom: 'Salle C-201',
+        capacite: 0,
+        educateurChef: '',
+        salleNom: '',
         couleurTheme: 'indigo'
       });
     } catch (error) {
       if (error instanceof Error && error.message.includes('lecture seule')) return;
-      showToast(isArabic ? 'فشل العملية ❌' : 'Erreur lors de l\'opération ❌', 'error');
-    }
-  }, [formData, addClasse, updateClasse, editingClasseId, isDirecteur, user, showToast, isArabic, personnelData]);
+      setClassSaveUncertain(true);
+      showToast(isArabic ? 'لم يتأكد الحفظ. تحقق من الأقسام قبل المحاولة مجدداً.' : 'Enregistrement non confirmé. Vérifiez les classes avant de réessayer.', 'error');
+    } finally { savingClassRef.current = false; setSavingClass(false); }
+  }, [formData, addClasse, updateClasse, editingClasseId, isDirecteur, user, showToast, isArabic, personnelData, classes, classSaveUncertain]);
 
   const handleDeleteClasse = useCallback(async (id: string) => {
     const confirmed = await confirmDialog({
@@ -176,52 +192,58 @@ export default function Classes() {
 
   // ===== BULK ADD CHILDREN TO CLASS =====
   const handleBulkAddChildren = useCallback(async () => {
-    if (selectedChildrenToAdd.size === 0 || !selectedClasse) {
-      showToast(isArabic ? 'اختر أطفالاً أولاً' : 'Sélectionnez d\'abord des enfants', 'error');
+    if (!selectedClasse || savingAssignment) return;
+    const current = classes.find(c => c.id === selectedClasse.id);
+    if (!current) {
+      showToast(isArabic ? 'القسم غير متاح. أعد المحاولة.' : 'Cette classe n’est plus disponible.', 'error');
       return;
     }
-
+    const validation = checkClassAssignment(current, classes, enfantsData, Array.from(selectedChildrenToAdd));
+    if (validation) {
+      const message = validation === 'capacity'
+        ? (isArabic ? 'عدد الأطفال المختارين يتجاوز سعة القسم.' : 'La sélection dépasse la capacité de cette classe.')
+        : validation === 'assigned'
+          ? (isArabic ? 'أحد الأطفال مسجل في قسم آخر. أزله منه أولاً.' : 'Un enfant est déjà dans une autre classe. Retirez-le d’abord de cette classe.')
+          : (isArabic ? 'تحقق من الأطفال المختارين.' : 'Vérifiez les enfants sélectionnés.');
+      showToast(message, 'error');
+      return;
+    }
+    const newChildrenIds = [...new Set([...(current.childrenIds || []), ...selectedChildrenToAdd])];
+    setSavingAssignment(true);
     try {
-      const newChildrenIds = [
-        ...(selectedClasse.childrenIds || []),
-        ...Array.from(selectedChildrenToAdd)
-      ];
-      
-      await updateClasse(selectedClasse.id, { childrenIds: newChildrenIds });
-      
-      showToast(
-        isArabic 
-          ? `تمت إضافة ${selectedChildrenToAdd.size} أطفال ✅`
-          : `${selectedChildrenToAdd.size} enfants ajoutés ✅`,
-        'success'
-      );
-      
+      await updateClasse(current.id, { childrenIds: newChildrenIds });
+      setSelectedClasse({ ...current, childrenIds: newChildrenIds });
+      showToast(isArabic ? `تمت إضافة ${selectedChildrenToAdd.size} أطفال ✅` : `${selectedChildrenToAdd.size} enfants ajoutés ✅`, 'success');
       setSelectedChildrenToAdd(new Set());
       setShowAddChildrenModal(false);
       setSearchChildTerm('');
       goToAvailableChildrenPage(1);
-      
-      // Refresh selected class
-      const updatedClass = classes.find(c => c.id === selectedClasse.id);
-      if (updatedClass) {
-        setSelectedClasse(updatedClass);
-      }
     } catch (error) {
       console.error('Error adding children:', error);
-      showToast(isArabic ? 'فشل إضافة الأطفال ❌' : 'Erreur lors de l\'ajout ❌', 'error');
+      const message = String((error as { message?: string })?.message || '');
+      showToast(message.includes('class_membership_changed')
+        ? (isArabic ? 'تغير القسم على جهاز آخر. حدّث الصفحة وأعد المحاولة.' : 'La classe a changé sur un autre appareil. Actualisez et réessayez.')
+        : (isArabic ? 'فشل إضافة الأطفال ❌' : 'Erreur lors de l’ajout ❌'), 'error');
+    } finally {
+      setSavingAssignment(false);
     }
-  }, [selectedClasse, selectedChildrenToAdd, classes, updateClasse, showToast, isArabic, goToAvailableChildrenPage]);
+  }, [selectedClasse, savingAssignment, selectedChildrenToAdd, classes, enfantsData, updateClasse, showToast, isArabic, goToAvailableChildrenPage]);
 
   // ===== BULK REMOVE CHILDREN FROM CLASS =====
   const handleBulkRemoveChildren = useCallback(async (childrenIdsToRemove: string[]) => {
     if (!selectedClasse || childrenIdsToRemove.length === 0) return;
+    const current = classes.find(c => c.id === selectedClasse.id);
+    if (!current) {
+      showToast(isArabic ? 'القسم غير متاح. أعد المحاولة.' : 'Cette classe n’est plus disponible.', 'error');
+      return;
+    }
 
     try {
-      const newChildrenIds = (selectedClasse.childrenIds || []).filter(
+      const newChildrenIds = (current.childrenIds || []).filter(
         id => !childrenIdsToRemove.includes(id)
       );
       
-      await updateClasse(selectedClasse.id, { childrenIds: newChildrenIds });
+      await updateClasse(current.id, { childrenIds: newChildrenIds });
       
       showToast(
         isArabic 
@@ -231,13 +253,13 @@ export default function Classes() {
       );
       
       // Refresh selected class
-      const updatedClass = classes.find(c => c.id === selectedClasse.id);
-      if (updatedClass) {
-        setSelectedClasse(updatedClass);
-      }
+      setSelectedClasse({ ...current, childrenIds: newChildrenIds });
     } catch (error) {
       console.error('Error removing children:', error);
-      showToast(isArabic ? 'فشل الحذف ❌' : 'Erreur de suppression ❌', 'error');
+      const message = String((error as { message?: string })?.message || '');
+      showToast(message.includes('class_membership_changed')
+        ? (isArabic ? 'تغير القسم على جهاز آخر. حدّث الصفحة وأعد المحاولة.' : 'La classe a changé sur un autre appareil. Actualisez et réessayez.')
+        : (isArabic ? 'فشل الحذف ❌' : 'Erreur de suppression ❌'), 'error');
     }
   }, [selectedClasse, classes, updateClasse, showToast, isArabic]);
 
@@ -289,21 +311,27 @@ export default function Classes() {
   };
 
   return (
-    <div className={`p-6 space-y-6 ${isArabic ? 'rtl' : 'ltr'}`}>
+    <div className={`space-y-4 sm:space-y-6 ${isArabic ? 'rtl' : 'ltr'}`}>
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold flex items-center gap-2">
-          <School className="w-8 h-8" />
-          {isArabic ? 'الفصول الدراسية' : 'Classes'}
-        </h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+            {isArabic ? 'الفصول الدراسية' : 'Classes'}
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-0.5 font-medium">
+            {classes.length} {isArabic ? 'فصل مسجل' : 'classe(s) configurée(s)'}
+          </p>
+        </div>
         <button
           onClick={() => {
-            setEditingClasseId(null); // S'assurer que le mode édition est réinitialisé
+            setClassSaveUncertain(false);
+            setEditingClasseId(null);
+            setFormData({ nom: '', niveau: 'Bébés', capacite: 0, educateurChef: '', salleNom: '', couleurTheme: 'indigo' });
             setShowModal(true);
           }}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2 cursor-pointer transition font-bold"
+          className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 cursor-pointer transition text-xs sm:text-sm font-bold"
         >
-          <Plus className="w-5 h-5" />
+          <Plus className="w-4 h-4 stroke-[2.5]" />
           {isArabic ? 'إضافة فصل' : 'Ajouter Classe'}
         </button>
       </div>
@@ -318,34 +346,51 @@ export default function Classes() {
           return (
             <motion.div
               key={classe.id}
-              className={`border-2 rounded-lg p-4 cursor-pointer transition ${theme.border} ${isExpanded ? theme.bg : 'bg-white hover:shadow-md'}`}
-              onClick={() => {
-                setSelectedClasse(classe);
-                setExpandedClasseId(isExpanded ? null : classe.id);
-              }}
+              className={`rawdha-card-modern border rounded-2xl p-4 sm:p-5 shadow-2xs transition ${isExpanded ? `${theme.border} ${theme.bg}` : 'border-slate-200/80 bg-white'}`}
             >
               {/* Class header */}
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex-1">
-                  <h3 className="text-lg font-bold">{classe.nom}</h3>
-                  <p className="text-sm text-slate-600">
-                    {classe.niveau} • {classe.salleNom}
+              <div className="flex w-full items-start justify-between gap-2 mb-3">
+                <button
+                  type="button"
+                  aria-expanded={isExpanded}
+                  onClick={() => { setSelectedClasse(classe); setExpandedClasseId(isExpanded ? null : classe.id); }}
+                  className="min-w-0 flex-1 text-start rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600 cursor-pointer"
+                >
+                  <h3 className="text-base sm:text-lg font-bold truncate">{classe.nom}</h3>
+                  <p className="text-xs sm:text-sm text-slate-600 truncate">
+                    {classe.niveau} • {classe.salleNom || (isArabic ? 'القاعة غير محددة' : 'Salle non renseignée')}
                   </p>
+                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={(e) => handleEditClick(e, classe)}
+                    title={isArabic ? 'تعديل الفصل' : 'Modifier la classe'}
+                    aria-label={isArabic ? 'تعديل الفصل' : 'Modifier la classe'}
+                    className="min-h-8! h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-xl border border-amber-200/80 bg-amber-50/70 text-amber-600 hover:bg-amber-100 transition cursor-pointer"
+                  >
+                    <Edit className="h-3.5 w-3.5 shrink-0" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={isExpanded ? (isArabic ? 'طي الفصل' : 'Replier la classe') : (isArabic ? 'فتح الفصل' : 'Déplier la classe')}
+                    onClick={() => { setSelectedClasse(classe); setExpandedClasseId(isExpanded ? null : classe.id); }}
+                    className="min-h-8! h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    <ChevronDown className={`w-4 h-4 shrink-0 transition transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  </button>
                 </div>
-                <ChevronDown
-                  className={`w-5 h-5 transition transform ${isExpanded ? 'rotate-180' : ''}`}
-                />
               </div>
 
               {/* Class info */}
               <div className="space-y-2 mb-4">
                 <div className="flex items-center gap-2 text-sm">
                   <Users className="w-4 h-4 text-slate-500" />
-                  <span>{childCount}/{classe.capacite} enfants</span>
+                  <span>{childCount}/{classe.capacite} {isArabic ? 'أطفال' : 'enfants'}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <UserSquare className="w-4 h-4 text-slate-500" />
-                  <span>{classe.educateurChef}</span>
+                  <span>{classe.educateurChef || (isArabic ? 'المشرف غير محدد' : 'Éducateur non renseigné')}</span>
                 </div>
               </div>
 
@@ -394,6 +439,7 @@ export default function Classes() {
                               <span>{child.prenom} {child.nom}</span>
                               <button
                                 onClick={() => handleBulkRemoveChildren([child.id])}
+                                aria-label={isArabic ? `إزالة ${child.prenom} ${child.nom} من القسم` : `Retirer ${child.prenom} ${child.nom} de la classe`}
                                 className="text-red-500 hover:text-red-750 p-1 rounded hover:bg-red-50 cursor-pointer"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -482,6 +528,7 @@ export default function Classes() {
                 </h2>
                 <button 
                   onClick={() => {
+                    if (savingClassRef.current) return;
                     setShowModal(false);
                     setEditingClasseId(null);
                   }} 
@@ -510,9 +557,9 @@ export default function Classes() {
                     onChange={(e) => setFormData({ ...formData, niveau: e.target.value as any })}
                     className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
                   >
-                    <option>Bébés</option>
-                    <option>Moyens</option>
-                    <option>Grands</option>
+                    <option value="Bébés">{isArabic ? 'الرضع' : 'Bébés'}</option>
+                    <option value="Moyens">{isArabic ? 'المتوسطون' : 'Moyens'}</option>
+                    <option value="Grands">{isArabic ? 'الكبار' : 'Grands'}</option>
                   </select>
                 </div>
 
@@ -520,7 +567,7 @@ export default function Classes() {
                   <label className="block text-sm font-bold mb-2">{isArabic ? 'السعة القصوى *' : 'Capacité *'}</label>
                   <input
                     type="number"
-                    value={formData.capacite}
+                    value={formData.capacite || ''}
                     onChange={(e) => setFormData({ ...formData, capacite: parseInt(e.target.value) || 0 })}
                     className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
                   />
@@ -533,7 +580,8 @@ export default function Classes() {
                     onChange={(e) => setFormData({ ...formData, educateurChef: e.target.value })}
                     className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
                   >
-                    {personnelData.map(p => (
+                    <option value="">{isArabic ? 'غير محدد' : 'Non renseigné'}</option>
+                    {personnelData.filter(p => !isDirecteur || p.crecheId === user?.id).map(p => (
                       <option key={p.id} value={`${p.prenom} ${p.nom}`}>{p.prenom} {p.nom}</option>
                     ))}
                   </select>
@@ -555,6 +603,9 @@ export default function Classes() {
                     {['emerald', 'sky', 'indigo', 'rose', 'amber'].map(color => (
                       <button
                         key={color}
+                        type="button"
+                        aria-label={`${isArabic ? 'اللون' : 'Couleur'} ${color}`}
+                        aria-pressed={formData.couleurTheme === color}
                         onClick={() => setFormData({ ...formData, couleurTheme: color as any })}
                         className={`w-8 h-8 rounded-full border-2 transition cursor-pointer ${
                           formData.couleurTheme === color ? 'border-slate-800 scale-110 shadow' : 'border-transparent'
@@ -574,8 +625,10 @@ export default function Classes() {
                 </div>
               </div>
 
+              {classSaveUncertain && <p role="alert" className="mt-4 text-sm text-red-700">{isArabic ? 'لم يتأكد الحفظ. أغلق النافذة وتحقق من قائمة الأقسام قبل المحاولة مجدداً.' : 'Enregistrement non confirmé. Fermez cette fenêtre et vérifiez la liste des classes avant de réessayer.'}</p>}
               <div className="flex gap-2 mt-6">
                 <button
+                  disabled={savingClass || classSaveUncertain}
                   onClick={handleAjouterOuModifier}
                   className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold cursor-pointer transition text-center"
                 >
@@ -583,6 +636,7 @@ export default function Classes() {
                 </button>
                 <button
                   onClick={() => {
+                    if (savingClassRef.current) return;
                     setShowModal(false);
                     setEditingClasseId(null);
                   }}
@@ -631,6 +685,9 @@ export default function Classes() {
                 />
               </div>
 
+              <p className="mb-3 text-xs font-semibold text-slate-500">
+                {isArabic ? 'يظهر الأطفال النشطون غير المسجلين في قسم آخر فقط. لنقل طفل، أزله من قسمه أولاً.' : 'Seuls les enfants actifs sans autre classe sont proposés. Pour déplacer un enfant, retirez-le d’abord de sa classe actuelle.'}
+              </p>
               {/* Available children */}
               <div className="space-y-2 max-h-96 overflow-y-auto mb-4">
                 {paginatedAvailableChildren.length === 0 ? (
@@ -702,7 +759,7 @@ export default function Classes() {
               <div className="flex gap-2">
                 <button
                   onClick={handleBulkAddChildren}
-                  disabled={selectedChildrenToAdd.size === 0}
+                  disabled={selectedChildrenToAdd.size === 0 || savingAssignment}
                   className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-bold cursor-pointer transition"
                 >
                   +{isArabic ? ' إضافة' : ' Ajouter'} ({selectedChildrenToAdd.size})

@@ -1,8 +1,9 @@
 // Style d’authentification Rawdha+ : interface claire, repères bilingues et actions de distribution explicitement non actives tant que les stores ne sont pas publiés.
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { supabase } from '../supabase';
+import { buildLegalHref, LEGAL_CONFIG } from '../config/legal';
 import {
   AlertCircle,
   Building,
@@ -89,13 +90,14 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
     phone: 'Téléphone *',
     address: 'Adresse de la crèche *',
     confirmPassword: 'Confirmer le mot de passe *',
-    website: 'Site web',
-    message: 'Message',
+    website: 'Site web (facultatif)',
+    message: 'Message (facultatif)',
     passwordHint: '8 caractères minimum',
     repeatPassword: 'Répétez le mot de passe',
     addressPlaceholder: 'Adresse complète',
     needPlaceholder: 'Votre besoin',
-    requestNote: 'Votre mot de passe est géré de façon sécurisée par Supabase et n’est jamais envoyé à l’administrateur. Après acceptation, vous pourrez vous connecter immédiatement avec vos identifiants.',
+    requestNote: 'Essai gratuit de 15 jours sans engagement, puis 1 900 DA / mois sans frais cachés. Votre mot de passe est chiffré par Supabase et n’est jamais transmis à l’administrateur.',
+    consentError: 'Veuillez accepter les Conditions d’utilisation et la Politique de confidentialité pour envoyer votre demande.',
     requestButton: 'Envoyer ma demande',
     parentNote: 'L’espace parent sera ajouté séparément dans une prochaine version de Rawdha+.',
     storesHeading: 'L’application mobile arrive bientôt',
@@ -138,13 +140,14 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
     phone: 'رقم الهاتف *',
     address: 'عنوان الحضانة *',
     confirmPassword: 'تأكيد كلمة المرور *',
-    website: 'الموقع الإلكتروني',
-    message: 'رسالة',
+    website: 'الموقع الإلكتروني (اختياري)',
+    message: 'رسالة (اختياري)',
     passwordHint: '8 أحرف على الأقل',
     repeatPassword: 'أعيدي كتابة كلمة المرور',
     addressPlaceholder: 'العنوان الكامل',
     needPlaceholder: 'احتياجك',
-    requestNote: 'كلمة المرور تاعك محمية بشكل آمن عبر Supabase وما تتبعثش للمسؤول. بعد قبول الطلب، تقدري تدخلي مباشرة بمعلوماتك.',
+    requestNote: 'تجربة مجانية لمدة 15 يوماً دون التزام، ثم 1900 د.ج / شهر دون رسوم خفية. كلمة المرور محمية ومشفرة عبر Supabase ولا تُرسل للمسؤول.',
+    consentError: 'يرجى الموافقة على شروط الاستخدام وسياسة الخصوصية قبل إرسال الطلب.',
     requestButton: 'إرسال الطلب',
     parentNote: 'فضاء الأولياء راح نضيفوه بشكل منفصل في نسخة جاية من روضة+.',
     storesHeading: 'تطبيق الهاتف قريباً',
@@ -171,9 +174,132 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
   const [directorPasswordConfirmation, setDirectorPasswordConfirmation] = useState('');
   const [directorWebsite, setDirectorWebsite] = useState('');
   const [directorMessage, setDirectorMessage] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [loading, setLoading] = useState(false);
+  const busyRef = useRef(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  const [recoveryMode, setRecoveryMode] = useState<'none' | 'forgot' | 'update'>(() => {
+    if (typeof window === 'undefined') return 'none';
+    const hash = window.location.hash || '';
+    const search = window.location.search || '';
+    if (hash.includes('type=recovery') || new URLSearchParams(search).get('reset') === '1') {
+      return 'update';
+    }
+    return 'none';
+  });
+  const [resetEmail, setResetEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash || '';
+      const search = window.location.search || '';
+      if (hash.includes('type=recovery') || new URLSearchParams(search).get('reset') === '1') {
+        setRecoveryMode('update');
+      }
+    }
+    if (typeof supabase?.auth?.onAuthStateChange !== 'function') return;
+    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setError('');
+        setSuccess('');
+        setRecoveryMode('update');
+      }
+    });
+    return () => {
+      listener?.subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleRequestPasswordReset = async (event: FormEvent) => {
+    event.preventDefault();
+    if (busyRef.current) return;
+    const targetEmail = (resetEmail || email).trim().toLowerCase();
+    if (!targetEmail) {
+      setError(isFrench ? 'Veuillez saisir votre adresse e-mail professionnelle.' : 'يرجى إدخال بريدك الإلكتروني المهني.');
+      return;
+    }
+    busyRef.current = true;
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const redirectTo =
+        typeof window !== 'undefined' ? `${window.location.origin}/login/?reset=1` : undefined;
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(targetEmail, {
+        redirectTo,
+      });
+      if (resetErr && !resetErr.message.toLowerCase().includes('user not found')) {
+        setError(
+          formatAuthError(
+            resetErr.message,
+            isFrench
+              ? 'Impossible d’envoyer le lien de réinitialisation pour le moment.'
+              : 'تعذر إرسال رابط استعادة كلمة المرور حالياً.',
+            isFrench
+          )
+        );
+        return;
+      }
+      setSuccess(
+        isFrench
+          ? 'Si un compte Rawdha+ existe pour cette adresse, un lien sécurisé de réinitialisation vient de vous être envoyé par e-mail.'
+          : 'إذا كان هناك حساب مرتبط بهذا البريد الإلكتروني، فقد تم إرسال رابط آمن لإعادة تعيين كلمة المرور.'
+      );
+    } finally {
+      busyRef.current = false;
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateRecoveredPassword = async (event: FormEvent) => {
+    event.preventDefault();
+    if (busyRef.current) return;
+    if (newPassword.length < 8) {
+      setError(copy.passwordLengthError);
+      return;
+    }
+    if (newPassword !== newPasswordConfirm) {
+      setError(copy.passwordMismatchError);
+      return;
+    }
+    busyRef.current = true;
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword });
+      if (updateErr) {
+        setError(
+          formatAuthError(
+            updateErr.message,
+            isFrench
+              ? 'Le lien de réinitialisation a expiré ou est invalide. Demandez un nouveau lien.'
+              : 'انتهت صلاحية رابط الاستعادة. يرجى طلب رابط جديد.',
+            isFrench
+          )
+        );
+        return;
+      }
+      setNewPassword('');
+      setNewPasswordConfirm('');
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({}, '', '/login/');
+      }
+      setRecoveryMode('none');
+      setSuccess(
+        isFrench
+          ? 'Votre nouveau mot de passe est enregistré. Vous pouvez maintenant accéder à votre espace.'
+          : 'تم حفظ كلمة المرور الجديدة بنجاح. يمكنك الآن الدخول إلى فضائك.'
+      );
+    } finally {
+      busyRef.current = false;
+      setLoading(false);
+    }
+  };
 
   const resetRequestForm = () => {
     setDirectorNom('');
@@ -186,6 +312,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
     setDirectorPasswordConfirmation('');
     setDirectorWebsite('');
     setDirectorMessage('');
+    setAcceptedTerms(false);
   };
 
   const handleSubmitRequest = async (event: FormEvent) => {
@@ -207,6 +334,10 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
     }
     if (directorPassword !== directorPasswordConfirmation) {
       setError(copy.passwordMismatchError);
+      return;
+    }
+    if (!acceptedTerms) {
+      setError(copy.consentError);
       return;
     }
 
@@ -281,9 +412,12 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
 
   return (
     <div dir={isFrench ? 'ltr' : 'rtl'} className="min-h-[100dvh] w-full min-w-0 overflow-x-hidden bg-[#fcfdff] flex flex-col lg:flex-row font-sans">
+      <a href="#main-content" className="rawdha-skip-link">
+        {isFrench ? 'Aller au contenu principal' : 'الانتقال إلى المحتوى الرئيسي'}
+      </a>
       <div className={`absolute top-4 z-30 flex items-center gap-1 rounded-full bg-white/90 p-1 shadow-sm border border-slate-200 ${isFrench ? 'right-4' : 'left-4'}`}>
-        <button type="button" onClick={() => setLanguage('fr')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${isFrench ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-indigo-700'}`}>Français</button>
-        <button type="button" onClick={() => setLanguage('ar')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${!isFrench ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-indigo-700'}`}>العربية</button>
+        <button type="button" onClick={() => setLanguage('fr')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${isFrench ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:text-indigo-700'}`}>Français</button>
+        <button type="button" onClick={() => setLanguage('ar')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${!isFrench ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:text-indigo-700'}`}>العربية</button>
       </div>
 
       <aside className="hidden lg:flex lg:w-1/2 relative min-h-[390px] lg:min-h-[100dvh] overflow-hidden flex-col justify-between p-5 sm:p-8 lg:p-16 text-white select-none bg-[url('/login-nursery-hero-a.jpg')] bg-cover bg-center">
@@ -296,7 +430,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
         <div className="relative z-10 flex items-center gap-3">
           <img
             src="/rawdah-logo.png"
-            alt="Logo Rawdha+"
+            alt={isFrench ? 'Logo Rawdha+' : 'شعار روضة+'}
             className="h-14 w-14 rounded-2xl border border-white/35 shadow-lg"
           />
           <div>
@@ -329,7 +463,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
         </div>
       </aside>
 
-      <main className="lg:w-1/2 min-w-0 flex items-center justify-center bg-[#fcfdff] p-4 pt-24 sm:p-8 sm:pt-24 lg:p-16">
+      <main id="main-content" tabIndex={-1} className="lg:w-1/2 min-w-0 outline-none flex items-center justify-center bg-[#fcfdff] p-4 pt-24 sm:p-8 sm:pt-24 lg:p-16">
         <div className="w-full max-w-xl min-w-0 space-y-5 sm:space-y-7 animate-slide-up">
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-indigo-600 font-bold text-sm">
@@ -370,7 +504,97 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
             </a>
           </div>
 
-          {view === 'signin' ? (
+          {view === 'signin' && recoveryMode === 'forgot' ? (
+            <form onSubmit={handleRequestPasswordReset} className="space-y-5">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                  {copy.email}
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="email"
+                    value={resetEmail}
+                    onChange={(event) => setResetEmail(event.target.value)}
+                    className={iconInputClass}
+                    placeholder="direction@creche.dz"
+                    required
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                {isFrench
+                  ? 'Saisissez l’adresse e-mail de votre compte crèche pour recevoir un lien sécurisé de réinitialisation.'
+                  : 'أدخلي البريد الإلكتروني لحساب الحضانة لتلقي رابط آمن لتعيين كلمة مرور جديدة.'}
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2.5">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>{isFrench ? 'Envoyer le lien de réinitialisation' : 'إرسال رابط الاستعادة'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError('');
+                    setSuccess('');
+                    setRecoveryMode('none');
+                  }}
+                  className="py-3.5 px-4 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-xl font-bold text-sm transition cursor-pointer"
+                >
+                  {isFrench ? 'Retour' : 'رجوع'}
+                </button>
+              </div>
+            </form>
+          ) : view === 'signin' && recoveryMode === 'update' ? (
+            <form onSubmit={handleUpdateRecoveredPassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                  {isFrench ? 'Nouveau mot de passe *' : 'كلمة المرور الجديدة *'}
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="password"
+                    minLength={8}
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    className={iconInputClass}
+                    placeholder={copy.passwordHint}
+                    required
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                  {copy.confirmPassword}
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="password"
+                    minLength={8}
+                    value={newPasswordConfirm}
+                    onChange={(event) => setNewPasswordConfirm(event.target.value)}
+                    className={iconInputClass}
+                    placeholder={copy.repeatPassword}
+                    required
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+              >
+                <KeyRound className="w-4 h-4" />
+                <span>{isFrench ? 'Enregistrer mon nouveau mot de passe' : 'حفظ كلمة المرور الجديدة'}</span>
+              </button>
+            </form>
+          ) : view === 'signin' ? (
             <form onSubmit={handleLogin} className="space-y-5">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">{copy.email}</label>
@@ -380,7 +604,21 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">{copy.password}</label>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">{copy.password}</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResetEmail(email);
+                      setError('');
+                      setSuccess('');
+                      setRecoveryMode('forgot');
+                    }}
+                    className="min-h-0 text-xs font-bold text-indigo-700 hover:text-indigo-900 underline underline-offset-2 cursor-pointer"
+                  >
+                    {isFrench ? 'Mot de passe oublié ?' : 'نسيتِ كلمة المرور؟'}
+                  </button>
+                </div>
                 <div className="relative">
                   <Lock className="absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className={iconInputClass} placeholder="••••••••" required />
@@ -474,39 +712,98 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
               <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 leading-relaxed">
                 {copy.requestNote}
               </div>
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white p-3.5 text-xs leading-5 text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={acceptedTerms}
+                  onChange={(event) => setAcceptedTerms(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-indigo-600"
+                />
+                <span>
+                  {isFrench ? (
+                    <>
+                      J’accepte les{' '}
+                      <a href={buildLegalHref('cgu')} target="_blank" rel="noopener noreferrer" className="font-bold text-indigo-700 underline underline-offset-2">
+                        Conditions d’utilisation
+                      </a>{' '}
+                      et la{' '}
+                      <a href={buildLegalHref('confidentialite')} target="_blank" rel="noopener noreferrer" className="font-bold text-indigo-700 underline underline-offset-2">
+                        Politique de confidentialité
+                      </a>{' '}
+                      de Rawdha+. *
+                    </>
+                  ) : (
+                    <>
+                      أوافق على{' '}
+                      <a href={buildLegalHref('cgu')} target="_blank" rel="noopener noreferrer" className="font-bold text-indigo-700 underline underline-offset-2">
+                        شروط الاستخدام
+                      </a>{' '}
+                      و
+                      <a href={buildLegalHref('confidentialite')} target="_blank" rel="noopener noreferrer" className="font-bold text-indigo-700 underline underline-offset-2">
+                        سياسة الخصوصية
+                      </a>{' '}
+                      الخاصة بمنصة روضة+. *
+                    </>
+                  )}
+                </span>
+              </label>
               <button type="submit" disabled={loading} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-indigo-100 transition flex items-center justify-center gap-2 shadow-md disabled:opacity-50">
                 {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><Send className="w-5 h-5" /><span>{copy.requestButton}</span></>}
               </button>
             </form>
           )}
 
-          <p className="text-center text-xs text-slate-400 leading-relaxed">
+          <p className="text-center text-xs text-slate-500 leading-relaxed">
             {copy.parentNote}
           </p>
 
-          <div className="flex items-center justify-center gap-3 pt-1 text-xs font-semibold">
-            <a href="/confidentialite" className="text-indigo-600 underline underline-offset-2 hover:text-indigo-800">
-              {isFrench ? 'Politique de confidentialité' : 'سياسة الخصوصية'}
+          <nav
+            aria-label={isFrench ? 'Informations légales' : 'معلومات قانونية'}
+            className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 pt-1 text-xs font-semibold text-slate-600"
+          >
+            <a href={buildLegalHref('confidentialite')} className="text-indigo-700 underline underline-offset-2 hover:text-indigo-900">
+              {isFrench ? 'Confidentialité' : 'الخصوصية'}
             </a>
-          </div>
+            <span aria-hidden="true">·</span>
+            <a href={buildLegalHref('cgu')} className="text-indigo-700 underline underline-offset-2 hover:text-indigo-900">
+              {isFrench ? 'CGU' : 'الشروط'}
+            </a>
+            <span aria-hidden="true">·</span>
+            <a href={buildLegalHref('remboursement')} className="text-indigo-700 underline underline-offset-2 hover:text-indigo-900">
+              {isFrench ? 'Remboursement' : 'الاسترجاع'}
+            </a>
+            <span aria-hidden="true">·</span>
+            <a href={buildLegalHref('cookies')} className="text-indigo-700 underline underline-offset-2 hover:text-indigo-900">
+              {isFrench ? 'Cookies & mentions' : 'ملفات الارتباط'}
+            </a>
+            <span aria-hidden="true">·</span>
+            <a href={buildLegalHref('suppression')} className="text-indigo-700 underline underline-offset-2 hover:text-indigo-900">
+              {isFrench ? 'Suppression des données' : 'حذف البيانات'}
+            </a>
+          </nav>
+
+          <p className="text-center text-[11px] font-medium text-slate-500">
+            {isFrench ? `Rawdha+ (${LEGAL_CONFIG.countryFr}) · Support WhatsApp : ` : `روضة+ (${LEGAL_CONFIG.countryAr}) · واتساب الدعم: `}
+            <span dir="ltr" className="font-semibold text-slate-700">{LEGAL_CONFIG.whatsappDisplay}</span>
+          </p>
 
           <section className="pt-1" aria-labelledby="mobile-stores-title">
             <div className="mb-3 text-center">
               <h3 id="mobile-stores-title" className="text-xs font-bold text-slate-600">{copy.storesHeading}</h3>
-              <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{copy.storesDescription}</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-slate-500">{copy.storesDescription}</p>
             </div>
             <div className="grid grid-cols-2 gap-3" role="group" aria-label={copy.storesHeading}>
               <div aria-disabled="true" className="relative min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
                 <div className="pointer-events-none flex items-center gap-2.5 opacity-55 blur-[1px] select-none" aria-hidden="true">
                   <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white text-slate-700 shadow-sm"><Play className="h-4 w-4 fill-current" /></span>
-                  <span className="min-w-0"><span className="block text-[9px] font-medium text-slate-500">Disponible sur</span><span className="block truncate text-xs font-extrabold text-slate-700">{copy.googlePlay}</span></span>
+                  <span className="min-w-0"><span className="block text-[9px] font-medium text-slate-500">{isFrench ? 'Disponible sur' : 'متوفر على'}</span><span className="block truncate text-xs font-extrabold text-slate-700">{copy.googlePlay}</span></span>
                 </div>
                 <span className="absolute right-2 top-2 rounded-full bg-white/95 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-indigo-600 shadow-sm rtl:right-auto rtl:left-2">{copy.availableSoon}</span>
               </div>
               <div aria-disabled="true" className="relative min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
                 <div className="pointer-events-none flex items-center gap-2.5 opacity-55 blur-[1px] select-none" aria-hidden="true">
                   <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white text-slate-700 shadow-sm"><Apple className="h-4 w-4 fill-current" /></span>
-                  <span className="min-w-0"><span className="block text-[9px] font-medium text-slate-500">Télécharger dans l’</span><span className="block truncate text-xs font-extrabold text-slate-700">{copy.appStore}</span></span>
+                  <span className="min-w-0"><span className="block text-[9px] font-medium text-slate-500">{isFrench ? 'Télécharger dans l’' : 'حمّل من'}</span><span className="block truncate text-xs font-extrabold text-slate-700">{copy.appStore}</span></span>
                 </div>
                 <span className="absolute right-2 top-2 rounded-full bg-white/95 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-indigo-600 shadow-sm rtl:right-auto rtl:left-2">{copy.availableSoon}</span>
               </div>

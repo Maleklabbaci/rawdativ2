@@ -1,12 +1,14 @@
-import { useRef, useState } from 'react';
-import { Download, X, Printer } from 'lucide-react';
+import { formatPaymentMethodLabel, invoicePeriod, localizeInvoicePeriodText } from '../utils/financePeriod';
+import { formatCurrency } from '../utils/format';
+import { useEffect, useRef, useState } from 'react';
+import { X, Printer } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Paiement, Enfant, Parent } from '../types';
 
 interface FactureProps {
   paiement: Paiement;
-  enfant: Enfant;
+  enfant?: Enfant;
   onClose: () => void;
 }
 
@@ -29,12 +31,30 @@ type ReceiptTheme = {
   ink: string;
 };
 
+const resolveSafeLogoUrl = (raw?: string) => {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return '/rawdah-logo.png';
+  if (trimmed.startsWith('/') || trimmed.startsWith('https://') || /^data:image\/(png|jpeg|jpg|webp|svg\+xml);base64,/i.test(trimmed)) {
+    return trimmed;
+  }
+  return '/rawdah-logo.png';
+};
+
 export default function Facture({ paiement, enfant, onClose }: FactureProps) {
   const { language } = useLanguage();
   const { creche } = useAuth();
   const factureRef = useRef<HTMLDivElement>(null);
   const isArabic = language === 'ar';
+  const [printError, setPrintError] = useState(false);
   const [receiptStyle, setReceiptStyle] = useState<ReceiptStyle>('kids');
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
 
   const receiptThemes: Record<ReceiptStyle, ReceiptTheme> = {
     premium: {
@@ -88,16 +108,16 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
   };
   const theme = receiptThemes[receiptStyle];
   const receiptStyleOptions: Array<{ id: ReceiptStyle; name: string; color: string }> = [
-    { id: 'premium', name: 'Bleu nuit', color: '#1d2f5f' },
-    { id: 'kids', name: 'Jardin d’enfants', color: '#10a9b7' },
-    { id: 'pastel', name: 'Pastel doux', color: '#51ae8d' },
+    { id: 'premium', name: isArabic ? 'الأزرق الليلي' : 'Bleu nuit', color: '#1d2f5f' },
+    { id: 'kids', name: isArabic ? 'روضة الأطفال' : 'Jardin d’enfants', color: '#10a9b7' },
+    { id: 'pastel', name: isArabic ? 'ألوان هادئة' : 'Pastel doux', color: '#51ae8d' },
   ];
 
   const t = (key: string) => {
     const translations: Record<string, Record<string, string>> = {
       fr: {
-        invoice: 'REÇU DE PAIEMENT',
-        number: 'N° Reçu',
+        invoice: 'ÉTAT DE FACTURE (NON JUSTIFICATIF)',
+        number: 'Identifiant',
         date: 'Date',
         creche: 'Établissement',
         address: 'Adresse',
@@ -107,21 +127,21 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
         email: 'Email',
         description: 'Description',
         amount: 'Montant',
-        status: 'Statut',
-        month: 'Mois concerné',
-        totalAmount: 'Montant reçu',
+        status: 'Statut enregistré',
+        month: 'Période concernée',
+        totalAmount: 'Montant de la facture',
         signature: 'Signature & Tampon',
         download: 'Imprimer / PDF',
         print: 'Imprimer',
-        paid: 'Payé',
+        paid: 'Statut enregistré : Payé',
         pending: 'En attente',
         late: 'Retard',
-        paymentMethod: 'Mode de règlement',
-        monthlyFee: 'Règlement des frais de scolarité',
+        paymentMethod: 'Mode de règlement déclaré',
+        monthlyFee: 'Montant facturé',
       },
       ar: {
-        invoice: 'وصل دفع',
-        number: 'رقم الوصل',
+        invoice: 'بيان فاتورة (ليس إثبات دفع)',
+        number: 'المعرّف',
         date: 'التاريخ',
         creche: 'المؤسسة',
         address: 'العنوان',
@@ -131,17 +151,17 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
         email: 'البريد الإلكتروني',
         description: 'الوصف',
         amount: 'المبلغ',
-        status: 'الحالة',
-        month: 'الشهر المعني',
-        totalAmount: 'المبلغ المقبوض',
+        status: 'الحالة المسجلة',
+        month: 'الفترة المعنية',
+        totalAmount: 'مبلغ الفاتورة',
         signature: 'التوقيع والختم',
         download: 'طباعة / PDF',
         print: 'طباعة',
-        paid: 'مدفوع',
+        paid: 'الحالة المسجلة: مدفوع',
         pending: 'قيد الانتظار',
         late: 'متأخر',
-        paymentMethod: 'طريقة الدفع',
-        monthlyFee: 'تسديد رسوم التمدرس',
+        paymentMethod: 'طريقة الدفع المصرّح بها',
+        monthlyFee: 'المبلغ المفوتر',
       },
     };
     return translations[language]?.[key] || translations.fr[key] || key;
@@ -156,25 +176,36 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
   const getStatusLabel = () => {
     if (paiement?.statut === 'Payé') return t('paid');
     if (paiement?.statut === 'En attente') return t('pending');
-    return t('late');
+    if (paiement?.statut === 'Retard') return t('late');
+    return isArabic ? 'حالة غير معروفة' : 'Statut inconnu';
   };
 
   const parentInfo: Partial<Parent> = enfant?.parents?.[0] || {};
-  const invoiceNumber = `REC-${paiement?.id?.slice(0, 8).toUpperCase() || 'INCONNU'}`;
+  const childFullName = enfant
+    ? `${enfant.prenom || ''} ${enfant.nom || ''}`.trim() || (isArabic ? 'الطفل غير متاح' : 'Enfant non disponible')
+    : (isArabic ? 'الطفل غير متاح' : 'Enfant non disponible');
+  const parentFullName = `${parentInfo?.prenom || ''} ${parentInfo?.nom || ''}`.trim()
+    || (isArabic ? 'ولي غير مسجل' : 'Parent non renseigné');
+  const crecheAddress = creche?.adresse?.trim() || (isArabic ? 'العنوان غير محدد' : 'Adresse non renseignée');
+  const logoSrc = resolveSafeLogoUrl(creche?.logoUrl);
+  const formattedAmount = typeof paiement?.montant === 'number' && Number.isFinite(paiement.montant)
+    ? formatCurrency(paiement.montant)
+    : '—';
+  const periodLabel = localizeInvoicePeriodText(invoicePeriod(paiement), isArabic);
+  const methodLabel = formatPaymentMethodLabel(
+    (paiement as Paiement & { moyenPaiement?: string })?.moyenPaiement,
+    isArabic
+  );
+  const dueDateLabel = (paiement as Paiement & { dateEcheance?: string })?.dateEcheance || (isArabic ? 'غير محدد' : 'Non précisée');
+  const invoiceNumber = paiement?.id || '—';
   const invoiceDate = new Date().toLocaleDateString(
     language === 'ar' ? 'ar-DZ' : 'fr-FR'
   );
+  const nonReceiptDisclaimer = isArabic
+    ? 'تنبيه: هذا البيان يعرض البيانات المسجلة في التطبيق ولا يُعد وصل قبض أو إثبات دفع محاسبي.'
+    : 'Note importante : cet état reflète les données déclarées dans l’application et ne constitue ni un reçu d’encaissement ni un justificatif comptable.';
 
-  // ====================== FONCTIONS PDF & IMPRESSION ======================
-  // ✅ FIX: L'ancienne version copiait le HTML on-screen (classes Tailwind) dans une
-  // fenêtre à part et tentait de charger Tailwind via un CDN externe EN DIRECT, puis
-  // lançait l'impression 600ms après. Le CDN met souvent plus longtemps que ça à
-  // télécharger + recompiler les styles (surtout sur connexion lente), donc
-  // l'impression partait avant que le style soit appliqué -> facture "moche" et brute.
-  //
-  // Ici, le HTML d'impression est généré à la main avec du CSS intégré en dur.
-  // Aucune dépendance réseau, aucun timing hasardeux : le rendu est garanti identique
-  // à chaque fois, en français comme en arabe (RTL).
+  const escapeHtml = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
   const buildInvoiceHTML = () => {
     const statusColors: Record<string, { bg: string; text: string }> = {
       'Payé': { bg: '#dcfce7', text: '#16a34a' },
@@ -191,13 +222,12 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
 <html dir="${dir}" lang="${isArabic ? 'ar' : 'fr'}">
 <head>
 <meta charset="UTF-8">
-<title>${t('invoice')} - ${invoiceNumber}</title>
+<title>${escapeHtml(t('invoice'))} - ${escapeHtml(invoiceNumber)}</title>
 <style>
   :root { ${cssVars} }
-  @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Inter:wght@400;600;700;900&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: ${isArabic ? "'Amiri', Arial, sans-serif" : "'Inter', Arial, sans-serif"};
+    font-family: ${isArabic ? "'Tahoma', Arial, sans-serif" : "Arial, sans-serif"};
     background: var(--page-bg);
     padding: 8px;
     color: var(--ink);
@@ -215,30 +245,21 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
     page-break-inside: avoid;
     break-inside: avoid;
   }
-  .header { text-align: center; padding: 10px 14px 12px; margin-bottom: 14px; border: 1px solid #dbeafe; border-bottom: 3px solid #4f46e5; border-radius: 14px; background: linear-gradient(135deg, #eff6ff 0%, #f5f3ff 100%); }
-  .logo-circle { width: 46px; height: 46px; background: #e0e7ff; border-radius: 999px; display: flex; align-items: center; justify-content: center; margin: 0 auto 6px auto; font-size: 22px; overflow: hidden; }
+  .logo-circle { width: 46px; height: 46px; background: #ffffff; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; overflow: hidden; flex-shrink: 0; }
   .logo-circle img { width: 100%; height: 100%; object-fit: contain; padding: 5px; }
-  .title { font-size: 23px; font-weight: 900; letter-spacing: 0.04em; color: #0f172a; margin-bottom: 2px; }
-  .subtitle { font-size: 11px; color: #64748b; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 12px; }
-  .label { font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 5px; letter-spacing: 0.03em; }
-  .value-strong { font-size: 14px; font-weight: 700; color: #0f172a; }
-  .value-muted { font-size: 11px; color: #475569; margin-top: 2px; }
-  .row-between { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 3px; }
+  .row-between { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; margin-bottom: 3px; }
   .row-between span:first-child { color: #475569; }
   .row-between span:last-child { font-weight: 600; color: #0f172a; }
-  .info-box { background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%); border: 1px solid #dbeafe; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 12px; overflow: hidden; border-radius: 9px; }
-  thead tr { background: #4f46e5; color: #ffffff; }
+  thead tr { background: var(--primary); color: #ffffff; }
   th { padding: 8px 12px; font-size: 11px; font-weight: 700; text-align: ${align1}; }
   th:last-child { text-align: ${align2}; }
   td { padding: 9px 12px; border-bottom: 1px solid #e2e8f0; font-size: 12px; }
   td:last-child { text-align: ${align2}; }
-  .amount-cell { font-weight: 800; font-size: 14px; color: #4f46e5; }
-  .total-box { display: flex; justify-content: space-between; align-items: center; background: #eef2ff; border: 2px solid #c7d2fe; border-radius: 10px; padding: 9px 12px; margin-bottom: 6px; }
-  .total-label { font-weight: 800; font-size: 12px; color: #0f172a; }
-  .total-value { font-size: 20px; font-weight: 900; color: #4f46e5; }
-  .status-badge { padding: 7px; border-radius: 8px; font-size: 11px; font-weight: 800; text-align: center; text-transform: uppercase; background: ${status.bg}; color: ${status.text}; }
+  .amount-cell { font-weight: 800; font-size: 14px; color: var(--primary); }
+  .status-badge { padding: 7px; border-radius: 8px; font-size: 11px; font-weight: 800; text-align: center; text-transform: uppercase; background: ${status.bg}; color: ${status.text}; margin-top: 8px; }
+  .disclaimer { padding: 8px 12px; border-radius: 10px; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; font-size: 10px; font-weight: 700; margin-bottom: 12px; }
   .sign-block { border-top: 1px solid #cbd5e1; padding-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 12px; page-break-inside: avoid; break-inside: avoid; }
   .sign-label { font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 18px; }
   .sign-line { border-bottom: 1px solid #94a3b8; height: 1px; margin-bottom: 5px; }
@@ -250,14 +271,14 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
     .card { box-shadow: none; max-width: none; height: 100%; overflow: hidden; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   }
-  .brand-row { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 12px 16px; margin-bottom: 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--header-bg); }
+  .brand-row { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 12px 16px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--header-bg); }
   .brand-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
   .brand-copy { min-width: 0; }
   .brand-kicker { font-size: 9px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: var(--secondary); }
   .brand-name { font-size: 18px; font-weight: 900; color: var(--header-text); margin-top: 2px; }
   .brand-address { font-size: 10px; color: var(--header-muted); margin-top: 2px; }
   .meta-card { min-width: 210px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,.92); box-shadow: 0 2px 8px rgba(79,70,229,.08); }
-  .meta-title { font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .12em; color: var(--primary); margin-bottom: 7px; }
+  .meta-title { font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; color: var(--primary); margin-bottom: 7px; }
   .compact-grid { gap: 14px; margin-bottom: 12px; }
   .section-card { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: var(--panel-bg); }
   .payment-card { border-color: var(--secondary); background: var(--payment-bg); }
@@ -266,11 +287,11 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
   .detail-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; border-bottom: 1px solid var(--border); padding: 4px 0; font-size: 10px; }
   .detail-row:last-child { border-bottom: 0; }
   .detail-row span { color: #64748b; }
-  .detail-row strong { color: var(--ink); text-align: right; }
+  .detail-row strong { color: var(--ink); text-align: ${align2}; }
   .amount-strip { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 10px 14px; margin: 12px 0; border-radius: 12px; background: var(--amount-bg); border: 1px solid var(--border); }
   .thanks { font-size: 11px; font-weight: 700; color: #475569; }
-  .received-label { font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: .07em; }
-  .received-value { font-size: 18px; font-weight: 900; color: var(--primary); margin-top: 2px; }
+  .invoice-total-label { font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: .07em; }
+  .invoice-total-value { font-size: 18px; font-weight: 900; color: var(--primary); margin-top: 2px; }
   .signature-card { padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: rgba(255,255,255,.88); }
   .signature-card .sign-label { margin-bottom: 16px; }
   @page { size: A4 landscape; margin: 5mm; }
@@ -280,57 +301,61 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
   <div class="card">
     <div class="brand-row">
       <div class="brand-left">
-        <div class="logo-circle">${creche?.logoUrl ? `<img src="${creche.logoUrl}" alt="Logo" />` : '<img src="/favicon.png" alt="Logo Rawdha+" />'}</div>
+        <div class="logo-circle"><img src="${escapeHtml(logoSrc)}" alt="Logo Rawdha+" /></div>
         <div class="brand-copy">
-          <div class="brand-kicker">Rawdha+ • Crèche & maternelle</div>
-          <div class="brand-name">${creche?.nom || 'Rawdha+'}</div>
-          <div class="brand-address">${creche?.adresse || 'Adresse de l’établissement'}</div>
+          <div class="brand-kicker">Rawdha+ • ${isArabic ? 'حضانة وروضة' : 'Crèche & maternelle'}</div>
+          <div class="brand-name">${escapeHtml(creche?.nom || 'Rawdha+')}</div>
+          <div class="brand-address">${escapeHtml(crecheAddress)}</div>
         </div>
       </div>
       <div class="meta-card">
-        <div class="meta-title">${isArabic ? 'إيصال الدفع' : 'Reçu de paiement'}</div>
-        <div class="row-between"><span>${t('number')}:</span><span>${invoiceNumber}</span></div>
-        <div class="row-between"><span>${t('date')}:</span><span>${invoiceDate}</span></div>
+        <div class="meta-title">${isArabic ? 'بيان فاتورة — ليس إثبات دفع' : 'État de facture — pas un justificatif de paiement'}</div>
+        <div class="row-between"><span>${escapeHtml(t('number'))}:</span><span>${escapeHtml(invoiceNumber)}</span></div>
+        <div class="row-between"><span>${isArabic ? 'تاريخ الطباعة' : 'Date d’impression'}:</span><span>${escapeHtml(invoiceDate)}</span></div>
       </div>
     </div>
+
+    <div class="disclaimer">${escapeHtml(nonReceiptDisclaimer)}</div>
 
     <div class="grid2 compact-grid">
       <div class="section-card">
         <div class="section-title">${isArabic ? 'معلومات الطفل' : 'Informations de l’enfant'}</div>
-        <div class="detail-row"><span>Nom et prénom</span><strong>${enfant?.prenom || ''} ${enfant?.nom || ''}</strong></div>
-        <div class="detail-row"><span>Parent / tuteur</span><strong>${parentInfo?.prenom || ''} ${parentInfo?.nom || ''}</strong></div>
-        <div class="detail-row"><span>Date de naissance</span><strong>${enfant?.dateNaissance || '—'}</strong></div>
+        <div class="detail-row"><span>${isArabic ? 'الاسم واللقب' : 'Nom et prénom'}</span><strong>${escapeHtml(childFullName)}</strong></div>
+        <div class="detail-row"><span>${isArabic ? 'الولي / الوصي' : 'Parent / tuteur'}</span><strong>${escapeHtml(parentFullName)}</strong></div>
+        <div class="detail-row"><span>${isArabic ? 'تاريخ الميلاد' : 'Date de naissance'}</span><strong>${escapeHtml(enfant?.dateNaissance || '—')}</strong></div>
       </div>
       <div class="section-card payment-card">
-        <div class="section-title">${isArabic ? 'تفاصيل الدفع' : 'Détails du règlement'}</div>
-        <div class="detail-row"><span>${t('paymentMethod')}</span><strong>${paiement?.moyenPaiement || 'Espèces'}</strong></div>
-        <div class="detail-row"><span>${t('month')}</span><strong>${paiement?.moisConcerne || '—'}</strong></div>
-        <div class="detail-row"><span>${isArabic ? 'الحالة' : 'Statut'}</span><strong>${getStatusLabel()}</strong></div>
+        <div class="section-title">${isArabic ? 'تفاصيل الفاتورة' : 'Détails du règlement'}</div>
+        <div class="detail-row"><span>${escapeHtml(t('paymentMethod'))}</span><strong>${escapeHtml(methodLabel)}</strong></div>
+        <div class="detail-row"><span>${escapeHtml(t('month'))}</span><strong>${escapeHtml(periodLabel)}</strong></div>
+        <div class="detail-row"><span>${isArabic ? 'تاريخ الاستحقاق' : 'Échéance'}</span><strong>${escapeHtml(dueDateLabel)}</strong></div>
+        ${paiement.periodeCle && paiement.moisConcerne !== invoicePeriod(paiement) ? `<div class="detail-row"><span>${isArabic ? 'النص الأصلي' : 'Libellé original'}</span><strong>${escapeHtml(paiement.moisConcerne)}</strong></div>` : ''}
+        <div class="status-badge">${escapeHtml(getStatusLabel())}</div>
       </div>
     </div>
 
     <table>
       <thead>
         <tr>
-          <th>${t('description')}</th>
-          <th>${t('month')}</th>
-          <th>${t('amount')}</th>
+          <th>${escapeHtml(t('description'))}</th>
+          <th>${escapeHtml(t('month'))}</th>
+          <th>${escapeHtml(t('amount'))}</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td style="font-weight:600;">${t('monthlyFee')}</td>
-          <td style="color:#475569;">${paiement?.moisConcerne || ''}</td>
-          <td class="amount-cell">${paiement?.montant?.toLocaleString() || '0'} DA</td>
+          <td style="font-weight:600;">${escapeHtml(t('monthlyFee'))}</td>
+          <td style="color:#475569;">${escapeHtml(periodLabel)}</td>
+          <td class="amount-cell">${escapeHtml(formattedAmount)}</td>
         </tr>
       </tbody>
     </table>
 
     <div class="amount-strip">
-      <span class="thanks">Merci pour votre confiance</span>
-      <div style="text-align:${isArabic ? 'left' : 'right'};">
-        <div class="received-label">${isArabic ? 'المبلغ المستلم' : 'Montant reçu'}</div>
-        <div class="received-value">${paiement?.montant?.toLocaleString() || '0'} DA</div>
+      <span class="thanks">${isArabic ? 'شكراً لثقتكم' : 'Merci pour votre confiance'}</span>
+      <div style="text-align:${align2};">
+        <div class="invoice-total-label">${isArabic ? 'مبلغ الفاتورة' : 'Montant de la facture'}</div>
+        <div class="invoice-total-value">${escapeHtml(formattedAmount)}</div>
       </div>
     </div>
 
@@ -338,50 +363,57 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
       <div class="signature-card">
         <div class="sign-label">${isArabic ? 'ختم وتوقيع الحضانة' : 'Cachet et signature de la crèche'}</div>
         <div class="sign-line"></div>
-        <div class="sign-name">${creche?.nom || ''}</div>
+        <div class="sign-name">${escapeHtml(creche?.nom || '')}</div>
       </div>
       <div class="signature-card">
         <div class="sign-label">${isArabic ? 'توقيع الولي' : 'Signature du parent'}</div>
         <div class="sign-line"></div>
-        <div class="sign-name">${parentInfo?.prenom || ''} ${parentInfo?.nom || ''}</div>
+        <div class="sign-name">${escapeHtml(parentFullName)}</div>
       </div>
     </div>
 
-    <div class="footer">© ${new Date().getFullYear()} RAWDHA+ - Plateforme de gestion de crèche</div>
+    <div class="footer">© ${new Date().getFullYear()} RAWDHA+ — ${isArabic ? 'منصة تسيير الروضة' : 'Plateforme de gestion de crèche'}</div>
   </div>
 </body>
 </html>`;
   };
 
-  const openPrintWindow = () => {
+  const handlePrint = () => {
+    setPrintError(false);
     const printWindow = window.open('', '_blank', 'height=900,width=800');
-    if (!printWindow) return;
-
+    if (!printWindow) { setPrintError(true); return; }
+    let printed = false;
+    const printOnce = () => {
+      if (printed || printWindow.closed) return;
+      printed = true;
+      printWindow.focus();
+      printWindow.print();
+    };
+    printWindow.onload = () => window.setTimeout(printOnce, 250);
     printWindow.document.write(buildInvoiceHTML());
     printWindow.document.close();
-
-    // On attend que la police Google Fonts ait fini de charger avant d'imprimer,
-    // pour être sûr que le rendu (et donc le PDF/impression) soit propre du premier coup.
-    printWindow.onload = () => {
-      setTimeout(() => {
-        printWindow.focus();
-        printWindow.print();
-      }, 250);
-    };
+    window.setTimeout(printOnce, 1200);
   };
 
-  const handleDownloadPDF = () => openPrintWindow();
-  const handlePrint = () => openPrintWindow();
-
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" dir={isArabic ? 'rtl' : 'ltr'}>
-      <div className="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+    <div
+      className="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-slate-950/70 p-2 backdrop-blur-sm sm:items-center sm:p-4"
+      dir={isArabic ? 'rtl' : 'ltr'}
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('invoice')}
+      onClick={onClose}
+    >
+      <div
+        className="mobile-safe-modal my-auto max-h-[calc(100dvh-1rem)] w-full max-w-6xl overflow-y-auto rounded-2xl bg-white shadow-2xl sm:max-h-[90vh]"
+        onClick={event => event.stopPropagation()}
+      >
         {/* Header */}
-        <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-slate-200 bg-white px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900">{t('invoice')}</h2>
+        <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-slate-200 bg-white px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold text-slate-900 sm:text-2xl">{t('invoice')}</h2>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="mr-1 text-xs font-bold uppercase tracking-wide text-slate-500">Choisir le style :</span>
+              <span className="me-1 text-xs font-bold uppercase tracking-wide text-slate-500">{isArabic ? 'اختيار التصميم:' : 'Choisir le style :'}</span>
               {receiptStyleOptions.map((option) => (
                 <button
                   key={option.id}
@@ -395,111 +427,110 @@ export default function Facture({ paiement, enfant, onClose }: FactureProps) {
               ))}
             </div>
           </div>
-          <div className="flex shrink-0 gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end sm:gap-3">
             <button
+              type="button"
               onClick={handlePrint}
-              className="flex items-center gap-2 rounded-lg bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-600 transition hover:bg-blue-100 cursor-pointer"
+              className="flex items-center gap-2 rounded-xl bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-700 transition hover:bg-indigo-100 cursor-pointer"
             >
               <Printer className="w-4 h-4" />
-              {t('print')}
-            </button>
-            <button
-              onClick={handleDownloadPDF}
-              className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 cursor-pointer"
-            >
-              <Download className="w-4 h-4" />
               {t('download')}
             </button>
             <button
+              type="button"
               onClick={onClose}
-              className="rounded-lg p-2 transition hover:bg-slate-100 cursor-pointer"
+              aria-label={isArabic ? 'إغلاق' : 'Fermer'}
+              className="rounded-xl p-2 transition hover:bg-slate-100 cursor-pointer"
             >
               <X className="h-5 w-5 text-slate-500" />
             </button>
           </div>
         </div>
 
-        {/* Aperçu du reçu personnalisé — style crèche, synchronisé avec l’impression */}
-        <div ref={factureRef} className="p-4 sm:p-6 print:p-0" style={{ fontFamily: 'Arial, sans-serif', background: theme.pageBackground }}>
+        {printError && <p role="alert" className="mx-4 mt-3 rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-900">{isArabic ? 'تعذر فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة ثم حاول مجدداً.' : 'Impossible d’ouvrir l’impression. Autorisez les fenêtres contextuelles puis réessayez.'}</p>}
+        <div ref={factureRef} className="p-3 sm:p-6 print:p-0" style={{ fontFamily: 'Arial, sans-serif', background: theme.pageBackground }}>
           <div className="mx-auto max-w-5xl overflow-hidden rounded-2xl border shadow-sm" style={{ background: theme.paper, borderColor: theme.border }}>
-            <div className="px-5 py-5 sm:px-8" style={{ background: theme.headerBackground }}>
-
+            <div className="px-4 py-5 sm:px-8" style={{ background: theme.headerBackground }}>
               <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-4">
+                <div className="flex min-w-0 items-center gap-4">
                   <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white p-2 shadow-sm ring-1 ring-sky-100">
-                    {creche?.logoUrl ? (
-                      <img src={creche.logoUrl} alt="Logo" className="h-full w-full object-contain" />
-                    ) : (
-                      <img src="/favicon.png" alt="Logo Rawdha+" className="h-full w-full object-contain" />
-                    )}
+                    <img src={logoSrc} alt="Logo Rawdha+" className="h-full w-full object-contain" />
                   </div>
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: theme.secondary }}>Rawdha+ • Crèche & maternelle</p>
-                    <h1 className="mt-1 text-2xl font-black sm:text-3xl" style={{ color: theme.headerText }}>{creche?.nom || 'Rawdha+'}</h1>
-                    <p className="mt-1 text-sm" style={{ color: theme.headerMuted }}>{creche?.adresse || 'Adresse de l’établissement'}</p>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: theme.secondary }}>Rawdha+ • {isArabic ? 'حضانة وروضة' : 'Crèche & maternelle'}</p>
+                    <h1 className="mt-1 break-words text-xl font-black sm:text-3xl" style={{ color: theme.headerText }}>{creche?.nom || 'Rawdha+'}</h1>
+                    <p className="mt-1 break-words text-sm" style={{ color: theme.headerMuted }}>{crecheAddress}</p>
                   </div>
                 </div>
-                <div className="rounded-2xl bg-white/90 px-5 py-4 text-left shadow-sm sm:min-w-[245px]" style={{ boxShadow: `0 0 0 1px ${theme.border}` }}>
-                  <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: theme.primary }}>{isArabic ? 'إيصال الدفع' : 'Reçu de paiement'}</p>
-                  <p className="mt-2 text-sm font-bold text-slate-900">{invoiceNumber}</p>
-                  <p className="mt-1 text-xs text-slate-500">{invoiceDate}</p>
+                <div className="rounded-2xl bg-white/90 px-4 py-4 text-start shadow-sm sm:min-w-[245px] sm:px-5" style={{ boxShadow: `0 0 0 1px ${theme.border}` }}>
+                  <p className="text-xs font-black uppercase tracking-[0.14em]" style={{ color: theme.primary }}>{isArabic ? 'بيان فاتورة — ليس إثبات دفع' : 'État de facture — pas un justificatif de paiement'}</p>
+                  <p className="mt-2 break-all text-sm font-bold text-slate-900">{invoiceNumber}</p>
+                  <p className="mt-1 text-xs text-slate-500">{isArabic ? 'تاريخ الطباعة: ' : 'Date d’impression : '}{invoiceDate}</p>
                 </div>
               </div>
             </div>
 
-            <div className="space-y-5 p-5 sm:p-8">
+            <div className="space-y-5 p-4 sm:p-8">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold leading-5 text-amber-900">
+                {nonReceiptDisclaimer}
+              </div>
+
               <div className="grid gap-5 md:grid-cols-2">
-                <div className="rounded-2xl border p-5" style={{ borderColor: theme.border, background: theme.panelBackground }}>
+                <div className="rounded-2xl border p-4 sm:p-5" style={{ borderColor: theme.border, background: theme.panelBackground }}>
                   <div className="mb-4 flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-lg shadow-sm">🧒</span>
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-lg shadow-sm" aria-hidden="true">🧒</span>
                     <h3 className="text-sm font-black uppercase tracking-wide" style={{ color: theme.primary }}>{isArabic ? 'معلومات الطفل' : 'Informations de l’enfant'}</h3>
                   </div>
                   <div className="space-y-2 text-sm">
-                    <div className="flex justify-between gap-3 border-b border-sky-100 pb-2"><span className="text-slate-500">Nom et prénom</span><strong className="text-right text-slate-900">{enfant?.prenom} {enfant?.nom}</strong></div>
-                    <div className="flex justify-between gap-3 border-b border-sky-100 pb-2"><span className="text-slate-500">Parent / tuteur</span><strong className="text-right text-slate-900">{parentInfo?.prenom} {parentInfo?.nom}</strong></div>
-                    <div className="flex justify-between gap-3"><span className="text-slate-500">Date de naissance</span><strong className="text-right text-slate-900">{enfant?.dateNaissance || '—'}</strong></div>
+                    <div className="flex justify-between gap-3 border-b border-sky-100 pb-2"><span className="text-slate-500">{isArabic ? 'الاسم واللقب' : 'Nom et prénom'}</span><strong className="break-words text-end text-slate-900">{childFullName}</strong></div>
+                    <div className="flex justify-between gap-3 border-b border-sky-100 pb-2"><span className="text-slate-500">{isArabic ? 'الولي / الوصي' : 'Parent / tuteur'}</span><strong className="break-words text-end text-slate-900">{parentFullName}</strong></div>
+                    <div className="flex justify-between gap-3"><span className="text-slate-500">{isArabic ? 'تاريخ الميلاد' : 'Date de naissance'}</span><strong className="text-end text-slate-900">{enfant?.dateNaissance || '—'}</strong></div>
                   </div>
                 </div>
 
-                <div className="rounded-2xl border p-5" style={{ borderColor: theme.secondary, background: theme.paymentBackground }}>
+                <div className="rounded-2xl border p-4 sm:p-5" style={{ borderColor: theme.secondary, background: theme.paymentBackground }}>
                   <div className="mb-4 flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-lg shadow-sm">💳</span>
-                    <h3 className="text-sm font-black uppercase tracking-wide" style={{ color: theme.secondary }}>{isArabic ? 'تفاصيل الدفع' : 'Détails du règlement'}</h3>
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-lg shadow-sm" aria-hidden="true">💳</span>
+                    <h3 className="text-sm font-black uppercase tracking-wide" style={{ color: theme.secondary }}>{isArabic ? 'تفاصيل الفاتورة' : 'Détails du règlement'}</h3>
                   </div>
-                  <div className="flex items-end justify-between gap-4">
-                    <div>
+                  <div className="flex flex-wrap items-end justify-between gap-4">
+                    <div className="min-w-0">
                       <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{t('paymentMethod')}</p>
-                      <p className="mt-1 font-bold text-slate-900">{paiement?.moyenPaiement || 'Espèces'}</p>
+                      <p className="mt-1 font-bold text-slate-900">{methodLabel}</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">{isArabic ? 'الاستحقاق: ' : 'Échéance : '}{dueDateLabel}</p>
                     </div>
-                    <div className="text-right">
+                    <div className="text-end">
                       <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{t('totalAmount')}</p>
-                      <p className="mt-1 text-3xl font-black" style={{ color: theme.primary }}>{paiement?.montant?.toLocaleString() || '0'} <span className="text-base">DA</span></p>
+                      <p className="mt-1 text-2xl font-black sm:text-3xl" style={{ color: theme.primary }}>{formattedAmount}</p>
                     </div>
                   </div>
+                  {paiement.periodeCle && paiement.moisConcerne !== invoicePeriod(paiement) && <p className="mt-3 break-words text-xs text-slate-600">{isArabic ? 'النص الأصلي' : 'Libellé original'} : {paiement.moisConcerne}</p>}
                   <div className={`mt-4 rounded-xl px-4 py-2 text-center text-xs font-black uppercase tracking-widest ${getStatusColor()}`}>{getStatusLabel()}</div>
                 </div>
               </div>
 
               <div className="overflow-hidden rounded-2xl border" style={{ borderColor: theme.border }}>
-                <div className="grid grid-cols-[1fr_0.7fr_0.7fr] px-4 py-3 text-xs font-black uppercase tracking-wide text-white sm:px-5" style={{ background: `linear-gradient(90deg, ${theme.primary}, ${theme.secondary})` }}>
-                  <span>{t('description')}</span><span>{t('month')}</span><span className="text-right">{t('amount')}</span>
+                <div className="hidden grid-cols-[1fr_0.7fr_0.7fr] px-4 py-3 text-xs font-black uppercase tracking-wide text-white sm:grid sm:px-5" style={{ background: `linear-gradient(90deg, ${theme.primary}, ${theme.secondary})` }}>
+                  <span>{t('description')}</span><span>{t('month')}</span><span className="text-end">{t('amount')}</span>
                 </div>
-                <div className="grid grid-cols-[1fr_0.7fr_0.7fr] items-center px-4 py-4 text-sm sm:px-5">
-                  <strong className="text-slate-900">{t('monthlyFee')}</strong><span className="text-slate-600">{paiement?.moisConcerne || '—'}</span>                  <strong className="text-right" style={{ color: theme.primary }}>{paiement?.montant?.toLocaleString() || '0'} DA</strong>
+                <div className="grid grid-cols-1 gap-2 px-4 py-4 text-sm sm:grid-cols-[1fr_0.7fr_0.7fr] sm:items-center sm:px-5">
+                  <strong className="text-slate-900">{t('monthlyFee')}</strong>
+                  <span className="text-slate-600">{periodLabel}</span>
+                  <strong className="sm:text-end" style={{ color: theme.primary }}>{formattedAmount}</strong>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between gap-5 rounded-2xl p-4 sm:px-6" style={{ background: theme.amountBackground, boxShadow: `0 0 0 1px ${theme.border}` }}>
-                <p className="text-sm font-semibold text-slate-600">Merci pour votre confiance</p>
-                <div className="text-right"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Montant reçu</p><p className="text-2xl font-black" style={{ color: theme.primary }}>{paiement?.montant?.toLocaleString() || '0'} DA</p></div>
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl p-4 sm:px-6" style={{ background: theme.amountBackground, boxShadow: `0 0 0 1px ${theme.border}` }}>
+                <p className="text-sm font-semibold text-slate-600">{isArabic ? 'شكراً لثقتكم' : 'Merci pour votre confiance'}</p>
+                <div className="text-end"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">{isArabic ? 'مبلغ الفاتورة' : 'Montant de la facture'}</p><p className="text-2xl font-black" style={{ color: theme.primary }}>{formattedAmount}</p></div>
               </div>
 
               <div className="grid gap-5 border-t border-dashed border-slate-300 pt-5 md:grid-cols-2">
                 <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs font-black uppercase tracking-wide text-slate-500">{isArabic ? 'ختم وتوقيع الحضانة' : 'Cachet et signature de la crèche'}</p><div className="mt-10 border-b border-slate-400"></div><p className="mt-2 text-xs font-semibold text-slate-500">{creche?.nom}</p></div>
-                <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs font-black uppercase tracking-wide text-slate-500">{isArabic ? 'توقيع الولي' : 'Signature du parent'}</p><div className="mt-10 border-b border-slate-400"></div><p className="mt-2 text-xs font-semibold text-slate-500">{parentInfo?.prenom} {parentInfo?.nom}</p></div>
+                <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs font-black uppercase tracking-wide text-slate-500">{isArabic ? 'توقيع الولي' : 'Signature du parent'}</p><div className="mt-10 border-b border-slate-400"></div><p className="mt-2 break-words text-xs font-semibold text-slate-500">{parentFullName}</p></div>
               </div>
 
-              <p className="text-center text-xs" style={{ color: theme.headerMuted }}>© {new Date().getFullYear()} RAWDHA+ — Plateforme de gestion de crèche</p>
+              <p className="text-center text-xs" style={{ color: theme.headerMuted }}>© {new Date().getFullYear()} RAWDHA+ — {isArabic ? 'منصة تسيير الروضة' : 'Plateforme de gestion de crèche'}</p>
             </div>
           </div>
         </div>

@@ -99,10 +99,38 @@ export default function HelpCenterModal({ isOpen, onClose, currentPage, language
       fr: ['Réseau professionnel', 'La communauté privée des crèches', 'Publiez des activités, du matériel, des offres de recrutement et des partenariats entre crèches vérifiées. Les parents ne peuvent pas accéder à cet espace.'],
       ar: ['الشبكة المهنية', 'مجتمع خاص بالروضات', 'انشر الأنشطة والمعدات وفرص التوظيف والشراكات بين الروضات الموثوقة. لا يمكن للأولياء الدخول إلى هذا الفضاء.'],
     },
+    admissions: {
+      fr: ['Admissions', 'Demandes de pré-inscription', 'Partagez votre lien public d’admission, suivez chaque dossier par statut et convertissez les demandes acceptées en fiches enfants.'],
+      ar: ['طلبات التسجيل', 'متابعة التسجيل الأولي', 'شارك رابط التسجيل العام، وتابع كل ملف حسب حالته، وحوّل الطلبات المقبولة إلى بطاقات أطفال.'],
+    },
+    achats: {
+      fr: ['Achats & charges', 'Suivre les dépenses', 'Enregistrez les achats et charges par catégorie, filtrez par période et exportez la liste pour votre suivi financier.'],
+      ar: ['المشتريات والمصاريف', 'متابعة النفقات', 'سجّل المشتريات والمصاريف حسب الفئة، وصفِّ حسب الفترة، وصدّر القائمة للمتابعة المالية.'],
+    },
+    communication: {
+      fr: ['Messagerie & support', 'Échanger avec Rawdha+', 'Écrivez à l’équipe Rawdha+, envoyez un signalement suivi ou partagez votre avis sur la plateforme.'],
+      ar: ['المراسلة والدعم', 'التواصل مع Rawdha+', 'راسل فريق Rawdha+، أو أرسل بلاغاً تقنياً للمتابعة، أو شارك رأيك حول المنصة.'],
+    },
+    demarrage: {
+      fr: ['Démarrage', 'Préparer votre crèche', 'Suivez les étapes essentielles dans l’ordre : paramètres, classes, enfants, équipe, présences et échéances.'],
+      ar: ['البداية', 'تجهيز الروضة', 'اتبع الخطوات الأساسية بالترتيب: الإعدادات، الأقسام، الأطفال، الفريق، الحضور والمستحقات.'],
+    },
+    aide: {
+      fr: ['Aide', 'Questions fréquentes', 'Consultez les réponses détaillées par rubrique pour prendre en main chaque écran rapidement.'],
+      ar: ['المساعدة', 'الأسئلة الشائعة', 'اطّلع على الإجابات المفصلة حسب كل قسم لإتقان استعمال المنصة بسرعة.'],
+    },
+    support: {
+      fr: ['Support', 'Assistance directe', 'Décrivez votre besoin ou un blocage rencontré afin d’obtenir une réponse rapide de l’équipe Rawdha+.'],
+      ar: ['الدعم', 'المرافقة المباشرة', 'اشرح حاجتك أو أي مشكلة واجهتها للحصول على رد سريع من فريق Rawdha+.'],
+    },
+    admin: {
+      fr: ['Centre Administrateur', 'Pilotage de la plateforme', 'Supervisez les crèches abonnées, validez les demandes d’accès, planifiez vos relances et traitez les tickets support.'],
+      ar: ['مركز الإدارة', 'تسيير المنصة', 'أشرف على الروضات المشتركة، وصادق على طلبات الدخول، وجدول المتابعات وعالج تذاكر الدعم.'],
+    },
   };
 
   const [title, section, description] = pages[currentPage]?.[isArabic ? 'ar' : 'fr'] || (isArabic
-    ? ['Rawdha+', 'Votre plateforme de gestion', 'Rawdha+ vous aide à organiser votre crèche, suivre les enfants et simplifier votre quotidien.']
+    ? ['Rawdha+', 'منصة تسيير الحضانة', 'تساعدك Rawdha+ على تنظيم روضتك ومتابعة الأطفال وتبسيط العمل اليومي.']
     : ['Rawdha+', 'Votre plateforme de gestion', 'Rawdha+ vous aide à organiser votre crèche, suivre les enfants et simplifier votre quotidien.']);
 
   const generalSteps = isArabic

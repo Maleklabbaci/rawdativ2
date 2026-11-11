@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Building2, Check, Globe, Mail, MapPin, Phone, User, Wallet } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useDb } from '../contexts/DbContext';
-import { setCollectionDocument } from '../supabase';
+import { addCollectionDocument } from '../supabase';
 import { useLanguage } from '../contexts/LanguageContext';
 
 export default function Demarrage({ onDone }: { onDone: () => void }) {
@@ -14,25 +14,29 @@ export default function Demarrage({ onDone }: { onDone: () => void }) {
   const [nom, setNom] = useState(user?.nom || '');
   const [prenom, setPrenom] = useState(user?.prenom || '');
   const [nomCreche, setNomCreche] = useState(user?.nomCreche || '');
-  const [tarif, setTarif] = useState('3500');
+  const [tarif, setTarif] = useState('');
   const [telephone, setTelephone] = useState('');
   const [adresse, setAdresse] = useState('');
   const [email, setEmail] = useState(user?.email || '');
   const [siteWeb, setSiteWeb] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const [uncertain, setUncertain] = useState(false);
 
   const handleSubmit = async () => {
-    if (!nom || !prenom || !nomCreche || !tarif || !telephone || !adresse) {
+    if (savingRef.current || uncertain) return;
+    if (!nom.trim() || !prenom.trim() || !nomCreche.trim() || !tarif.trim() || !telephone.trim() || !adresse.trim() || !Number.isFinite(Number(tarif)) || Number(tarif) < 0) {
       setError(isFrench ? 'Merci de remplir tous les champs obligatoires (*).' : 'يرجى ملء جميع الحقول الإلزامية (*).');
       return;
     }
     if (!user) return;
 
+    savingRef.current = true;
     setSaving(true);
     setError('');
     try {
-      await setCollectionDocument('parametres', `creche_${user.id}`, {
+      await addCollectionDocument('parametres', {
         id: `creche_${user.id}`,
         crecheName: nomCreche,
         principalEmail: email,
@@ -46,8 +50,10 @@ export default function Demarrage({ onDone }: { onDone: () => void }) {
       await refreshCreche();
       onDone();
     } catch {
-      setError(isFrench ? "Erreur lors de l'enregistrement, réessayez." : 'حدث خطأ أثناء الحفظ، حاولوا مرة أخرى.');
+      setUncertain(true);
+      setError(isFrench ? 'Enregistrement non confirmé ou configuration déjà existante. Vérifiez les informations dans Paramètres avant de réessayer ; ce formulaire ne remplace pas une configuration existante.' : 'لم يتأكد الحفظ أو أن الإعدادات موجودة مسبقاً. تحققوا من الإعدادات قبل المحاولة مجدداً؛ هذا النموذج لا يستبدل الإعدادات الموجودة.');
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -64,8 +70,8 @@ export default function Demarrage({ onDone }: { onDone: () => void }) {
         </h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
             {isFrench
-              ? 'Vérifiez les informations affichées avant de les enregistrer. Vous pourrez les modifier ensuite dans Paramètres.'
-              : 'تحققوا من المعلومات المعروضة قبل حفظها، ويمكنكم تعديلها لاحقاً من الإعدادات.'}
+              ? 'Pour une première configuration uniquement. Si votre crèche est déjà configurée, utilisez Paramètres pour modifier ses informations.'
+              : 'هذا النموذج للإعداد الأول فقط. إذا كانت الحضانة مهيأة مسبقاً، استخدموا الإعدادات لتعديل معلوماتها.'}
           </p>
       </div>
 
@@ -85,7 +91,7 @@ export default function Demarrage({ onDone }: { onDone: () => void }) {
                     {index + 1}
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-slate-800"><StepIcon className="mr-1 inline h-4 w-4 text-indigo-500" />{String(title)}</p>
+                    <p className="text-sm font-bold text-slate-800"><StepIcon className="me-1 inline h-4 w-4 text-indigo-500" />{String(title)}</p>
                     <p className="mt-1 text-xs leading-5 text-slate-500">{String(description)}</p>
                   </div>
                 </div>
@@ -107,24 +113,24 @@ export default function Demarrage({ onDone }: { onDone: () => void }) {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <div><label className={labelClass}><User className="mr-1 inline h-3.5 w-3.5" />{isFrench ? 'Prénom *' : 'الاسم الأول *'}</label><input className={inputClass} value={prenom} onChange={e => setPrenom(e.target.value)} /></div>
+            <div><label className={labelClass}><User className="me-1 inline h-3.5 w-3.5" />{isFrench ? 'Prénom *' : 'الاسم الأول *'}</label><input className={inputClass} value={prenom} onChange={e => setPrenom(e.target.value)} /></div>
             <div><label className={labelClass}>{isFrench ? 'Nom *' : 'اللقب *'}</label><input className={inputClass} value={nom} onChange={e => setNom(e.target.value)} /></div>
-            <div className="sm:col-span-2"><label className={labelClass}><Building2 className="mr-1 inline h-3.5 w-3.5" />{isFrench ? 'Nom de la crèche *' : 'اسم الحضانة *'}</label><input className={inputClass} value={nomCreche} onChange={e => setNomCreche(e.target.value)} placeholder={isFrench ? 'Ex. : Crèche Les Marguerites' : ''} /></div>
-            <div><label className={labelClass}><Wallet className="mr-1 inline h-3.5 w-3.5" />{isFrench ? 'Tarif mensuel (DA) *' : 'التعريفة الشهرية *'}</label><input className={inputClass} type="number" min="0" value={tarif} onChange={e => setTarif(e.target.value)} /></div>
-            <div><label className={labelClass}><Phone className="mr-1 inline h-3.5 w-3.5" />{isFrench ? 'Téléphone *' : 'الهاتف *'}</label><input className={inputClass} value={telephone} onChange={e => setTelephone(e.target.value)} placeholder="05 / 06 / 07 ..." /></div>
-            <div className="sm:col-span-2"><label className={labelClass}><MapPin className="mr-1 inline h-3.5 w-3.5" />{isFrench ? 'Adresse *' : 'العنوان *'}</label><input className={inputClass} value={adresse} onChange={e => setAdresse(e.target.value)} /></div>
-            <div><label className={labelClass}><Mail className="mr-1 inline h-3.5 w-3.5" />{isFrench ? 'Email' : 'البريد الإلكتروني'}</label><input className={inputClass} type="email" value={email} onChange={e => setEmail(e.target.value)} /></div>
-            <div><label className={labelClass}><Globe className="mr-1 inline h-3.5 w-3.5" />{isFrench ? 'Site web' : 'الموقع الإلكتروني'}</label><input className={inputClass} value={siteWeb} onChange={e => setSiteWeb(e.target.value)} placeholder="https://..." /></div>
+            <div className="sm:col-span-2"><label className={labelClass}><Building2 className="me-1 inline h-3.5 w-3.5" />{isFrench ? 'Nom de la crèche *' : 'اسم الحضانة *'}</label><input className={inputClass} value={nomCreche} onChange={e => setNomCreche(e.target.value)} placeholder={isFrench ? 'Ex. : Crèche Les Marguerites' : 'مثال: روضة الياسمين'} /></div>
+            <div><label className={labelClass}><Wallet className="me-1 inline h-3.5 w-3.5" />{isFrench ? 'Tarif mensuel (DA) *' : 'التعريفة الشهرية *'}</label><input className={inputClass} type="number" min="0" value={tarif} onChange={e => setTarif(e.target.value)} /></div>
+            <div><label className={labelClass}><Phone className="me-1 inline h-3.5 w-3.5" />{isFrench ? 'Téléphone *' : 'الهاتف *'}</label><input className={inputClass} value={telephone} onChange={e => setTelephone(e.target.value)} placeholder="05 / 06 / 07 ..." /></div>
+            <div className="sm:col-span-2"><label className={labelClass}><MapPin className="me-1 inline h-3.5 w-3.5" />{isFrench ? 'Adresse *' : 'العنوان *'}</label><input className={inputClass} value={adresse} onChange={e => setAdresse(e.target.value)} /></div>
+            <div><label className={labelClass}><Mail className="me-1 inline h-3.5 w-3.5" />{isFrench ? 'Email' : 'البريد الإلكتروني'}</label><input className={inputClass} type="email" value={email} onChange={e => setEmail(e.target.value)} /></div>
+            <div><label className={labelClass}><Globe className="me-1 inline h-3.5 w-3.5" />{isFrench ? 'Site web' : 'الموقع الإلكتروني'}</label><input className={inputClass} value={siteWeb} onChange={e => setSiteWeb(e.target.value)} placeholder="https://..." /></div>
           </div>
 
-          {error && <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          {error && <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
           <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-semibold leading-5 text-amber-900">
             {isFrench
               ? 'Ces informations sont enregistrées dans la configuration de votre crèche. Vérifiez-les avant de continuer.'
               : 'سيتم حفظ هذه المعلومات ضمن إعدادات الحضانة. يرجى التحقق منها قبل المتابعة.'}
           </div>
           <div className="mt-6 flex justify-end">
-            <button type="button" onClick={() => void handleSubmit()} disabled={saving} className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">
+            <button type="button" onClick={() => void handleSubmit()} disabled={saving || uncertain} className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">
               <Check className="h-4 w-4" />{saving ? (isFrench ? 'Enregistrement...' : 'جاري الحفظ...') : (isFrench ? 'Enregistrer la configuration' : 'حفظ الإعدادات')}
             </button>
           </div>

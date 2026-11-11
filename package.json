@@ -8,7 +8,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node --import tsx --test --test-force-exit --test-concurrency=2 tests/*.test.ts tests/*.test.mjs",
+    "test:finance-concurrency": "node scripts/test-finance-concurrency.mjs",
+    "test:finance-rls": "node scripts/test-child-finance-rls.mjs",
+    "test:responsive": "node scripts/test-responsive-preview.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
@@ -26,6 +30,8 @@
     "i18next-browser-languagedetector": "^8.2.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.5.438",
     "pdfmake": "^0.3.11",
     "qrcode": "^1.5.4",
     "react": "^19.0.1",
@@ -34,10 +40,14 @@
     "vite": "^6.2.3"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.15",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/qrcode": "^1.5.6",
     "autoprefixer": "^10.4.21",
+    "jsdom": "^26.1.0",
+    "pg": "^8.23.1",
+    "playwright-core": "1.65.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",

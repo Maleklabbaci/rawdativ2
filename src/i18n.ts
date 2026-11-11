@@ -11,7 +11,7 @@ const resources = {
       attendance: 'Présence',
       invoices: 'Factures',
       purchases: 'Achats',
-      reports: 'Reports',
+      reports: 'Rapports',
       staff: 'Personnel',
       activities: 'Activités',
       meals: 'Repas',

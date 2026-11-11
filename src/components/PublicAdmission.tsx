@@ -1,7 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowLeft, Baby, CheckCircle2, FileText, HeartPulse, Loader2, Send, ShieldCheck, Upload, Users } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertCircle, ArrowLeft, Baby, CheckCircle2, FileText, HeartPulse, Loader2, Send, ShieldCheck, Users } from 'lucide-react';
 import { supabase } from '../supabase';
 import { useLanguage } from '../contexts/LanguageContext';
+import { buildLegalHref } from '../config/legal';
+import DocumentScannerSlot from './DocumentScannerSlot';
+import type { StoredChildDocument } from '../utils/documentPdf';
 
 type AdmissionContext = {
   linkId: string;
@@ -12,7 +15,7 @@ type AdmissionContext = {
 };
 
 type DocumentKey = 'certificatMedical' | 'carnetVaccination' | 'justificatifDomicile' | 'photoIdentite';
-type UploadData = { nom: string; type: string; taille: number; contenu: string; ajouteLe: string };
+type UploadData = StoredChildDocument;
 
 type FormState = {
   nom: string;
@@ -34,6 +37,7 @@ type FormState = {
   parentAdresse: string;
   parentProfession: string;
   parentLien: 'Mère' | 'Père' | 'Tuteur';
+  attestationAutoriteParentale: boolean;
   consentementDonnees: boolean;
   documentsRequis: Record<DocumentKey, boolean>;
   documentsFichiers: Partial<Record<DocumentKey, UploadData>>;
@@ -43,7 +47,9 @@ const initialForm: FormState = {
   nom: '', prenom: '', dateNaissance: '', genre: 'Garçon', groupeAge: 'Bébés',
   allergie: '', regimeAlimentaire: '', bloodGroup: '', weightKg: '', pediatricianName: '',
   vaccinations: '', notesMedicales: '', parentNom: '', parentPrenom: '', parentTelephone: '',
-  parentEmail: '', parentAdresse: '', parentProfession: '', parentLien: 'Mère', consentementDonnees: false,
+  parentEmail: '', parentAdresse: '', parentProfession: '', parentLien: 'Mère',
+  attestationAutoriteParentale: false,
+  consentementDonnees: false,
   documentsRequis: { certificatMedical: false, carnetVaccination: false, justificatifDomicile: false, photoIdentite: false },
   documentsFichiers: {},
 };
@@ -64,6 +70,7 @@ export default function PublicAdmission() {
   const [form, setForm] = useState<FormState>(initialForm);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
@@ -90,75 +97,64 @@ export default function PublicAdmission() {
     setForm(prev => ({ ...prev, [key]: value }));
   };
 
-  const handleFile = (key: DocumentKey, file?: File) => {
-    if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      setError(isAr ? 'الملف كبير جداً. الحد الأقصى 2 ميغابايت.' : 'Le fichier est trop volumineux. La limite est de 2 Mo.');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const contenu = typeof reader.result === 'string' ? reader.result : '';
-      if (!contenu) return;
-      setForm(prev => ({
-        ...prev,
-        documentsRequis: { ...prev.documentsRequis, [key]: true },
-        documentsFichiers: {
-          ...prev.documentsFichiers,
-          [key]: { nom: file.name, type: file.type || 'application/octet-stream', taille: file.size, contenu, ajouteLe: new Date().toISOString() },
-        },
-      }));
-      setError('');
-    };
-    reader.readAsDataURL(file);
-  };
-
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (submittingRef.current || submitting) return;
     setError('');
     if (!context || !token) return;
     if (!form.nom.trim() || !form.prenom.trim() || !form.dateNaissance || !form.parentNom.trim() || !form.parentPrenom.trim() || !form.parentTelephone.trim()) {
       setError(isAr ? 'يرجى ملء جميع الحقول الإلزامية.' : 'Veuillez remplir tous les champs obligatoires.');
       return;
     }
+    if (!form.attestationAutoriteParentale) {
+      setError(isAr ? 'يرجى الإقرار بأنكم بالغون وتتصرفون بصفتكم الولي الشرعي أو الممثل القانوني للطفل.' : 'Veuillez confirmer être majeur(e) et agir en qualité de parent ou représentant légal habilité de l’enfant.');
+      return;
+    }
     if (!form.consentementDonnees) {
       setError(isAr ? 'يرجى الموافقة على معالجة البيانات قبل الإرسال.' : 'Veuillez accepter le traitement des données avant l’envoi.');
       return;
     }
+    submittingRef.current = true;
     setSubmitting(true);
-    const { error: rpcError } = await supabase.rpc('rawdha_submit_admission', {
-      p_token: token,
-      p_payload: {
-        ...form,
-        nom: form.nom.trim(),
-        prenom: form.prenom.trim(),
-        parentNom: form.parentNom.trim(),
-        parentPrenom: form.parentPrenom.trim(),
-        parentTelephone: form.parentTelephone.trim(),
-      },
-    });
-    setSubmitting(false);
-    if (rpcError) {
-      const code = rpcError.message || '';
-      const message = code.includes('invalid_link')
-        ? (isAr ? 'هذا الرابط غير صالح أو منتهي الصلاحية.' : 'Ce lien est invalide ou a expiré.')
-        : code.includes('consent_required')
-          ? (isAr ? 'الموافقة على معالجة البيانات مطلوبة لإرسال الطلب.' : 'Votre consentement au traitement des données est requis pour envoyer la demande.')
-          : code.includes('duplicate_request')
-          ? (isAr ? 'تم إرسال طلب مماثل بالفعل.' : 'Une demande identique est déjà en attente pour cet enfant.')
-          : code.includes('rate_limited')
-            ? (isAr ? 'تم بلوغ الحد المؤقت للمحاولات. يرجى المحاولة لاحقاً.' : 'Trop de tentatives pour le moment. Veuillez réessayer plus tard.')
-            : code.includes('invalid_phone')
-              ? (isAr ? 'يرجى إدخال رقم هاتف جزائري صالح.' : 'Veuillez saisir un numéro de téléphone algérien valide.')
-              : code.includes('invalid_email')
-                ? (isAr ? 'يرجى التحقق من البريد الإلكتروني.' : "Veuillez vérifier l'adresse e-mail.")
-                : code.includes('invalid_birth_date')
-                  ? (isAr ? 'تاريخ الميلاد غير صالح.' : 'La date de naissance est invalide.')
-                  : (isAr ? 'تعذر إرسال الطلب. يرجى المحاولة مرة أخرى.' : "Impossible d'envoyer la demande. Veuillez réessayer.");
-      setError(message);
-      return;
+    try {
+      const { error: rpcError } = await supabase.rpc('rawdha_submit_admission', {
+        p_token: token,
+        p_payload: {
+          ...form,
+          nom: form.nom.trim(),
+          prenom: form.prenom.trim(),
+          parentNom: form.parentNom.trim(),
+          parentPrenom: form.parentPrenom.trim(),
+          parentTelephone: form.parentTelephone.trim(),
+        },
+      });
+      if (rpcError) {
+        const code = rpcError.message || '';
+        const message = code.includes('invalid_link')
+          ? (isAr ? 'هذا الرابط غير صالح أو منتهي الصلاحية.' : 'Ce lien est invalide ou a expiré.')
+          : code.includes('consent_required')
+            ? (isAr ? 'الموافقة على معالجة البيانات مطلوبة لإرسال الطلب.' : 'Votre consentement au traitement des données est requis pour envoyer la demande.')
+            : code.includes('duplicate_request')
+            ? (isAr ? 'تم إرسال طلب مماثل بالفعل.' : 'Une demande identique est déjà en attente pour cet enfant.')
+            : code.includes('rate_limited')
+              ? (isAr ? 'تم بلوغ الحد المؤقت للمحاولات. يرجى المحاولة لاحقاً.' : 'Trop de tentatives pour le moment. Veuillez réessayer plus tard.')
+              : code.includes('invalid_phone')
+                ? (isAr ? 'يرجى إدخال رقم هاتف جزائري صالح.' : 'Veuillez saisir un numéro de téléphone algérien valide.')
+                : code.includes('invalid_email')
+                  ? (isAr ? 'يرجى التحقق من البريد الإلكتروني.' : "Veuillez vérifier l'adresse e-mail.")
+                  : code.includes('invalid_birth_date')
+                    ? (isAr ? 'تاريخ الميلاد غير صالح.' : 'La date de naissance est invalide.')
+                    : (isAr ? 'تعذر إرسال الطلب. يرجى المحاولة مرة أخرى.' : "Impossible d'envoyer la demande. Veuillez réessayer.");
+        setError(message);
+        return;
+      }
+      setSubmitted(true);
+    } catch {
+      setError(isAr ? 'تعذر إرسال الطلب. تحققوا من الاتصال قبل إعادة المحاولة.' : "Impossible d'envoyer la demande. Vérifiez votre connexion avant de réessayer.");
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
-    setSubmitted(true);
   };
 
   const title = isAr ? 'طلب تسجيل طفل' : "Demande d'admission";
@@ -171,10 +167,13 @@ export default function PublicAdmission() {
 
   return (
     <div className="min-h-[100dvh] w-full min-w-0 overflow-x-hidden bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 px-3 py-4 sm:px-4 sm:py-8 text-slate-900" dir={isAr ? 'rtl' : 'ltr'}>
-      <div className="mx-auto w-full max-w-5xl min-w-0">
+      <a href="#main-content" className="rawdha-skip-link">
+        {isAr ? 'الانتقال إلى المحتوى الرئيسي' : 'Aller au contenu principal'}
+      </a>
+      <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-5xl min-w-0 outline-none">
         <div className="mb-4 flex flex-col items-stretch gap-3 text-white sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="flex items-center gap-3">
-            {context?.logoUrl ? <img src={context.logoUrl} alt="Logo" className="h-12 w-12 rounded-2xl bg-white object-contain p-1" /> : <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500"><Baby className="h-6 w-6" /></div>}
+            {context?.logoUrl ? <img src={context.logoUrl} alt={context.nomCreche || (isAr ? 'شعار الروضة' : 'Logo de la crèche')} className="h-12 w-12 rounded-2xl bg-white object-contain p-1" /> : <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500"><Baby className="h-6 w-6" aria-hidden="true" /></div>}
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-200">RAWDHA+</p>
               <h1 className="text-lg font-black sm:text-2xl">{context?.nomCreche || 'Rawdha+'}</h1>
@@ -187,26 +186,22 @@ export default function PublicAdmission() {
           </div>
         </div>
 
-        {!context || error && !submitted ? (
+        {!context ? (
           <div className="mx-auto max-w-xl rounded-3xl bg-white p-8 text-center shadow-2xl">
             <AlertCircle className="mx-auto mb-4 h-12 w-12 text-rose-500" />
             <h2 className="text-xl font-black text-slate-900">{isAr ? 'الرابط غير متاح' : 'Lien non disponible'}</h2>
-            <p className="mt-2 text-sm text-slate-500">{error || (isAr ? 'تحقق من الرابط المرسل من الروضة.' : 'Vérifiez le lien transmis par la crèche.')}</p>
-            <p className="mt-3 text-xs leading-5 text-slate-400">
+            <p className="mt-2 text-sm text-slate-600">{error || (isAr ? 'تحقق من الرابط المرسل من الروضة.' : 'Vérifiez le lien transmis par la crèche.')}</p>
+            <p className="mt-3 text-xs leading-5 text-slate-500">
               {isAr ? 'اطلبوا من إدارة الروضة إرسال رابط تسجيل جديد إذا استمرت المشكلة.' : 'Si le problème persiste, demandez à la direction de la crèche un nouveau lien d’inscription.'}
             </p>
             <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
               <a href="/login/" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white transition hover:bg-indigo-700">
-                <ArrowLeft className="h-4 w-4" />
+                <ArrowLeft className="h-4 w-4 rtl:rotate-180" aria-hidden="true" />
                 {isAr ? 'العودة إلى الصفحة الرئيسية' : 'Retour à l’accueil'}
               </a>
-              <button
-                type="button"
-                onClick={() => { if (window.history.length > 1) window.history.back(); else window.location.href = '/login/'; }}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 px-5 py-3 text-sm font-black text-slate-600 transition hover:bg-slate-50"
-              >
-                {isAr ? 'العودة' : 'Page précédente'}
-              </button>
+              <a href={buildLegalHref('confidentialite')} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 px-5 py-3 text-sm font-black text-slate-700 transition hover:bg-slate-50">
+                {isAr ? 'سياسة الخصوصية' : 'Confidentialité'}
+              </a>
             </div>
           </div>
         ) : submitted ? (
@@ -263,34 +258,72 @@ export default function PublicAdmission() {
 
               <section>
                 <SectionTitle icon={<FileText className="h-5 w-5" />} title={isAr ? 'الوثائق' : 'Pièces du dossier'} />
-                <p className="mb-4 text-xs leading-5 text-slate-500">{isAr ? 'يمكنكم تحديد الوثائق المتوفرة وإرفاقها. الحد الأقصى لكل ملف 2 ميغابايت.' : 'Cochez les pièces disponibles et joignez-les si vous le souhaitez. Limite de 2 Mo par fichier.'}</p>
+                <p className="mb-4 text-xs leading-5 text-slate-500">
+                  {isAr
+                    ? 'يمكنكم تصوير كل وثيقة (أو عدة صفحات لدفتر التلقيح) بهاتفكم وسيتم تحويلها وضغطها تلقائياً إلى ملف PDF.'
+                    : 'Prenez chaque pièce en photo (1 ou plusieurs pages pour le carnet de vaccination) : elle est automatiquement convertie et compressée en PDF.'}
+                </p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {(Object.keys(labels) as DocumentKey[]).map(key => (
-                    <label key={key} className="flex min-w-0 cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 p-3.5 transition hover:border-indigo-300 hover:bg-indigo-50/40 sm:items-center sm:p-4">
-                      <input type="checkbox" checked={form.documentsRequis[key]} onChange={e => updateField('documentsRequis', { ...form.documentsRequis, [key]: e.target.checked })} className="h-4 w-4 accent-indigo-600" />
-                      <span className="flex-1 text-sm font-semibold text-slate-700">{labels[key]}</span>
-                      <span className="relative cursor-pointer rounded-xl bg-indigo-50 p-2 text-indigo-600 hover:bg-indigo-100" title={isAr ? 'إرفاق ملف' : 'Joindre un fichier'}><Upload className="h-4 w-4" /><input type="file" accept="image/*,.pdf" onChange={e => handleFile(key, e.target.files?.[0])} className="absolute inset-0 cursor-pointer opacity-0" /></span>
-                      {form.documentsFichiers[key] && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
-                    </label>
+                    <DocumentScannerSlot
+                      key={key}
+                      docKey={key}
+                      label={labels[key]}
+                      isArabic={isAr}
+                      childName={`${form.prenom} ${form.nom}`.trim()}
+                      value={form.documentsFichiers[key]}
+                      declaredWithoutFile={Boolean(form.documentsRequis[key] && !form.documentsFichiers[key])}
+                      onToggleDeclared={checked =>
+                        updateField('documentsRequis', { ...form.documentsRequis, [key]: checked })
+                      }
+                      onError={msg => setError(msg)}
+                      onChange={nextDoc => {
+                        setForm(prev => {
+                          const nextFiles = { ...prev.documentsFichiers };
+                          if (nextDoc) nextFiles[key] = nextDoc;
+                          else delete nextFiles[key];
+                          return {
+                            ...prev,
+                            documentsRequis: { ...prev.documentsRequis, [key]: Boolean(nextDoc) },
+                            documentsFichiers: nextFiles,
+                          };
+                        });
+                        setError('');
+                      }}
+                    />
                   ))}
                 </div>
               </section>
 
-              <div className="border-t border-slate-100 pt-6">
+              <div className="space-y-3 border-t border-slate-100 pt-6">
+                <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={form.attestationAutoriteParentale}
+                    onChange={e => updateField('attestationAutoriteParentale', e.target.checked)}
+                    className="mt-1 h-4 w-4 shrink-0 accent-indigo-600"
+                  />
+                  <span>
+                    {isAr
+                      ? 'أشهد أنني بالغ(ة) وأتصرف بصفتي الولي الشرعي أو الممثل القانوني المخول للطفل المعني بهذا الطلب. *'
+                      : 'Je certifie être majeur(e) et agir en qualité de parent ou représentant légal habilité de l’enfant concerné. *'}
+                  </span>
+                </label>
+
                 <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 text-xs leading-5 text-slate-700">
                   <input type="checkbox" checked={form.consentementDonnees} onChange={e => updateField('consentementDonnees', e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-indigo-600" />
-                  <span>{isAr ? 'أوافق على معالجة بياناتي وبيانات الطفل من طرف الروضة لدراسة طلب التسجيل والتواصل معنا. يمكنني قراءة سياسة الخصوصية قبل الإرسال.' : "J’accepte que la crèche traite mes données et celles de l’enfant pour étudier la demande d’admission et nous contacter. Je peux consulter la politique de confidentialité avant l’envoi."} <button type="button" onClick={() => window.open('/confidentialite', '_blank', 'noopener,noreferrer')} className="font-black text-indigo-700 underline underline-offset-2">{isAr ? 'سياسة الخصوصية' : 'Politique de confidentialité'}</button></span>
+                  <span>{isAr ? 'أوافق على معالجة بياناتي وبيانات الطفل الضرورية من طرف الروضة لدراسة طلب التسجيل والتواصل معنا. *' : "J’accepte que la crèche traite les données nécessaires me concernant et concernant l’enfant pour étudier la demande d’admission et nous contacter. *"} <a href={buildLegalHref('confidentialite')} target="_blank" rel="noopener noreferrer" className="font-black text-indigo-700 underline underline-offset-2">{isAr ? 'سياسة الخصوصية' : 'Politique de confidentialité'}</a></span>
                 </label>
               </div>
 
               <div className="flex flex-col gap-3 pt-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="max-w-md text-xs leading-5 text-slate-500">{isAr ? 'لن يتم قبول الطفل تلقائياً. ستراجع إدارة الروضة الطلب أولاً.' : "L'enfant ne sera pas ajouté automatiquement. La direction vérifiera d'abord la demande."}</p>
-                <button type="submit" disabled={submitting} className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3.5 text-sm font-black text-white sm:w-auto shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"><Send className="h-4 w-4" />{submitting ? (isAr ? 'جاري الإرسال...' : 'Envoi en cours...') : (isAr ? 'إرسال الطلب' : 'Envoyer la demande')}</button>
+                <button type="submit" disabled={submitting} className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3.5 text-sm font-black text-white sm:w-auto shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"><Send className="h-4 w-4" aria-hidden="true" />{submitting ? (isAr ? 'جاري الإرسال...' : 'Envoi en cours...') : (isAr ? 'إرسال الطلب' : 'Envoyer la demande')}</button>
               </div>
             </div>
           </form>
         )}
-      </div>
+      </main>
     </div>
   );
 }

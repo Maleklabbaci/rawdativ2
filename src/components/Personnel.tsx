@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -14,14 +14,19 @@ import {
   MapPin,
   Heart,
   HelpCircle,
-  Clock
+  Clock,
+  Edit3
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { Personnel as PersonnelType } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import StaffHrPanel from './StaffHrPanel';
+import TeamAccessManager from './TeamAccessManager';
+import { useWorkspaceProfile } from '../contexts/WorkspaceProfileContext';
 
 interface RichPersonnel extends PersonnelType {
   telephone?: string;
@@ -31,73 +36,122 @@ interface RichPersonnel extends PersonnelType {
   groupeSanguin?: string;
 }
 
+const PRESET_POSTES = [
+  'Éducatrice Principale',
+  'Puéricultrice',
+  'Pédiatre Référent',
+  'Psychologue Infantile',
+  'Cuisinière Chef',
+  'Agent de sécurité',
+];
+
 export default function Personnel() {
   const { t, language } = useLanguage();
   const isArabic = language === 'ar';
   const { confirm } = useConfirmDialog();
+  const toast = useToast();
 
-  const { personnel: allDbPersonnel, classes: allDbClasses, addPersonnel, deletePersonnel } = useDb();
+  const { personnel: allDbPersonnel, classes: allDbClasses, addPersonnel, updatePersonnel, deletePersonnel } = useDb();
   const { user } = useAuth();
+  const { isOwnerProfile, hasPagePermission } = useWorkspaceProfile();
   const isDirecteur = user?.role === 'directeur';
-  const dbPersonnel = isDirecteur ? allDbPersonnel.filter((p: any) => p.crecheId === user!.id) : allDbPersonnel;
-  const classes = (isDirecteur ? allDbClasses.filter((c: any) => c.crecheId === user!.id) : allDbClasses) as any[];
+  const canManagePersonnel = hasPagePermission('personnel', 'manage');
+  const canManageHr = hasPagePermission('personnel', 'hr_advances');
+  const canManageAccess = isDirecteur && isOwnerProfile;
+  const dbPersonnel = isDirecteur ? allDbPersonnel.filter((p: any) => !p.crecheId || p.crecheId === user!.id) : allDbPersonnel;
+  const classes = (isDirecteur ? allDbClasses.filter((c: any) => !c.crecheId || c.crecheId === user!.id) : allDbClasses) as any[];
   const classNames = classes.map(classe => String(classe.nom || '').trim()).filter(Boolean);
-  const normaliseEmail = (email?: string) => (email || '').replace(/@rawdati(?:\.com|\.dz)$/i, '@rawdha.dz');
 
   const personnel: RichPersonnel[] = dbPersonnel.map((p) => ({
     ...p,
     // Ne pas inventer de téléphone, date d'embauche ou groupe sanguin pour remplir l'écran.
     telephone: p.telephone || '',
-    email: normaliseEmail(p.email),
+    email: p.email || '',
     dateEmbauche: p.dateEmbauche || '',
-    classeAssignee: p.classeAssignee || 'Toutes les classes',
+    classeAssignee: p.classeAssignee || '',
     groupeSanguin: p.groupeSanguin || '',
   }));
 
   const [showModal, setShowModal] = useState(false);
+  const [editingPersonnelId, setEditingPersonnelId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const savingRef = useRef(false);
   const [selectedPersonnel, setSelectedPersonnel] = useState<any | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeSection, setActiveSection] = useState<'team' | 'hr' | 'access'>('team');
 
-  const [formData, setFormData] = useState({
+  const emptyStaffForm = () => ({
     nom: '',
     prenom: '',
     poste: 'Éducatrice Principale',
-    statut: 'Actif' as 'Actif' | 'Inactif',
-    telephone: '0555 90 23 45',
+    statut: 'Actif' as 'Actif' | 'En congé' | 'Inactif',
+    telephone: '',
     email: '',
-    dateEmbauche: new Date().toISOString().split('T')[0],
-    classeAssignee: 'Toutes les classes',
-    groupeSanguin: 'O+',
-    assuranceActive: false, // ✅ assurance de l'employé(e)
-    numeroAssurance: '', // ✅ numéro de police / référence CNAS
+    dateEmbauche: '',
+    classeAssignee: '',
+    groupeSanguin: '',
+    assuranceActive: false,
+    numeroAssurance: '',
   });
 
-  const handleAjouter = () => {
-    if (!formData.nom || !formData.prenom || !formData.poste) return;
-    
-    // Auto populate email if blank
-    const calculatedEmail = formData.email || `${formData.prenom.toLowerCase()}.${formData.nom.toLowerCase()}@rawdha.dz`;
+  const [formData, setFormData] = useState(emptyStaffForm());
 
-    addPersonnel({
-      ...formData,
-      email: calculatedEmail,
-      crecheId: isDirecteur ? user!.id : undefined
-    } as any);
-    setShowModal(false);
-    // Reset form
+  const openCreateModal = () => {
+    setEditingPersonnelId(null);
+    setFormData(emptyStaffForm());
+    setSaveError('');
+    setShowModal(true);
+  };
+
+  const openEditModal = (p: RichPersonnel) => {
+    setSelectedPersonnel(null);
+    setEditingPersonnelId(p.id);
     setFormData({
-      nom: '',
-      prenom: '',
-      poste: 'Éducatrice Principale',
-      statut: 'Actif',
-      telephone: '0555 90 23 45',
-      email: '',
-      dateEmbauche: new Date().toISOString().split('T')[0],
-      classeAssignee: 'Toutes les classes',
-      groupeSanguin: 'O+',
-      assuranceActive: false,
-      numeroAssurance: '',
+      nom: p.nom || '',
+      prenom: p.prenom || '',
+      poste: p.poste || 'Éducatrice Principale',
+      statut: (p.statut as 'Actif' | 'En congé' | 'Inactif') || 'Actif',
+      telephone: p.telephone || '',
+      email: p.email || '',
+      dateEmbauche: p.dateEmbauche || '',
+      classeAssignee: p.classeAssignee || '',
+      groupeSanguin: p.groupeSanguin || '',
+      assuranceActive: Boolean(p.assuranceActive),
+      numeroAssurance: p.numeroAssurance || '',
     });
+    setSaveError('');
+    setShowModal(true);
+  };
+
+  const handleAjouter = async () => {
+    if (savingRef.current || saveError.startsWith('Enregistrement non confirmé') || saveError.startsWith('لم يتأكد الحفظ')) return;
+    if (!formData.nom.trim() || !formData.prenom.trim() || !formData.poste) {
+      setSaveError(isArabic ? 'الاسم واللقب والوظيفة مطلوبة.' : 'Le nom, le prénom et le poste sont obligatoires.');
+      return;
+    }
+    savingRef.current = true; setSaving(true);
+    try {
+      const payload = {
+        ...formData,
+        nom: formData.nom.trim(),
+        prenom: formData.prenom.trim(),
+      };
+      if (editingPersonnelId) {
+        await updatePersonnel(editingPersonnelId, payload as any);
+        toast.success(isArabic ? 'تم تحديث بيانات الموظف' : 'Fiche membre mise à jour');
+      } else {
+        await addPersonnel({
+          ...payload,
+          crecheId: isDirecteur ? user!.id : undefined
+        } as any);
+      }
+      setEditingPersonnelId(null);
+      setShowModal(false);
+      setFormData(emptyStaffForm());
+    } catch {
+      setSaveError(isArabic ? 'لم يتأكد الحفظ. أغلق النافذة وأعد تحميل القائمة وتحقق قبل المحاولة مجدداً.' : 'Enregistrement non confirmé. Fermez la fenêtre, rechargez et vérifiez la liste avant de réessayer.');
+    } finally { savingRef.current = false; setSaving(false); }
   };
 
   const filteredPersonnel = personnel.filter(p => {
@@ -113,117 +167,126 @@ export default function Personnel() {
   const inactiveCount = personnel.filter(p => p.statut !== 'Actif').length;
 
   return (
-    <div className="space-y-8 font-sans">
-      {/* Analytics Summary blocks */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4 hover:shadow-md transition">
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-            <UserCheck className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest">
-              {isArabic ? 'إجمالي الطاقم' : 'Équipe Educative'}
-            </p>
-            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{personnel.length} {isArabic ? 'موظفين' : 'membres'}</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4 hover:shadow-md transition">
-          <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-            <Activity className="w-6 h-6 animate-pulse" />
-          </div>
-          <div>
-            <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest">
-              {isArabic ? 'النشطون اليوم' : 'Présents & Actifs'}
-            </p>
-            <p className="text-xl sm:text-2xl font-black text-emerald-600 mt-0.5">{activeCount} {isArabic ? 'نشط' : 'en poste'}</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4 hover:shadow-md transition">
-          <div className="w-12 h-12 rounded-xl bg-pink-50 text-pink-600 flex items-center justify-center shrink-0">
-            <Heart className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest">
-              {isArabic ? 'رعاية صحية وتغطية' : 'Taux d\'Encadrement'}
-            </p>
-            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">1 : 5 {isArabic ? 'أطفال' : 'enfants'}</p>
-          </div>
-        </div>
-      </div>
-
+    <div className="space-y-4 sm:space-y-6">
       {/* Header and Add Button */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <UserCheck className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600" />
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
             {t('staff')}
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5 leading-tight">
-            {isArabic 
-              ? 'إدارة الفريق التربوي، المربيات، الممرضات، ومعلومات الاتصال والمناصب الخاصة بهم' 
-              : 'Gerez les profils de vos éducatrices, puéricultrices, pédiatres et équipe de restauration.'}
+          <p className="text-xs sm:text-sm text-slate-500 mt-0.5 font-medium">
+            {isArabic
+              ? `${personnel.length} عضو مسجل · ${activeCount} في الخدمة`
+              : `${personnel.length} membre(s) · ${activeCount} en poste${inactiveCount > 0 ? ` · ${inactiveCount} inactif(s)` : ''}`}
           </p>
         </div>
-        <button 
-          className="flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-4 py-2.5 sm:px-6 sm:py-3.5 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/10 hover:shadow-indigo-600/20 transition-all cursor-pointer w-full sm:w-auto" 
-          onClick={() => setShowModal(true)}
-        >
-          <Plus size={16} className="stroke-[3]" />
-          <span>{t('staff.add')}</span>
-        </button>
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 w-full sm:w-auto">
+          {(canManageHr || canManageAccess) && (
+            <div
+              className={`grid gap-1 rounded-xl bg-slate-100/90 p-1 sm:inline-flex sm:flex-wrap ${
+                canManageHr && canManageAccess ? 'grid-cols-3' : 'grid-cols-2'
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => setActiveSection('team')}
+                className={`min-h-8! rounded-lg px-2 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold transition cursor-pointer truncate ${
+                  activeSection === 'team' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {isArabic ? 'الفريق' : 'Équipe'}
+              </button>
+              {canManageHr && (
+                <button
+                  type="button"
+                  onClick={() => setActiveSection('hr')}
+                  className={`min-h-8! rounded-lg px-2 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold transition cursor-pointer truncate ${
+                    activeSection === 'hr' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="sm:hidden">{isArabic ? 'التسبيقات' : 'Avances RH'}</span>
+                  <span className="hidden sm:inline">{isArabic ? 'الحضور والتسبيقات' : 'Pointage & Avances RH'}</span>
+                </button>
+              )}
+              {canManageAccess && (
+                <button
+                  type="button"
+                  onClick={() => setActiveSection('access')}
+                  className={`min-h-8! rounded-lg px-2 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold transition cursor-pointer truncate ${
+                    activeSection === 'access' ? 'bg-[#c94b30] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="sm:hidden">{isArabic ? 'الصلاحيات' : 'Accès'}</span>
+                  <span className="hidden sm:inline">{isArabic ? 'الحسابات والصلاحيات' : 'Accès & Permissions'}</span>
+                </button>
+              )}
+            </div>
+          )}
+          {canManagePersonnel && activeSection !== 'access' && (
+            <button
+              className="min-h-9! w-full sm:w-auto inline-flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer"
+              onClick={openCreateModal}
+            >
+              <Plus size={16} className="stroke-[2.5] shrink-0" />
+              <span>{t('staff.add')}</span>
+            </button>
+          )}
+        </div>
       </div>
 
+      {activeSection === 'access' && canManageAccess ? (
+        <TeamAccessManager />
+      ) : activeSection === 'hr' && canManageHr ? (
+        <StaffHrPanel crecheId={user?.id} personnel={personnel} isArabic={isArabic} />
+      ) : (
+        <>
       {/* Search Input bar */}
-      <div className="bg-white p-3 sm:p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center">
+      <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             type="text"
             placeholder={isArabic ? 'ابحث عن مربية أو منصب...' : 'Rechercher un membre ou un poste...'}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition-all text-xs sm:text-sm font-medium text-slate-800"
+            className="w-full ps-9 pe-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition-all text-xs sm:text-sm font-medium text-slate-800"
           />
         </div>
       </div>
 
       {/* Personnel Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 animate-slide-up">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredPersonnel.length > 0 ? (
           filteredPersonnel.map((p) => {
             const initials = `${p.prenom[0]}${p.nom[0]}`;
             
             return (
-              <div 
-                key={p.id} 
-                className={`bg-white rounded-2xl border border-slate-100 p-6 shadow-xs hover:shadow-lg hover:-translate-y-1 transition-all duration-200 flex flex-col justify-between cursor-pointer`}
+              <div
+                key={p.id}
+                className="rawdha-card-modern bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs flex flex-col justify-between cursor-pointer"
                 onClick={() => setSelectedPersonnel(p)}
               >
                 <div>
                   {/* Card top details with avatar */}
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-500 to-violet-600 text-white font-extrabold text-base flex items-center justify-center shadow-md">
+                      <div className="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-700 font-bold text-sm flex items-center justify-center">
                         {initials}
                       </div>
                       <div>
-                        <h3 className="text-base font-extrabold text-slate-900 leading-snug">{p.prenom} {p.nom}</h3>
-                        <span className="inline-flex items-center gap-1.5 mt-1 text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider">
-                          <Award className="w-3 h-3" />
+                        <h3 className="text-sm sm:text-base font-bold text-slate-900 leading-snug">{p.prenom} {p.nom}</h3>
+                        <span className="inline-flex items-center gap-1 mt-0.5 text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md text-[11px] font-semibold">
                           {p.poste}
                         </span>
                       </div>
                     </div>
 
-                    {/* Active/Inactive Badge with green pulse */}
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest leading-none ${
-                      p.statut === 'Actif' 
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
+                    {/* Active/Inactive Badge */}
+                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold leading-none ${
+                      p.statut === 'Actif'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                         : 'bg-rose-50 text-rose-700 border border-rose-100'
                     }`}>
-                      {p.statut === 'Actif' && <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />}
                       {p.statut}
                     </span>
                   </div>
@@ -232,51 +295,69 @@ export default function Personnel() {
                   <div className="mt-4 space-y-2 text-xs font-semibold text-slate-500">
                     <div className="flex items-center gap-2 p-1.5 hover:bg-slate-50 rounded-lg transition duration-150">
                       <Phone className="w-3.5 h-3.5 text-slate-400" />
-                      <a href={`tel:${p.telephone}`} className="text-slate-700 hover:text-indigo-600 font-bold">{p.telephone}</a>
+                      {p.telephone ? <a href={`tel:${p.telephone}`} className="text-slate-700 hover:text-indigo-600 font-bold">{p.telephone}</a> : <span>{isArabic ? 'الهاتف غير مسجل' : 'Téléphone non renseigné'}</span>}
                     </div>
                     <div className="flex items-center gap-2 p-1.5 hover:bg-slate-50 rounded-lg transition duration-150 truncate">
                       <Mail className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="text-slate-700 truncate">{p.email}</span>
+                      <span className="text-slate-700 truncate">{p.email || (isArabic ? 'البريد غير مسجل' : 'E-mail non renseigné')}</span>
                     </div>
                     <div className="flex items-center gap-2 p-1.5 hover:bg-slate-50 rounded-lg transition duration-150">
                       <Bookmark className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>{isArabic ? 'القسم المسؤول:' : 'Section'}: <strong className="text-slate-800">{p.classeAssignee}</strong></span>
+                      <span>{isArabic ? 'القسم المسؤول:' : 'Section'}: <strong className="text-slate-800">{p.classeAssignee || (isArabic ? 'غير محدد' : 'Non précisée')}</strong></span>
                     </div>
                   </div>
                 </div>
 
                 {/* Footer specs / Embauche & Groupe Sanguin */}
-                <div className="mt-5 pt-4 border-t border-slate-50 flex items-center justify-between text-[11px] font-bold text-slate-400">
-                  <div className="flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Inscrit: {p.dateEmbauche}</span>
+                <div className="mt-5 pt-3.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold text-slate-500">
+                  <div className="flex items-center gap-1.5 whitespace-nowrap">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span>{isArabic ? 'التعيين: ' : 'Embauche : '}{p.dateEmbauche || '—'}</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {p.assuranceActive && (
-                      <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded font-black border border-emerald-100/30" title={p.numeroAssurance || ''}>
-                        {isArabic ? 'مؤمَّن' : 'Assuré(e)'}
+                  <div className="flex items-center gap-1.5 ms-auto">
+                    {p.assuranceActive ? (
+                      <span className="whitespace-nowrap px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-md font-bold ring-1 ring-inset ring-emerald-200/70" title={p.numeroAssurance || ''}>
+                        {isArabic ? 'مؤمَّن' : 'CNAS OK'}
+                      </span>
+                    ) : (
+                      <span className="whitespace-nowrap px-2 py-0.5 bg-amber-50 text-amber-700 rounded-md font-bold ring-1 ring-inset ring-amber-200/70">
+                        {isArabic ? 'تأمين ناقص' : 'CNAS à vérifier'}
                       </span>
                     )}
-                    <span className="px-1.5 py-0.5 bg-rose-50 text-rose-600 rounded font-black border border-rose-100/30">
-                      Group: {p.groupeSanguin}
+                    <span className="whitespace-nowrap px-2 py-0.5 bg-rose-50 text-rose-700 rounded-md font-bold ring-1 ring-inset ring-rose-200/70">
+                      {p.groupeSanguin || '—'}
                     </span>
-                    <button 
-                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer z-10"
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        const confirmed = await confirm({
-                          title: isArabic ? 'تأكيد حذف الموظف' : 'Confirmer la suppression du personnel',
-                          message: isArabic
-                            ? 'سيتم حذف هذا الموظف نهائياً.'
-                            : 'Ce membre du personnel sera supprimé définitivement.',
-                          confirmLabel: isArabic ? 'حذف الموظف' : 'Supprimer le membre',
-                          variant: 'danger',
-                        });
-                        if (confirmed) await deletePersonnel(p.id);
-                      }}
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                    {canManagePersonnel && (
+                      <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          aria-label={isArabic ? 'تعديل الموظف' : 'Modifier le membre'}
+                          className="min-h-8! h-8 px-2.5 shrink-0 inline-flex items-center justify-center gap-1 rounded-xl border border-indigo-200/80 bg-indigo-50/70 text-indigo-700 hover:bg-indigo-100 text-[11px] font-bold transition cursor-pointer"
+                          onClick={() => openEditModal(p)}
+                        >
+                          <Edit3 className="h-3.5 w-3.5 shrink-0" />
+                          <span>{isArabic ? 'تعديل' : 'Modifier'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={isArabic ? 'حذف الموظف' : 'Supprimer le membre'}
+                          className="min-h-8! h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-xl border border-rose-200/80 bg-rose-50/70 text-rose-600 hover:bg-rose-100 transition cursor-pointer"
+                          onClick={async () => {
+                            const confirmed = await confirm({
+                              title: isArabic ? 'تأكيد حذف الموظف' : 'Confirmer la suppression du personnel',
+                              message: isArabic
+                                ? 'سيتم حذف هذا الموظف نهائياً.'
+                                : 'Ce membre du personnel sera supprimé définitivement.',
+                              confirmLabel: isArabic ? 'حذف الموظف' : 'Supprimer le membre',
+                              variant: 'danger',
+                            });
+                            if (confirmed) await deletePersonnel(p.id);
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -290,13 +371,15 @@ export default function Personnel() {
           </div>
         )}
       </div>
+        </>
+      )}
 
       {/* Adding Rich Staff Modal ("PLEINE DE FORMATION") */}
       <AnimatePresence>
         {showModal && (
           <div 
             className="fixed inset-0 bg-slate-950/70 backdrop-blur-lg flex items-start sm:items-center justify-center z-[999] p-2 sm:p-4 overflow-y-auto cursor-pointer"
-            onClick={() => setShowModal(false)}
+            onClick={() => { if (!saving) setShowModal(false); }}
           >
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
@@ -307,11 +390,15 @@ export default function Personnel() {
             >
               <div className="p-4 sm:p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
                 <div>
-                  <h3 className="text-xl font-black">{isArabic ? 'إضافة عضو جديد وتعيينه' : 'Nouveau Dossier Personnel'}</h3>
+                  <h3 className="text-xl font-black">
+                    {editingPersonnelId
+                      ? (isArabic ? 'تعديل بطاقة الموظف' : 'Modifier le dossier personnel')
+                      : (isArabic ? 'إضافة عضو جديد وتعيينه' : 'Nouveau Dossier Personnel')}
+                  </h3>
                   <p className="text-xs text-indigo-100 mt-0.5">{isArabic ? 'تعبئة معلومات الحساب، بطاقة الاتصال، المسؤولية والبيانات الصحية للموظف' : 'Fiche d\'embauche, coordonnées, poste et groupe sanguin'}</p>
                 </div>
                 <button 
-                  onClick={() => setShowModal(false)}
+                  onClick={() => { if (!saving) { setEditingPersonnelId(null); setShowModal(false); } }}
                   className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
                 >
                   <X size={20} />
@@ -360,18 +447,21 @@ export default function Personnel() {
                       value={formData.poste}
                       onChange={e => setFormData({...formData, poste: e.target.value})}
                     >
-                      <option value="Éducatrice Principale">Éducatrice Principale</option>
-                      <option value="Puéricultrice">Puéricultrice</option>
-                      <option value="Pédiatre Référent">Pédiatre Référent</option>
-                      <option value="Psychologue Infantile">Psychologue Infantile</option>
-                      <option value="Cuisinière Chef">Cuisinière Chef</option>
-                      <option value="Agent de sécurité">Agent de sécurité / Admin</option>
+                      {!PRESET_POSTES.includes(formData.poste) && formData.poste && (
+                        <option value={formData.poste}>{formData.poste}</option>
+                      )}
+                      <option value="Éducatrice Principale">{isArabic ? 'مربية رئيسية' : 'Éducatrice Principale'}</option>
+                      <option value="Puéricultrice">{isArabic ? 'مربية أطفال' : 'Puéricultrice'}</option>
+                      <option value="Pédiatre Référent">{isArabic ? 'طبيب أطفال مرجعي' : 'Pédiatre Référent'}</option>
+                      <option value="Psychologue Infantile">{isArabic ? 'أخصائي نفساني للأطفال' : 'Psychologue Infantile'}</option>
+                      <option value="Cuisinière Chef">{isArabic ? 'طاهية رئيسية' : 'Cuisinière Chef'}</option>
+                      <option value="Agent de sécurité">{isArabic ? 'عون أمن / إداري' : 'Agent de sécurité / Admin'}</option>
                     </select>
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {isArabic ? 'رقم الهاتف المباشر *' : 'Téléphone Direct *'}
+                      {isArabic ? 'رقم الهاتف (اختياري)' : 'Téléphone (facultatif)'}
                     </label>
                     <input 
                       type="tel" 
@@ -401,13 +491,14 @@ export default function Personnel() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {isArabic ? 'القسم / الصف المسند إليها *' : 'Classe / Section affectée *'}
+                      {isArabic ? 'القسم / الصف المسند' : 'Classe / Section affectée'}
                     </label>
                     <select
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-semibold text-slate-800"
                       value={formData.classeAssignee}
                       onChange={e => setFormData({...formData, classeAssignee: e.target.value})}
                     >
+                      <option value="">{isArabic ? 'غير محدد' : 'Non précisée'}</option>
                       {classNames.map(className => (
                         <option key={className} value={className}>{className}</option>
                       ))}
@@ -417,19 +508,22 @@ export default function Personnel() {
 
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {isArabic ? 'الفصيلة الدموية *' : 'Groupe Sanguin *'}
+                      {isArabic ? 'الفصيلة الدموية (اختياري)' : 'Groupe sanguin (facultatif)'}
                     </label>
                     <select
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition text-sm font-bold text-slate-800"
                       value={formData.groupeSanguin}
                       onChange={e => setFormData({...formData, groupeSanguin: e.target.value})}
                     >
+                      <option value="">{isArabic ? 'غير محدد' : 'Non renseigné'}</option>
                       <option value="O+">O+</option>
                       <option value="A+">A+</option>
                       <option value="B+">B+</option>
                       <option value="AB+">AB+</option>
                       <option value="O-">O-</option>
                       <option value="A-">A-</option>
+                      <option value="B-">B-</option>
+                      <option value="AB-">AB-</option>
                     </select>
                   </div>
                 </div>
@@ -457,8 +551,9 @@ export default function Personnel() {
                       value={formData.statut} 
                       onChange={e => setFormData({...formData, statut: e.target.value as any})}
                     >
-                      <option value="Actif">Actif (En poste)</option>
-                      <option value="Inactif">Inactif / Congé</option>
+                      <option value="Actif">{isArabic ? 'نشط' : 'Actif (En poste)'}</option>
+                      <option value="En congé">{isArabic ? 'في عطلة' : 'En congé'}</option>
+                      <option value="Inactif">{isArabic ? 'غير نشط' : 'Inactif'}</option>
                     </select>
                   </div>
                 </div>
@@ -495,19 +590,21 @@ export default function Personnel() {
 
               </div>
 
+              {saveError && <p role="alert" className="mx-4 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-700">{saveError}</p>}
               {/* Buttons */}
               <div className="p-6 pt-4 border-t border-slate-100 flex gap-3 flex-shrink-0 bg-slate-50/50">
                 <button 
                   type="button"
                   className="flex-1 p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer text-sm"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => { if (!saving) setShowModal(false); }}
                 >
                   {t('common.cancel')}
                 </button>
                 <button 
                   type="button"
                   className="flex-1 p-3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-750 text-white font-bold rounded-xl transition cursor-pointer text-sm shadow-md"
-                  onClick={handleAjouter}
+                  disabled={saving || saveError.startsWith('Enregistrement non confirmé') || saveError.startsWith('لم يتأكد الحفظ')}
+                  onClick={() => void handleAjouter()}
                 >
                   {t('common.save')}
                 </button>
@@ -559,14 +656,14 @@ export default function Personnel() {
                       <Phone className="w-4 h-4 text-slate-450" />
                       <div>
                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">{isArabic ? 'الهاتف المحمول' : 'Téléphone direct'}</span>
-                        <a href={`tel:${selectedPersonnel.telephone}`} className="text-indigo-600 font-extrabold">{selectedPersonnel.telephone}</a>
+                        {selectedPersonnel.telephone ? <a href={`tel:${selectedPersonnel.telephone}`} className="text-indigo-600 font-extrabold">{selectedPersonnel.telephone}</a> : (isArabic ? 'غير مسجل' : 'Non renseigné')}
                       </div>
                     </div>
                     <div className="flex items-center gap-2.5 p-3 bg-slate-50 border border-slate-100 rounded-xl">
                       <Mail className="w-4 h-4 text-slate-450" />
                       <div>
                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">{isArabic ? 'البريد الإلكتروني' : 'Messagerie'}</span>
-                        <span className="text-slate-800 font-bold">{selectedPersonnel.email}</span>
+                        <span className="text-slate-800 font-bold">{selectedPersonnel.email || (isArabic ? 'غير مسجل' : 'Non renseigné')}</span>
                       </div>
                     </div>
                   </div>
@@ -576,12 +673,12 @@ export default function Personnel() {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
                   <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
                     <span className="text-[9px] font-bold text-slate-400 uppercase block tracking-wider mb-1">{isArabic ? 'القسم المسؤول' : 'Classe Affectée'}</span>
-                    <span className="font-extrabold text-slate-800 text-xs">{selectedPersonnel.classeAssignee}</span>
+                    <span className="font-extrabold text-slate-800 text-xs">{selectedPersonnel.classeAssignee || (isArabic ? 'غير محدد' : 'Non précisée')}</span>
                   </div>
                   <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
                     <span className="text-[9px] font-bold text-slate-400 uppercase block tracking-wider mb-1">{isArabic ? 'الفصيلة الدموية' : 'Groupe Sanguin'}</span>
                     <span className="px-2 py-0.5 bg-rose-50 text-rose-600 rounded font-black border border-rose-100/30 text-xs inline-block">
-                      Group {selectedPersonnel.groupeSanguin}
+                      {isArabic ? 'الفصيلة: ' : 'Groupe : '}{selectedPersonnel.groupeSanguin || '—'}
                     </span>
                   </div>
                 </div>
@@ -589,20 +686,35 @@ export default function Personnel() {
                 {/* Hire details */}
                 <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl flex justify-between items-center text-xs">
                   <div>
-                    <span className="text-[9px] font-bold text-slate-405 uppercase tracking-wider block mb-0.5">{isArabic ? 'تاريخ التوظيف' : 'Date d\'embauche'}</span>
-                    <span className="font-extrabold text-slate-805">{selectedPersonnel.dateEmbauche}</span>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">{isArabic ? 'تاريخ التوظيف' : 'Date d\'embauche'}</span>
+                    <span className="font-extrabold text-slate-800">{selectedPersonnel.dateEmbauche || '—'}</span>
                   </div>
-                  <div>
-                    <span className="text-[9px] font-bold text-slate-405 uppercase tracking-wider block text-right mb-1">{isArabic ? 'حالة الحساب' : 'Disponibilité'}</span>
+                  <div className="text-end">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block text-end mb-1">{isArabic ? 'حالة الحساب' : 'Disponibilité'}</span>
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest leading-none ${
                       selectedPersonnel.statut === 'Actif' 
                         ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
                         : 'bg-rose-50 text-rose-700 border border-rose-100'
                     }`}>
-                      {selectedPersonnel.statut}
+                      {selectedPersonnel.statut === 'Actif'
+                        ? (isArabic ? 'نشط' : 'Actif')
+                        : selectedPersonnel.statut === 'En congé'
+                        ? (isArabic ? 'في عطلة' : 'En congé')
+                        : (isArabic ? 'غير نشط' : 'Inactif')}
                     </span>
                   </div>
                 </div>
+
+                {canManagePersonnel && (
+                  <button
+                    type="button"
+                    onClick={() => openEditModal(selectedPersonnel)}
+                    className="min-h-10! w-full inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 text-xs font-bold transition cursor-pointer shadow-2xs"
+                  >
+                    <Edit3 className="h-4 w-4 shrink-0" />
+                    <span>{isArabic ? 'تعديل بطاقة الموظف' : 'Modifier la fiche membre'}</span>
+                  </button>
+                )}
               </div>
             </motion.div>
           </div>

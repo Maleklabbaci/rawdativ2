@@ -1,15 +1,15 @@
 {
-  "name": "Rawdha+",
+  "name": "Rawdha+ — Gestion de Crèche",
   "short_name": "Rawdha+",
-  "description": "Plateforme de gestion des crèches Rawdha+",
+  "description": "Application mobile et web de gestion quotidienne des crèches Rawdha+",
   "lang": "fr-DZ",
-  "dir": "ltr",
-  "start_url": "/",
+  "dir": "auto",
+  "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#f8fafc",
+  "background_color": "#f6f8fc",
   "theme_color": "#4f46e5",
-  "orientation": "portrait",
+  "orientation": "portrait-primary",
   "icons": [
     {
       "src": "/favicon.png",
@@ -17,6 +17,25 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "Appel du jour",
+      "short_name": "Présences",
+      "url": "/presences",
+      "icons": [{ "src": "/favicon.png", "sizes": "any", "type": "image/png" }]
+    },
+    {
+      "name": "Dossiers enfants",
+      "short_name": "Enfants",
+      "url": "/enfants",
+      "icons": [{ "src": "/favicon.png", "sizes": "any", "type": "image/png" }]
+    },
+    {
+      "name": "Factures & règlements",
+      "short_name": "Factures",
+      "url": "/factures",
+      "icons": [{ "src": "/favicon.png", "sizes": "any", "type": "image/png" }]
+    }
   ]
 }
-

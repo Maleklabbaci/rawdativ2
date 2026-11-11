@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   CheckCheck,
   ChevronLeft,
@@ -47,8 +47,10 @@ export default function CommunicationAdmin() {
   const [activeDirectorId, setActiveDirectorId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const [responseDrafts, setResponseDrafts] = useState<Record<string, string>>({});
   const [savingResponseId, setSavingResponseId] = useState<string | null>(null);
+  const savingResponseRef = useRef(false);
 
   const directeurs = useMemo(() => comptes.filter(account => account.role === 'directeur'), [comptes]);
 
@@ -101,7 +103,8 @@ export default function CommunicationAdmin() {
   };
 
   const handleSend = async () => {
-    if (!activeThread || !draft.trim() || sending) return;
+    if (!activeThread || !draft.trim() || sendingRef.current || sending) return;
+    sendingRef.current = true;
     setSending(true);
     try {
       await addMessage({
@@ -114,7 +117,10 @@ export default function CommunicationAdmin() {
         isRead: false,
       });
       setDraft('');
+    } catch {
+      showToast(isFrench ? 'Envoi non confirmé. Vérifiez la conversation avant de réessayer.' : 'لم يتأكد الإرسال. تحققوا من المحادثة قبل المحاولة مجدداً.', 'error');
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   };
@@ -129,7 +135,12 @@ export default function CommunicationAdmin() {
       confirmLabel: isFrench ? 'Supprimer l’avis' : 'حذف التقييم',
       variant: 'danger',
     });
-    if (confirmed) await deleteAvis(id);
+    if (!confirmed) return;
+    try {
+      await deleteAvis(id);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : (isFrench ? 'Impossible de supprimer cet avis.' : 'تعذر حذف هذا التقييم.'), 'error');
+    }
   };
 
   const handleDeleteSignalement = async (item: Signalement) => {
@@ -142,13 +153,22 @@ export default function CommunicationAdmin() {
       confirmLabel: isFrench ? 'Supprimer le signalement' : 'حذف البلاغ',
       variant: 'danger',
     });
-    if (confirmed) await deleteSignalement(item.id);
+    if (!confirmed) return;
+    try {
+      await deleteSignalement(item.id);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : (isFrench ? 'Impossible de supprimer ce signalement.' : 'تعذر حذف هذا البلاغ.'), 'error');
+    }
   };
 
   const handleStatusChange = async (id: string, statut: SignalementStatut) => {
-    await updateSignalement(id, { statut });
-    const item = signalements.find(signalement => signalement.id === id);
-    await logAdminAction('ticket_status_updated', 'ticket', id, item?.titre, { statut });
+    try {
+      await updateSignalement(id, { statut });
+      const item = signalements.find(signalement => signalement.id === id);
+      await logAdminAction('ticket_status_updated', 'ticket', id, item?.titre, { statut }).catch(() => undefined);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : (isFrench ? 'Impossible de mettre à jour le statut.' : 'تعذر تحديث الحالة.'), 'error');
+    }
   };
 
   const handleTicketUpdate = async (
@@ -158,7 +178,7 @@ export default function CommunicationAdmin() {
   ) => {
     try {
       await updateSignalement(item.id, patch);
-      await logAdminAction(action, 'ticket', item.id, item.titre, patch);
+      await logAdminAction(action, 'ticket', item.id, item.titre, patch).catch(() => undefined);
       showToast(isFrench ? 'Ticket mis à jour.' : 'تم تحديث الطلب.', 'success');
     } catch (error) {
       showToast(error instanceof Error ? error.message : (isFrench ? 'Impossible de mettre à jour le ticket.' : 'تعذر تحديث الطلب.'), 'error');
@@ -167,12 +187,16 @@ export default function CommunicationAdmin() {
 
   const handleSaveResponse = async (item: Signalement) => {
     const response = (responseDrafts[item.id] ?? item.reponseAdmin ?? '').trim();
-    if (!response || savingResponseId) return;
+    if (!response || savingResponseRef.current || savingResponseId) return;
+    savingResponseRef.current = true;
     setSavingResponseId(item.id);
     try {
       await updateSignalement(item.id, { reponseAdmin: response, statut: item.statut === 'nouveau' ? 'en_cours' : item.statut });
-      await logAdminAction('ticket_response_saved', 'ticket', item.id, item.titre, { statut: item.statut === 'nouveau' ? 'en_cours' : item.statut });
+      await logAdminAction('ticket_response_saved', 'ticket', item.id, item.titre, { statut: item.statut === 'nouveau' ? 'en_cours' : item.statut }).catch(() => undefined);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : (isFrench ? 'Impossible d’enregistrer la réponse.' : 'تعذر حفظ الرد.'), 'error');
     } finally {
+      savingResponseRef.current = false;
       setSavingResponseId(null);
     }
   };

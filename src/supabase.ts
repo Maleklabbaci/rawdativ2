@@ -1,8 +1,12 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // ✅ FIX: Use environment variables instead of hardcoded keys
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// The development demo can never connect to a real Supabase project.
+const rawMetaEnv = (import.meta as { env?: Record<string, string | boolean | undefined> }).env;
+const isNodeFallback = !rawMetaEnv;
+const isDemo = Boolean(rawMetaEnv?.DEV) && rawMetaEnv?.VITE_ARENA_DEMO === 'true';
+const SUPABASE_URL = isDemo || isNodeFallback ? 'https://preview.invalid' : String(rawMetaEnv?.VITE_SUPABASE_URL || '');
+const SUPABASE_ANON_KEY = isDemo || isNodeFallback ? 'preview-disabled' : String(rawMetaEnv?.VITE_SUPABASE_ANON_KEY || '');
 
 // Safety check
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
@@ -12,7 +16,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     'VITE_SUPABASE_URL=your_url\n' +
     'VITE_SUPABASE_ANON_KEY=your_key'
   );
-  if (import.meta.env.PROD) throw new Error('Supabase config missing!');
+  if (rawMetaEnv?.PROD) throw new Error('Supabase config missing!');
 }
 
 type SupabaseClientInstance = SupabaseClient<any>;
@@ -22,7 +26,7 @@ type SupabaseGlobal = typeof globalThis & {
 };
 
 const runtimeGlobal = globalThis as SupabaseGlobal;
-export const supabase = runtimeGlobal.__rawdatiSupabaseClient__ ?? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+export const supabase = (isDemo ? undefined : runtimeGlobal.__rawdatiSupabaseClient__) ?? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     // La session est conservée dans le stockage local du navigateur entre les reloads.
     persistSession: true,
@@ -31,7 +35,7 @@ export const supabase = runtimeGlobal.__rawdatiSupabaseClient__ ?? createClient(
   },
 });
 
-if (import.meta.env.DEV) runtimeGlobal.__rawdatiSupabaseClient__ = supabase;
+if (rawMetaEnv?.DEV) runtimeGlobal.__rawdatiSupabaseClient__ = supabase;
 
 export enum OperationType {
   CREATE = 'create',
@@ -97,6 +101,11 @@ export async function callSupabaseRpc<T = unknown>(
   return withAuthRetry(() => supabase.rpc(functionName, args)) as Promise<{ data: T | null; error: { status?: number; code?: string; message?: string } | null }>;
 }
 
+// A blocked preflight must fail closed instead of leaving reminder controls busy forever.
+export async function callSupabaseRpcWithTimeout<T = unknown>(functionName: string, args: Record<string, unknown>): Promise<{ data: T | null; error: { status?: number; code?: string; message?: string } | null }> {
+  return withReadTimeout(callSupabaseRpc<T>(functionName, args), functionName);
+}
+
 function generateId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID();
@@ -109,6 +118,30 @@ function generateId(): string {
  * Each "collection" is a real Postgres table with two columns: id (text) and data (jsonb).
  * This keeps the rest of the app (DbContext.tsx, etc.) almost untouched.
  */
+// Use where a failed read must never be mistaken for an empty collection.
+export async function getCollectionDataStrict<T>(collectionName: string): Promise<T[]> {
+  // PostgREST can cap list responses. Use the reported count rather than treating
+  // a partial page as a complete financial dataset.
+  const pageSize = 500;
+  const rows: Array<{ id: string; data: unknown }> = [];
+  let expected: number | null = null;
+  for (;;) {
+    const { data, error, count } = await withReadTimeout(
+      withAuthRetry(() => supabase.from(collectionName).select('id, data', { count: 'exact' }).order('id').range(rows.length, rows.length + pageSize - 1)),
+      collectionName,
+    );
+    if (error) throw error;
+    if (count == null || (expected !== null && expected !== count)) throw new Error(`Incomplete or changing collection: ${collectionName}`);
+    expected = count;
+    const page = data || [];
+    if (page.length === 0 && rows.length < count) throw new Error(`Incomplete collection: ${collectionName}`);
+    rows.push(...page);
+    if (rows.length >= count) break;
+  }
+  if (rows.length !== expected || new Set(rows.map(row => row.id)).size !== rows.length) throw new Error(`Inconsistent collection: ${collectionName}`);
+  return rows.map(row => ({ ...(row.data as object), id: row.id })) as T[];
+}
+
 export async function getCollectionData<T>(collectionName: string): Promise<T[]> {
   try {
     const { data, error } = await withReadTimeout(
