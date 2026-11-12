@@ -227,6 +227,8 @@ export function ProfilePermissionEditorModal({
         return;
       }
       onClose();
+    } catch {
+      setError(isAr ? 'تعذر حفظ الحساب. تحققي من الاتصال وحاولي مجدداً.' : 'Impossible d’enregistrer ce profil. Vérifiez la connexion puis réessayez.');
     } finally {
       setBusy(false);
     }

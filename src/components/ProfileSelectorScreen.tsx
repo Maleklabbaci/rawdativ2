@@ -123,6 +123,8 @@ export default function ProfileSelectorScreen() {
       } else {
         setSetupOpen(false);
       }
+    } catch {
+      setSetupError(isAr ? 'تعذر حفظ كلمة المرور. تحققي من الاتصال وحاولي مجدداً.' : 'Impossible d’enregistrer le code. Vérifiez la connexion puis réessayez.');
     } finally {
       setSetupBusy(false);
     }

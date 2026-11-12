@@ -3,7 +3,7 @@ import { useAuth } from './AuthContext';
 import { DbContext } from './DbContext';
 import { useToast } from './ToastContext';
 import { useLanguage } from './LanguageContext';
-import { getCollectionDocument, setCollectionDocument, supabase } from '../supabase';
+import { setCollectionDocument, supabase } from '../supabase';
 
 export type WorkspaceRolePreset = 'owner' | 'educatrice' | 'accueil' | 'cuisine' | 'custom';
 export type ProfileAvatarColor = 'terracotta' | 'petrol' | 'indigo' | 'emerald' | 'amber' | 'rose' | 'sky' | 'slate';
@@ -509,6 +509,7 @@ export function WorkspaceProfileProvider({ children }: { children: React.ReactNo
       const directorDisplayName = [user.prenom, user.nom].filter(Boolean).join(' ').trim() || 'Direction';
 
       let loaded: WorkspaceSubProfile[] | null = null;
+      let cloudReadSucceeded = isDemo;
       try {
         const rawCache = window.localStorage.getItem(getLocalCacheKey(user.id));
         if (rawCache) {
@@ -523,10 +524,10 @@ export function WorkspaceProfileProvider({ children }: { children: React.ReactNo
 
       if (!isDemo && typeof (supabase as any)?.from === 'function') {
         try {
-          const cloudDoc = await getCollectionDocument<{ profiles?: WorkspaceSubProfile[] }>(
-            'parametres',
-            `profils_equipe_${user.id}`
-          );
+          const { data, error } = await supabase.from('parametres').select('data').eq('id', `profils_equipe_${user.id}`).maybeSingle();
+          if (error) throw error;
+          cloudReadSucceeded = true;
+          const cloudDoc = data?.data as { profiles?: WorkspaceSubProfile[] } | undefined;
           if (cloudDoc && Array.isArray(cloudDoc.profiles) && cloudDoc.profiles.length > 0) {
             loaded = cloudDoc.profiles;
             try {
@@ -583,11 +584,18 @@ export function WorkspaceProfileProvider({ children }: { children: React.ReactNo
           window.sessionStorage.getItem('rawdha_active_subprofile');
         if (storedActive && loaded.some(p => p.id === storedActive)) {
           setActiveProfileId(storedActive);
+        } else if (cloudReadSucceeded && loaded.length === 1 && loaded[0].isOwner && !loaded[0].passwordHash) {
+          // Un compte Auth déjà connecté, sans autre profil ni code Direction configuré.
+          setActiveProfileId(loaded[0].id);
         } else {
           setActiveProfileId(null);
         }
       } catch {
-        setActiveProfileId(null);
+        if (cloudReadSucceeded && loaded.length === 1 && loaded[0].isOwner && !loaded[0].passwordHash) {
+          setActiveProfileId(loaded[0].id);
+        } else {
+          setActiveProfileId(null);
+        }
       }
       setLoadingProfiles(false);
     };
@@ -600,20 +608,20 @@ export function WorkspaceProfileProvider({ children }: { children: React.ReactNo
 
   const persistProfiles = useCallback(
     async (nextProfiles: WorkspaceSubProfile[]) => {
-      profilesRef.current = nextProfiles;
-      setProfiles(nextProfiles);
-      if (!user?.id) return;
-      try {
-        window.localStorage.setItem(getLocalCacheKey(user.id), JSON.stringify(nextProfiles));
-      } catch {
-        // Ignore
-      }
+      if (!user?.id) throw new Error('missing_user');
       if (!isDemo && typeof (supabase as any)?.from === 'function') {
         await setCollectionDocument('parametres', `profils_equipe_${user.id}`, {
           id: `profils_equipe_${user.id}`,
           profiles: nextProfiles,
           updatedAt: new Date().toISOString(),
         });
+      }
+      profilesRef.current = nextProfiles;
+      setProfiles(nextProfiles);
+      try {
+        window.localStorage.setItem(getLocalCacheKey(user.id), JSON.stringify(nextProfiles));
+      } catch {
+        // Ignore
       }
     },
     [isDemo, user?.id]
