@@ -686,6 +686,13 @@ export async function approveParentLinkRequest(params: {
 
   if (hasLiveSupabaseParentPortal()) {
     const supabase = await getSupabaseClient();
+    if (params.expectedRequestedChildId) {
+      if (params.enfantIds.length !== 1 || params.enfantIds[0] !== params.expectedRequestedChildId) throw new Error('Cette invitation est liée à un seul enfant.');
+      const { data, error } = await supabase.rpc('rawdha_approve_personal_parent_request', { p_request_id: params.requestId, p_child_id: params.expectedRequestedChildId });
+      if (error || data?.ok !== true) throw new Error('Validation non confirmée. Actualisez avant de réessayer.');
+      notifyPortalUpdated({ action: 'request_approved', requestId: params.requestId });
+      return null;
+    }
     let update = supabase
       .from('parent_link_requests')
       .update({

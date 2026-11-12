@@ -10,6 +10,7 @@ import ProfileSelectorScreen from './components/ProfileSelectorScreen';
 import Sidebar from './components/Sidebar';
 import SupportBubble from './components/SupportBubble';
 import NotificationBell from './components/NotificationBell';
+import ParentRequestPopup from './components/ParentRequestPopup';
 import MobileBottomNav from './components/MobileBottomNav';
 import MobileAppHubSheet from './components/MobileAppHubSheet';
 import QuickSearchModal from './components/QuickSearchModal';
@@ -209,7 +210,7 @@ function AppContent() {
     messages = [],
     signalements = [],
   } = useDb();
-  const { activeProfile, loadingProfiles, requiresProfileSelection, canAccessPage, lockProfile } = useWorkspaceProfile();
+  const { activeProfile, loadingProfiles, requiresProfileSelection, canAccessPage, lockProfile, isOwnerProfile } = useWorkspaceProfile();
   const unreadSocialMessages = communityFeatures.filter(feature => feature.kind === 'private_message' && feature.recipientId === user?.id && feature.payload?.read !== true).length;
   const unreadSocialNotifications = communityFeatures.filter(feature => feature.kind === 'social_notification' && feature.recipientId === user?.id && feature.payload?.read !== true).length;
   const socialUnreadCount = unreadSocialMessages + unreadSocialNotifications;
@@ -1196,6 +1197,7 @@ if (isSubscriptionExpired && !isPendingApproval) {
       {isRoutePending && (
         <div className="fixed inset-x-0 top-0 z-50 h-0.5 bg-gradient-to-r from-indigo-500 via-violet-500 to-cyan-500 animate-pulse" />
       )}
+      {user?.role === 'directeur' && user.approvalStatus === 'approved' && isOwnerProfile && <ParentRequestPopup crecheId={user.id} isArabic={language === 'ar'} openRequests={() => navigateToPage('communication')} />}
       {/* Sidebar */}
       <Sidebar 
         currentPage={currentPage} 

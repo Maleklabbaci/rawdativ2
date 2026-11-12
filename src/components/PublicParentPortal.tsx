@@ -57,6 +57,26 @@ function ParentInviteEntry({ isAr }: { isAr: boolean }) {
   return <div className="rounded-2xl border border-orange-100 bg-orange-50 p-4"><p className="text-sm font-bold text-slate-900">{isAr ? 'لديك رابط شخصي؟' : 'Vous avez un lien personnel ?'}</p><p className="mt-2 text-xs text-slate-600">{isAr ? 'الصقي الرابط الذي أرسلته الروضة. إذا استُخدم الرابط من قبل، اطلبي رابطاً جديداً.' : 'Collez le lien envoyé par la crèche. S’il a déjà été utilisé, demandez un nouveau lien à la directrice.'}</p><div className="mt-3 space-y-3"><label htmlFor="invite-link" className="text-sm font-bold text-slate-700">{isAr ? 'الرابط الشخصي' : 'Lien personnel'}</label><input id="invite-link" type="url" autoComplete="off" value={input} onChange={e => setInput(e.target.value)} className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm" required/><button type="button" onClick={open} className="w-full rounded-xl bg-indigo-600 p-3 text-sm font-bold text-white">{isAr ? 'فتح الرابط' : 'Ouvrir mon lien'}</button>{error && <p role="alert" className="text-sm text-rose-700">{error}</p>}</div><p className="mt-3 text-xs text-slate-500">{isAr ? 'لا ترسلي الرابط لأي شخص آخر.' : 'Gardez ce lien privé : ne le partagez avec personne d’autre.'}</p></div>;
 }
 
+function ParentAccessRecovery({ isAr, deviceToken }: { isAr: boolean; deviceToken: string }) {
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const recover = async () => {
+    if (busy) return;
+    const token = code.trim();
+    if (!/^[a-f0-9]{64}$/.test(token)) { setError(isAr ? 'الرمز غير صالح.' : 'Code invalide.'); return; }
+    setBusy(true); setError('');
+    try {
+      const { data, error: rpcError } = await supabase.rpc('rawdha_redeem_parent_device_transfer', { p_token: token, p_device_token: deviceToken });
+      if (rpcError || data?.ok !== true || typeof data.crecheId !== 'string') throw new Error('unconfirmed');
+      rememberParentCreche(data.crecheId, data.crecheNom || '');
+      window.location.assign('/espace-parent?creche=' + encodeURIComponent(data.crecheId));
+    } catch { setError(isAr ? 'تعذر استعادة الوصول. تحققي من الرمز أو اطلبي المساعدة من المديرة.' : 'Récupération non confirmée. Vérifiez le code ou contactez la directrice.'); }
+    finally { setBusy(false); }
+  };
+  return <details className="mt-4 rounded-2xl border border-indigo-100 bg-white p-4"><summary className="cursor-pointer text-sm font-bold text-indigo-700">{isAr ? 'لديّ وصول معتمد بالفعل' : 'J’ai déjà un accès accepté'}</summary><p className="mt-3 text-xs text-slate-600">{isAr ? 'من فضاء الولي المقبول في Safari، افتحي الإعدادات وأنشئي رمز استعادة. الرمز صالح 10 دقائق ولمرة واحدة.' : 'Dans Safari, ouvrez votre espace parent déjà accepté. Dans Mon espace, créez un code de récupération puis collez-le ici. Il expire après 10 minutes et ne sert qu’une fois.'}</p><label htmlFor="parent-recovery" className="mt-3 block text-xs font-bold text-slate-700">{isAr ? 'رمز الاستعادة السري' : 'Code de récupération secret'}</label><input id="parent-recovery" autoComplete="off" value={code} onChange={e => setCode(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 p-3 text-sm"/><button type="button" disabled={busy} onClick={() => void recover()} className="mt-3 w-full rounded-xl bg-indigo-600 p-3 text-sm font-bold text-white disabled:opacity-50">{isAr ? 'استعادة وصولي' : 'Retrouver mon accès'}</button>{error && <p role="alert" className="mt-2 text-xs text-rose-700">{error}</p>}</details>;
+}
+
 export default function PublicParentPortal() {
   const db = useDb();
   const [lang, setLang] = useState<'fr' | 'ar'>(() => {
@@ -120,6 +140,9 @@ export default function PublicParentPortal() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [copyMessage, setCopyMessage] = useState('');
+  const [transferCode, setTransferCode] = useState('');
+  const [transferError, setTransferError] = useState('');
+  const [transferBusy, setTransferBusy] = useState(false);
   const [siblingSubmittedBanner, setSiblingSubmittedBanner] = useState(false);
 
   // Installation écran d'accueil + Push Notifications
@@ -434,7 +457,7 @@ export default function PublicParentPortal() {
 
 
   if (!crecheContext.crecheId) {
-    return <div dir={isAr ? 'rtl' : 'ltr'} className="min-h-screen bg-[#fffaf8] p-5"><div className="mx-auto max-w-md rounded-3xl bg-white p-6 shadow-sm border border-orange-100"><img src="/rawdah-logo.png" alt="Rawdha+" className="h-14 w-14 rounded-xl"/><div className="my-4 flex items-center justify-between"><h1 className="text-xl font-black text-slate-900">{isAr ? 'فضاء الأولياء' : 'Espace Parent'}</h1><button type="button" onClick={() => setLang(isAr ? 'fr' : 'ar')} className="rounded-lg border px-3 py-2 text-sm font-bold">{isAr ? 'FR' : 'ع'}</button></div><ParentInviteEntry isAr={isAr}/></div></div>;
+    return <div dir={isAr ? 'rtl' : 'ltr'} className="min-h-screen bg-[#fffaf8] p-5"><div className="mx-auto max-w-md rounded-3xl bg-white p-6 shadow-sm border border-orange-100"><img src="/rawdah-logo.png" alt="Rawdha+" className="h-14 w-14 rounded-xl"/><div className="my-4 flex items-center justify-between"><h1 className="text-xl font-black text-slate-900">{isAr ? 'فضاء الأولياء' : 'Espace Parent'}</h1><button type="button" onClick={() => setLang(isAr ? 'fr' : 'ar')} className="rounded-lg border px-3 py-2 text-sm font-bold">{isAr ? 'FR' : 'ع'}</button></div><ParentAccessRecovery isAr={isAr} deviceToken={deviceToken}/><div className="mt-4"><ParentInviteEntry isAr={isAr}/></div></div></div>;
   }
 
   return (
@@ -501,6 +524,7 @@ export default function PublicParentPortal() {
               {pushStatusMsg && <p role="status" className="parent-setting-message">{pushStatusMsg}</p>}
               {pushAlreadyActive && <p className="parent-setting-footnote">{isAr ? 'يعتمد الاستلام على إعدادات هاتفك والاتصال.' : 'La réception dépend des réglages de votre téléphone et de la connexion.'}</p>}
             </section>
+            {parentTab === 'settings' && <section className="parent-theme-card"><h2 className="font-bold">{isAr ? 'فتح حسابي على الشاشة الرئيسية' : 'Retrouver mon accès sur un autre écran'}</h2><p className="mt-2 text-xs">{isAr ? 'أنشئي رمزاً سرياً صالحاً 10 دقائق. استخدميه فقط على جهازك ولا تشاركيه.' : 'Créez un code secret valable 10 minutes pour ouvrir ce même accès sur votre écran d’accueil. Ne le partagez avec personne.'}</p><button type="button" disabled={transferBusy} onClick={async () => { if (transferBusy) return; setTransferBusy(true); setTransferCode(''); setTransferError(''); try { const {data,error} = await supabase.rpc('rawdha_create_parent_device_transfer', {p_creche_id:crecheContext.crecheId,p_device_token:deviceToken}); if (error || !/^[0-9a-f]{64}$/.test(data?.token || '')) throw new Error('unavailable'); setTransferCode(data.token); } catch { setTransferError(isAr ? 'تعذر إنشاء الرمز. اتصلي بالروضة.' : 'Impossible de créer le code. Contactez la crèche.'); } finally { setTransferBusy(false); } }} className="mt-3 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{isAr ? 'إنشاء رمز سري' : 'Créer mon code secret'}</button>{transferCode && <div className="mt-3"><label htmlFor="transfer-code" className="text-xs font-bold">{isAr ? 'رمز سري، صالح 10 دقائق' : 'Code secret, valable 10 minutes'}</label><input id="transfer-code" readOnly value={transferCode} onFocus={e => e.currentTarget.select()} className="mt-1 w-full rounded-xl border border-slate-300 p-2 text-xs"/><button type="button" onClick={async () => { try { await navigator.clipboard.writeText(transferCode); setTransferError(isAr ? 'تم نسخ الرمز.' : 'Code copié.'); } catch { setTransferError(isAr ? 'انسخي الرمز من الحقل.' : 'Copiez le code dans le champ.'); } }} className="mt-2 rounded-lg border px-3 py-2 text-xs font-bold">{isAr ? 'نسخ الرمز' : 'Copier le code'}</button></div>}{transferError && <p role="status" className="mt-2 text-xs">{transferError}</p>}</section>}
             {parentTab === 'settings' && <section className="parent-theme-card" aria-labelledby="parent-theme-heading">
               <div className="parent-theme-head"><div><p className="parent-eyebrow">{isAr ? 'على ذوقك' : 'À VOTRE IMAGE'}</p><h2 id="parent-theme-heading">{isAr ? 'ألواني' : 'Mes couleurs'}</h2><p>{isAr ? 'اختاري الألوان التي تحبينها لهذا الجهاز.' : 'Choisissez les couleurs qui vous ressemblent.'}</p></div><span aria-hidden="true">✳</span></div>
               <div className="parent-theme-options" role="group" aria-label={isAr ? 'اختيار الألوان' : 'Choisir les couleurs'}>
@@ -653,7 +677,7 @@ export default function PublicParentPortal() {
               </div>
             </div>
 
-            {!childInvite && !request && <ParentInviteEntry isAr={isAr}/>}
+            {!childInvite && !request && <><ParentAccessRecovery isAr={isAr} deviceToken={deviceToken}/><ParentInviteEntry isAr={isAr}/></>}
             {isRejected && (
               <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-800">
                 {isAr
