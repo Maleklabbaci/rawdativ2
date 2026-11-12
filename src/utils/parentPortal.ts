@@ -1,3 +1,6 @@
+import { secureParentDeviceToken } from './parentDeviceToken';
+import { requireConfirmedParentWrite } from './parentWriteConfirmation';
+import { confirmParentPushRegistration } from './parentPushRegistration';
 import type { Activite, Enfant, Paiement, Presence, Repas } from '../types';
 import { mealAppliesOnDate } from './mealSafety';
 
@@ -69,7 +72,6 @@ export interface ParentAnnouncement {
 
 const REQUESTS_STORAGE_KEY = 'rawdha_parent_link_requests_v1';
 const ANNOUNCEMENTS_STORAGE_KEY = 'rawdha_parent_announcements_v1';
-const DEVICE_TOKEN_KEY = 'rawdha_parent_device_token_v1';
 const REMEMBERED_CRECHE_KEY = 'rawdha_parent_last_creche_v1';
 const BROADCAST_CHANNEL_NAME = 'rawdha_parent_portal_sync_v1';
 export const PARENT_PORTAL_UPDATED_EVENT = 'rawdha-parent-portal-updated';
@@ -106,19 +108,11 @@ export function isRunningStandalonePwa(): boolean {
 }
 
 export function getOrCreateParentDeviceToken(): string {
-  if (typeof window === 'undefined') return 'server-preview-device-token';
+  if (typeof window === 'undefined') return '';
   try {
-    const existing = localStorage.getItem(DEVICE_TOKEN_KEY);
-    if (existing && existing.length >= 16) return existing;
-    const randomPart =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID().replace(/-/g, '')
-        : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 14)}`;
-    const next = `ptok_${randomPart}`;
-    localStorage.setItem(DEVICE_TOKEN_KEY, next);
-    return next;
+    return secureParentDeviceToken(window.localStorage, globalThis.crypto);
   } catch {
-    return `ptok_mem_${Date.now()}`;
+    return '';
   }
 }
 
@@ -522,18 +516,30 @@ export async function getCurrentDeviceParentRequest(
       p_creche_id: crecheId,
       p_device_token: deviceToken,
     });
-    if (!error && data && typeof data === 'object' && 'request' in (data as Record<string, unknown>)) {
+    if (error) throw new Error('Impossible de charger le statut parent.');
+    if (data && typeof data === 'object' && 'request' in (data as Record<string, unknown>)) {
       const payload = data as { request: ParentLinkRequest; announcements?: ParentAnnouncement[] };
-      if (Array.isArray(payload.announcements) && payload.announcements.length > 0) {
-        writeLocalAnnouncements(payload.announcements);
-      }
       return payload.request;
     }
+    return null;
   }
   const local = readLocalRequests().find(
     (r) => r.crecheId === crecheId && r.deviceToken === deviceToken,
   );
   return local || null;
+}
+
+/** Fetch only announcements already filtered by the parent snapshot RPC. */
+export async function loadParentAnnouncementsForDevice(crecheId: string, deviceToken: string): Promise<ParentAnnouncement[]> {
+  if (!crecheId || !deviceToken) return [];
+  if (!hasLiveSupabaseParentPortal()) return loadParentAnnouncements(crecheId);
+  const supabase = await getSupabaseClient();
+  const { data, error } = await supabase.rpc('get_parent_portal_snapshot', {
+    p_creche_id: crecheId,
+    p_device_token: deviceToken,
+  });
+  if (error) throw new Error('Impossible de charger les annonces parent.');
+  return Array.isArray(data?.announcements) ? data.announcements as ParentAnnouncement[] : [];
 }
 
 export async function submitParentLinkRequest(params: {
@@ -547,6 +553,7 @@ export async function submitParentLinkRequest(params: {
   deviceToken?: string;
 }): Promise<ParentLinkRequest> {
   const deviceToken = params.deviceToken || getOrCreateParentDeviceToken();
+  if (!deviceToken) throw new Error('Accès parent indisponible sur cet appareil. Contactez la crèche pour rétablir votre accès.');
   const platformHint = detectMobilePlatform();
   const cleanChildren = params.requestedChildren
     .map((c) => ({
@@ -568,7 +575,7 @@ export async function submitParentLinkRequest(params: {
 
   if (hasLiveSupabaseParentPortal()) {
     const supabase = await getSupabaseClient();
-    await supabase.rpc('submit_parent_link_request', {
+    const { data, error } = await supabase.rpc('submit_parent_link_request', {
       p_creche_id: params.crecheId,
       p_creche_nom: params.crecheNom,
       p_device_token: deviceToken,
@@ -579,6 +586,18 @@ export async function submitParentLinkRequest(params: {
       p_requested_children: cleanChildren,
       p_platform_hint: platformHint,
     });
+    if (error || data?.ok !== true || typeof data?.id !== 'string') {
+      throw new Error('Envoi non confirmé. Actualisez pour vérifier avant de réessayer.');
+    }
+    const { data: snapshot, error: snapshotError } = await supabase.rpc('get_parent_portal_snapshot', {
+      p_creche_id: params.crecheId,
+      p_device_token: deviceToken,
+    });
+    if (snapshotError || !snapshot?.request || snapshot.request.id !== data.id) {
+      throw new Error('Demande enregistrée, mais son statut est indisponible. Actualisez la page avant de réessayer.');
+    }
+    notifyPortalUpdated({ action: 'request_submitted', crecheId: params.crecheId, requestId: data.id });
+    return snapshot.request as ParentLinkRequest;
   }
 
   const all = readLocalRequests();
@@ -663,7 +682,7 @@ export async function approveParentLinkRequest(params: {
 
   if (hasLiveSupabaseParentPortal()) {
     const supabase = await getSupabaseClient();
-    await supabase
+    await requireConfirmedParentWrite(supabase
       .from('parent_link_requests')
       .update({
         status: 'approved',
@@ -671,7 +690,9 @@ export async function approveParentLinkRequest(params: {
         rejection_reason: null,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', params.requestId);
+      .eq('id', params.requestId).select('id').maybeSingle());
+    notifyPortalUpdated({ action: 'request_approved', requestId: params.requestId });
+    return null;
   }
 
   const all = readLocalRequests();
@@ -702,7 +723,7 @@ export async function rejectParentLinkRequest(
 ): Promise<void> {
   if (hasLiveSupabaseParentPortal()) {
     const supabase = await getSupabaseClient();
-    await supabase
+    await requireConfirmedParentWrite(supabase
       .from('parent_link_requests')
       .update({
         status: 'rejected',
@@ -710,7 +731,9 @@ export async function rejectParentLinkRequest(
         rejection_reason: reason.trim() || null,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', requestId);
+      .eq('id', requestId).select('id').maybeSingle());
+    notifyPortalUpdated({ action: 'request_rejected', requestId });
+    return;
   }
 
   const all = readLocalRequests();
@@ -778,6 +801,7 @@ export async function subscribeParentWebPush(params: {
   deviceToken?: string;
 }): Promise<{ ok: boolean; reason?: string }> {
   const deviceToken = params.deviceToken || getOrCreateParentDeviceToken();
+  if (!deviceToken) return { ok: false, reason: 'registration_failed' };
 
   if (typeof window === 'undefined' || typeof Notification === 'undefined') {
     return { ok: false, reason: 'unsupported' };
@@ -801,7 +825,7 @@ export async function subscribeParentWebPush(params: {
   // Dans un aperçu intégré (iframe cross-origin), les navigateurs bloquent parfois la boîte système
   // Notification.requestPermission() : on active alors le canal Push applicatif de démonstration
   // pour permettre de tester tout le flux en direct depuis l’aperçu.
-  if (permission !== 'granted' && !inIframe) {
+  if (permission !== 'granted' && (hasLiveSupabaseParentPortal() || !inIframe)) {
     return { ok: false, reason: 'denied' };
   }
 
@@ -829,13 +853,14 @@ export async function subscribeParentWebPush(params: {
 
   if (hasLiveSupabaseParentPortal()) {
     const supabase = await getSupabaseClient();
-    await supabase.rpc('register_parent_web_push', {
+    const registered = await confirmParentPushRegistration(subscriptionJson, () => supabase.rpc('register_parent_web_push', {
       p_creche_id: params.crecheId,
       p_device_token: deviceToken,
       p_push_enabled: true,
       p_push_subscription: subscriptionJson,
       p_home_screen_installed: isRunningStandalonePwa(),
-    });
+    }));
+    if (!registered) return { ok: false, reason: 'registration_failed' };
   }
 
   const all = readLocalRequests();
@@ -852,14 +877,16 @@ export async function subscribeParentWebPush(params: {
     writeLocalRequests(all);
   }
 
-  await triggerLocalServiceWorkerNotification(
-    params.crecheNom ? `${params.crecheNom} — Notifications activées` : 'Rawdha+ — Notifications activées',
-    'Vous recevrez désormais les annonces et informations de vos enfants directement sur votre téléphone.',
-    `/espace-parent?creche=${encodeURIComponent(params.crecheId)}`,
-  );
+  if (!hasLiveSupabaseParentPortal()) {
+    await triggerLocalServiceWorkerNotification(
+      params.crecheNom ? `${params.crecheNom} — Notifications de démonstration` : 'Rawdha+ — Notifications de démonstration',
+      'Ceci est une notification locale de démonstration.',
+      `/espace-parent?creche=${encodeURIComponent(params.crecheId)}`,
+    );
+  }
 
   notifyPortalUpdated({ action: 'push_enabled', crecheId: params.crecheId });
-  return { ok: true };
+  return { ok: true, reason: hasLiveSupabaseParentPortal() ? undefined : 'demo' };
 }
 
 export async function markParentHomeScreenInstalled(
@@ -929,14 +956,17 @@ export async function publishParentAnnouncement(params: {
   targetGroup?: 'Bébés' | 'Moyens' | 'Grands';
   targetEnfantId?: string;
   enfants: Enfant[];
-}): Promise<{ announcement: ParentAnnouncement; sentPushCount: number }> {
+}): Promise<{ announcement: ParentAnnouncement; sentPushCount: number; pushStatus: 'confirmed' | 'incomplete' | 'unknown' | 'demo' }> {
   const title = params.title.trim();
   const message = params.message.trim();
   if (!title || !message) {
     throw new Error('Le titre et le message de l’annonce sont obligatoires.');
   }
 
-  const requests = await loadParentLinkRequests(params.crecheId);
+  if ((params.targetScope === 'child' && !params.targetEnfantId) || (params.targetScope === 'group' && !params.targetGroup)) {
+    throw new Error('Sélectionnez le destinataire de l’annonce.');
+  }
+  const requests = hasLiveSupabaseParentPortal() ? [] : await loadParentLinkRequests(params.crecheId);
   const approvedPushDevices = requests.filter((r) => {
     if (r.status !== 'approved' || !r.pushEnabled) return false;
     if (params.targetScope === 'all') return true;
@@ -949,17 +979,34 @@ export async function publishParentAnnouncement(params: {
         return child?.groupeAge === params.targetGroup;
       });
     }
-    return true;
+    return false;
   });
 
-  let sentPushCount = approvedPushDevices.length;
+  let sentPushCount = 0;
+  let pushStatus: 'confirmed' | 'incomplete' | 'unknown' | 'demo' = 'demo';
   const annId = `pann-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const createdAt = new Date().toISOString();
 
   if (hasLiveSupabaseParentPortal()) {
     const supabase = await getSupabaseClient();
+    // Save first: never send a push for an announcement that was not confirmed.
+    await requireConfirmedParentWrite(supabase.from('parent_announcements').insert({
+      id: annId,
+      creche_id: params.crecheId,
+      title,
+      message,
+      category: params.category,
+      target_scope: params.targetScope,
+      target_group: params.targetGroup || null,
+      target_enfant_id: params.targetEnfantId || null,
+      sender_name: params.crecheNom || 'Direction',
+      sent_push_count: 0,
+      created_at: createdAt,
+    }).select('id').maybeSingle());
+
+    pushStatus = 'unknown';
     try {
-      const { data: pushRes } = await supabase.functions.invoke('send-parent-web-push', {
+      const { data: pushRes, error: pushError } = await supabase.functions.invoke('send-parent-web-push', {
         body: {
           crecheId: params.crecheId,
           title: `${params.crecheNom || 'Crèche'} — ${title}`,
@@ -970,26 +1017,19 @@ export async function publishParentAnnouncement(params: {
           announcementId: annId,
         },
       });
-      if (typeof pushRes?.sent === 'number') {
+      if (!pushError && pushRes?.configured === true && Number.isInteger(pushRes.sent) && pushRes.sent >= 0 && Number.isInteger(pushRes.failed) && pushRes.failed >= 0) {
         sentPushCount = pushRes.sent;
+        pushStatus = pushRes.failed > 0 ? 'incomplete' : 'confirmed';
+        // A statistics failure must not cause a duplicate send on retry.
+        if (sentPushCount > 0) await supabase.from('parent_announcements').update({ sent_push_count: sentPushCount }).eq('id', annId);
+      } else if (!pushError && pushRes?.configured === false) {
+        pushStatus = 'incomplete';
       }
     } catch {
-      // Edge function optional until deployed
+      // The request may have reached the server: do not retry automatically.
     }
-
-    await supabase.from('parent_announcements').insert({
-      id: annId,
-      creche_id: params.crecheId,
-      title,
-      message,
-      category: params.category,
-      target_scope: params.targetScope,
-      target_group: params.targetGroup || null,
-      target_enfant_id: params.targetEnfantId || null,
-      sender_name: params.crecheNom || 'Direction',
-      sent_push_count: sentPushCount,
-      created_at: createdAt,
-    });
+  } else {
+    sentPushCount = approvedPushDevices.length;
   }
 
   const announcement: ParentAnnouncement = {
@@ -1006,17 +1046,19 @@ export async function publishParentAnnouncement(params: {
     createdAt,
   };
 
-  const all = readLocalAnnouncements();
-  all.unshift(announcement);
-  writeLocalAnnouncements(all);
+  if (!hasLiveSupabaseParentPortal()) {
+    const all = readLocalAnnouncements();
+    all.unshift(announcement);
+    writeLocalAnnouncements(all);
+  }
 
-  notifyPortalUpdated({
-    action: 'announcement_published',
-    crecheId: params.crecheId,
-    announcement,
-  });
+  // The shared browser channel must not broadcast targeted content to other
+  // parent tabs. Live parents refresh their server-filtered snapshots instead.
+  notifyPortalUpdated(hasLiveSupabaseParentPortal()
+    ? { action: 'announcements_changed', crecheId: params.crecheId }
+    : { action: 'announcement_published', crecheId: params.crecheId, announcement });
 
-  return { announcement, sentPushCount };
+  return { announcement, sentPushCount, pushStatus };
 }
 
 // ============================================================================

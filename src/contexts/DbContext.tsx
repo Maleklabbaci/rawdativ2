@@ -11,6 +11,7 @@ import {
   updateCollectionDocument, 
   deleteCollectionDocument,
   setCollectionDocument,
+  trackedBusinessRpc,
   callSupabaseRpc,
   callSupabaseRpcWithTimeout,
   supabase
@@ -240,6 +241,8 @@ interface DbContextType {
   adminFollowups: AdminFollowup[];
   loading: boolean;
   financialDataReady: boolean;
+  dataLoading?: boolean;
+  dataErrors?: string[];
   refreshAll: () => Promise<void>;
 
   addNotification: (notif: Omit<AppNotification, 'id'>) => Promise<string>;
@@ -380,6 +383,9 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const [adminAuditLogs, setAdminAuditLogs] = useState<AdminAuditLog[]>([]);
   const [adminFollowups, setAdminFollowups] = useState<AdminFollowup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [dataErrors, setDataErrors] = useState<string[]>([]);
+  const dataOwnerRef = React.useRef<string | undefined>(undefined);
   const [financialState, setFinancialState] = useState<{ owner: string | undefined; ready: boolean }>({ owner: undefined, ready: false });
   // A filtered/empty RLS response for an unapproved director is not a zero balance.
   const financialDataReady = !!user && (user.role !== 'directeur' || user.approvalStatus === 'approved') && financialState.owner === user.id && financialState.ready;
@@ -406,6 +412,11 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     const request = ++refreshSequence.current;
     const financialGeneration = financialWrites.current.generation;
     setFinancialDataReady(false);
+    if (dataOwnerRef.current !== user?.id) {
+      dataOwnerRef.current = user?.id;
+      setDataLoading(true);
+      setDataErrors([]);
+    }
     // Ne lance jamais de requêtes RLS avec le rôle anon pendant l’écran de connexion.
     // Cela évite les 401 sur toutes les tables avant que Supabase Auth ait une session.
     if (!user) {
@@ -426,6 +437,8 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       setCommunityPosts([]);
       setCommunityComments([]);
       setCommunityReactions([]);
+      setCommunityFeatures([]);
+      setDataLoading(false);
       setInscriptionLinks([]);
       setDemandesAdmission([]);
       setNotifications([]);
@@ -442,10 +455,10 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
           ? getCollectionData<UserAccount>('comptes')
           : Promise.resolve([user] as UserAccount[]),
         getCollectionDataStrict<Enfant>('enfants').then(data => ({ data, ok: true as const })).catch(() => ({ data: [] as Enfant[], ok: false as const })),
-        getCollectionData<Presence>('presences'),
-        getCollectionData<PresenceJournee>('presence_journees'),
+        getCollectionDataStrict<Presence>('presences').then(data => ({ data, ok: true as const })).catch(() => ({ data: [] as Presence[], ok: false as const })),
+        getCollectionDataStrict<PresenceJournee>('presence_journees').then(data => ({ data, ok: true as const })).catch(() => ({ data: [] as PresenceJournee[], ok: false as const })),
         getCollectionDataStrict<Paiement>('paiements').then(data => ({ data, ok: true as const })).catch(() => ({ data: [] as Paiement[], ok: false as const })),
-        getCollectionData<Personnel>('personnel'),
+        getCollectionDataStrict<Personnel>('personnel').then(data => ({ data, ok: true as const })).catch(() => ({ data: [] as Personnel[], ok: false as const })),
         user?.role === 'admin' ? getCollectionData<DemandeDirecteur>('demandes_directeur') : Promise.resolve([] as DemandeDirecteur[]),
         user?.role === 'admin' ? getCollectionData<CrecheSettingsContact>('parametres') : Promise.resolve([] as CrecheSettingsContact[]),
       ]);
@@ -464,67 +477,66 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       setComptes(user?.role === 'admin' ? hydrateAccountsWithCrechePhone(dbComptes, dbCrecheSettings) : dbComptes);
-      setEnfants(dbEnfants.data.filter(Boolean).map(normalizeEnfantData));
-      setPresences(dbPresences);
-      setPresenceJournees(dbPresenceJournees);
+      if (dbEnfants.ok) setEnfants(dbEnfants.data.filter(Boolean).map(normalizeEnfantData));
+      if (dbPresences.ok) setPresences(dbPresences.data);
+      if (dbPresenceJournees.ok) setPresenceJournees(dbPresenceJournees.data);
       // A refresh that overlaps a write is not a reliable financial snapshot.
       if (financialGeneration === financialWrites.current.generation && financialWrites.current.active === 0) {
-        setPaiements(dbPaiements.data);
+        if (dbPaiements.ok) setPaiements(dbPaiements.data);
         setFinancialDataReady(dbEnfants.ok && dbPaiements.ok);
       } else {
         setFinancialDataReady(false);
       }
-      setPersonnel(dbPersonnel);
+      if (dbPersonnel.ok) setPersonnel(dbPersonnel.data);
       setDemandesDirecteur(dbDemandesDirecteur);
 
       // On arrête l'écran de chargement ICI -> le Dashboard s'affiche déjà,
       // pendant que la vague 2 continue en silence derrière.
       setLoading(false);
 
-      // --- VAGUE 2 : le reste, en arrière-plan, ne bloque plus rien ---
-      Promise.all([
-        getCollectionData<Classe>('classes'),
-        getCollectionData<Activite>('activites'),
-        getCollectionData<Repas>('repas'),
-        getCollectionData<Achat>('achats'),
-        getCollectionData<DiscussionMessage>('discussion_messages'),
-        getCollectionData<Avis>('avis'),
-        getCollectionData<Signalement>('signalements'),
-        getCollectionData<CommunityPost>('community_posts'),
-        getCollectionData<CommunityComment>('community_comments'),
-        getCollectionData<CommunityReaction>('community_reactions'),
-        getCollectionData<CommunityFeature>('community_features'),
-        getCollectionData<InscriptionLink>('inscription_liens'),
-        getCollectionData<DemandeAdmission>('demandes_admission'),
-        getCollectionData<AppNotification>('notifications'),
-        user?.role === 'admin' ? getCollectionData<AdminAuditLog>('admin_audit_logs') : Promise.resolve([] as AdminAuditLog[]),
-        user?.role === 'admin' ? getCollectionData<AdminFollowup>('admin_followups') : Promise.resolve([] as AdminFollowup[]),
-      ])
-        .then(([dbClasses, dbActivites, dbRepas, dbAchats, dbMessages, dbAvis, dbSignalements, dbCommunityPosts, dbCommunityComments, dbCommunityReactions, dbCommunityFeatures, dbInscriptionLinks, dbDemandesAdmission, dbNotifications, dbAdminAuditLogs, dbAdminFollowups]) => {
-          if (request !== refreshSequence.current) return;
-          setClasses(dbClasses);
-          setActivites(dbActivites);
-          setRepas(dbRepas);
-          setAchats(dbAchats);
-          setMessages(dbMessages);
-          setAvis(dbAvis);
-          setSignalements(dbSignalements);
-          setCommunityPosts((Array.isArray(dbCommunityPosts) ? dbCommunityPosts : []).filter(Boolean).map(normalizeCommunityPost));
-          setCommunityComments((Array.isArray(dbCommunityComments) ? dbCommunityComments : []).filter(Boolean).map(normalizeCommunityComment));
-          setCommunityReactions((Array.isArray(dbCommunityReactions) ? dbCommunityReactions : []).filter(Boolean).map(normalizeCommunityReaction));
-          setCommunityFeatures((Array.isArray(dbCommunityFeatures) ? dbCommunityFeatures : []).map((feature, index) => normalizeCommunityFeature(feature, index)).filter((feature): feature is CommunityFeature => feature !== null));
-          setInscriptionLinks(dbInscriptionLinks);
-          setDemandesAdmission(dbDemandesAdmission);
-          setNotifications(dbNotifications);
-          setAdminAuditLogs((Array.isArray(dbAdminAuditLogs) ? dbAdminAuditLogs : []).filter(Boolean).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
-          setAdminFollowups((Array.isArray(dbAdminFollowups) ? dbAdminFollowups : []).filter(Boolean).sort((a, b) => (a.dueAt || a.createdAt).localeCompare(b.dueAt || b.createdAt)));
-        })
-        .catch(err => {
-          console.error('Erreur de connexion à Supabase (chargement arrière-plan):', err);
-        });
+      // Chaque lecture est indépendante : une panne ne masque pas les autres collections.
+      // Une erreur n'est jamais interprétée comme une liste vide.
+      const errors: string[] = [];
+      if (!dbEnfants.ok) errors.push('enfants');
+      if (!dbPaiements.ok) errors.push('paiements');
+      if (!dbPresences.ok) errors.push('presences');
+      if (!dbPresenceJournees.ok) errors.push('presence_journees');
+      if (!dbPersonnel.ok) errors.push('personnel');
+      const loadBackground = async <T,>(name: string, apply: (rows: T[]) => void) => {
+        try {
+          const rows = await getCollectionDataStrict<T>(name);
+          if (request === refreshSequence.current) apply(rows);
+        } catch (error) {
+          console.error(`Erreur chargement ${name}:`, error);
+          errors.push(name);
+        }
+      };
+      void Promise.all([
+        loadBackground<Classe>('classes', setClasses),
+        loadBackground<Activite>('activites', setActivites),
+        loadBackground<Repas>('repas', setRepas),
+        loadBackground<Achat>('achats', setAchats),
+        loadBackground<DiscussionMessage>('discussion_messages', setMessages),
+        loadBackground<Avis>('avis', setAvis),
+        loadBackground<Signalement>('signalements', setSignalements),
+        loadBackground<CommunityPost>('community_posts', rows => setCommunityPosts(rows.filter(Boolean).map(normalizeCommunityPost))),
+        loadBackground<CommunityComment>('community_comments', rows => setCommunityComments(rows.filter(Boolean).map(normalizeCommunityComment))),
+        loadBackground<CommunityReaction>('community_reactions', rows => setCommunityReactions(rows.filter(Boolean).map(normalizeCommunityReaction))),
+        loadBackground<CommunityFeature>('community_features', rows => setCommunityFeatures(rows.map((feature, index) => normalizeCommunityFeature(feature, index)).filter((feature): feature is CommunityFeature => feature !== null))),
+        loadBackground<InscriptionLink>('inscription_liens', setInscriptionLinks),
+        loadBackground<DemandeAdmission>('demandes_admission', setDemandesAdmission),
+        loadBackground<AppNotification>('notifications', setNotifications),
+        ...(user.role === 'admin' ? [
+          loadBackground<AdminFollowup>('admin_followups', rows => setAdminFollowups(rows.filter(Boolean).sort((a, b) => (a.dueAt || a.createdAt).localeCompare(b.dueAt || b.createdAt)))),
+        ] : []),
+      ]).then(() => {
+        if (request !== refreshSequence.current) return;
+        setDataErrors(errors);
+        setDataLoading(false);
+      });
     } catch (err) {
       console.error('Erreur de connexion à Supabase:', err);
-      if (request === refreshSequence.current) { setFinancialDataReady(false); setLoading(false); }
+      if (request === refreshSequence.current) { setFinancialDataReady(false); setDataErrors(['initial']); setDataLoading(false); setLoading(false); }
     }
   };
 
@@ -734,7 +746,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
   const addChildHealthEvent = async (childId: string, draft: ChildHealthDraft): Promise<ChildHealthEvent> => {
     assertWriteAccess();
-    const { data, error } = await supabase.rpc('rawdha_add_child_health_event', {
+    const { data, error } = await trackedBusinessRpc('rawdha_add_child_health_event', {
       p_id: draft.id, p_child_id: childId, p_type: draft.type, p_date: draft.date,
       p_time: draft.heure, p_details: draft.details, p_corrects_id: draft.correctsId,
     });
@@ -751,7 +763,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
   const createPickupAuthorization = async (childId: string, draft: PickupAuthorizationDraft): Promise<PickupAuthorization> => {
     assertWriteAccess();
-    const { data, error } = await supabase.rpc('rawdha_write_pickup_authorization', {
+    const { data, error } = await trackedBusinessRpc('rawdha_write_pickup_authorization', {
       p_action: 'create', p_child_id: childId, p_id: draft.id, p_nom: draft.nom,
       p_lien: draft.lien, p_telephone: draft.telephone, p_reference: draft.referenceAutorisation,
     });
@@ -760,7 +772,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
   const revokePickupAuthorization = async (childId: string, id: string): Promise<PickupAuthorization> => {
     assertWriteAccess();
-    const { data, error } = await supabase.rpc('rawdha_write_pickup_authorization', { p_action: 'revoke', p_child_id: childId, p_id: id });
+    const { data, error } = await trackedBusinessRpc('rawdha_write_pickup_authorization', { p_action: 'revoke', p_child_id: childId, p_id: id });
     if (error) throw error;
     return data as PickupAuthorization;
   };
@@ -770,7 +782,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   // revenir aux écritures directes si le RPC est absent ou si l'accès est refusé.
   const writeClasse = async (action: 'create' | 'update' | 'delete', id: string, patch: Partial<Classe> = {}, expectedChildren: string[] | null = null) => {
     assertWriteAccess();
-    const { data, error } = await supabase.rpc('rawdha_write_classe', { p_action: action, p_id: id, p_patch: patch, p_expected_children: expectedChildren });
+    const { data, error } = await trackedBusinessRpc('rawdha_write_classe', { p_action: action, p_id: id, p_patch: patch, p_expected_children: expectedChildren });
     if (error) throw error;
     return data as Classe;
   };
@@ -819,7 +831,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   };
   const writePresence = async (action: 'create' | 'update' | 'delete', id: string, patch: Partial<Presence>, expected: Presence | null) => {
     assertWriteAccess();
-    const { data, error } = await supabase.rpc('rawdha_write_presence', { p_action: action, p_id: id, p_patch: patch, p_expected: expected });
+    const { data, error } = await trackedBusinessRpc('rawdha_write_presence', { p_action: action, p_id: id, p_patch: patch, p_expected: expected });
     if (error) throw error;
     return data as Presence;
   };
@@ -848,7 +860,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   const confirmPickupDeparture = async (presence: Presence, authorizationId: string, departureTime: string) => {
     try {
       assertWriteAccess();
-      const { data, error } = await supabase.rpc('rawdha_confirm_pickup_departure', {
+      const { data, error } = await trackedBusinessRpc('rawdha_confirm_pickup_departure', {
         p_presence_id: presence.id, p_expected: presence, p_authorization_id: authorizationId,
         p_departure_time: departureTime, p_identity_checked: true,
       });
@@ -878,7 +890,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       assertWriteAccess();
       const expected = presenceJournees.find(item => item.crecheId === journee.crecheId && item.date === journee.date) || null;
-      const { data, error } = await supabase.rpc('rawdha_write_attendance_day', {
+      const { data, error } = await trackedBusinessRpc('rawdha_write_attendance_day', {
         p_creche_id: journee.crecheId, p_date: journee.date, p_status: journee.statut, p_expected: expected,
       });
       if (error) throw error;
@@ -901,7 +913,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       started = true; financialWrites.current.active++; financialWrites.current.generation++;
       const id = paiement.id || `pay_${crypto.randomUUID()}`;
       const { id: _id, ...patch } = paiement;
-      const { data, error } = await supabase.rpc('rawdha_write_invoice', { p_action:'create', p_id:id, p_patch:patch, p_expected:null });
+      const { data, error } = await trackedBusinessRpc('rawdha_write_invoice', { p_action:'create', p_id:id, p_patch:patch, p_expected:null });
       if (error) throw error;
       if (!data || data.id !== id) throw new Error('finance_unconfirmed_response');
       if (currentUserId.current === user?.id) setPaiements(prev => [...prev.filter(item => item.id !== id), data as Paiement]);
@@ -918,7 +930,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       assertWriteAccess();
       if (!financialDataReady || !expected || expected.id !== id) throw new Error('financial_data_unavailable');
       started = true; financialWrites.current.active++; financialWrites.current.generation++;
-      const { data, error } = await supabase.rpc('rawdha_write_invoice', { p_action:'update', p_id:id, p_patch:patch, p_expected:expected });
+      const { data, error } = await trackedBusinessRpc('rawdha_write_invoice', { p_action:'update', p_id:id, p_patch:patch, p_expected:expected });
       if (error) throw error;
       if (!data || data.id !== id) throw new Error('finance_unconfirmed_response');
       if (currentUserId.current === user?.id) setPaiements(prev => prev.map(item => item.id === id ? data as Paiement : item));
@@ -938,7 +950,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       assertWriteAccess();
       if (!financialDataReady || !expected?.id) throw new Error('financial_data_unavailable');
       started = true; financialWrites.current.active++; financialWrites.current.generation++;
-      const { data, error } = await supabase.rpc('rawdha_review_invoice_period', {
+      const { data, error } = await trackedBusinessRpc('rawdha_review_invoice_period', {
         p_invoice_id: expected.id, p_expected: expected, p_period_key: key, p_reason: reason.trim(), p_confirmed: true,
       });
       if (error) throw error;
@@ -962,7 +974,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       assertWriteAccess();
       if (!financialDataReady || !draft.expected?.id) throw new Error('financial_data_unavailable');
       started = true; financialWrites.current.active++; financialWrites.current.generation++;
-      const { data, error } = await supabase.rpc('rawdha_invoice_review_action', {
+      const { data, error } = await trackedBusinessRpc('rawdha_invoice_review_action', {
         p_request_id: draft.requestId, p_action: draft.action, p_invoice_id: draft.expected.id, p_expected: draft.expected,
         p_period_key: draft.periodKey || null, p_target_invoice_id: draft.target?.id || null,
         p_target_expected: draft.target || null, p_reason: draft.reason.trim(), p_confirmed: true,
@@ -1236,7 +1248,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     const cleanPatch = Object.fromEntries(
       Object.entries(patch).filter(([, value]) => value !== undefined),
     );
-    const { data, error } = await supabase.rpc('rawdha_admin_update_director_account', {
+    const { data, error } = await trackedBusinessRpc('rawdha_admin_update_director_account', {
       p_target_id: id,
       p_patch: cleanPatch,
       p_action: action,
@@ -1255,7 +1267,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   ) => {
     if (user?.role !== 'admin') throw new Error('Accès administrateur requis.');
     const cleanPatch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
-    const { data, error } = await supabase.rpc('rawdha_admin_update_director_operations', {
+    const { data, error } = await trackedBusinessRpc('rawdha_admin_update_director_operations', {
       p_target_id: id,
       p_patch: cleanPatch,
       p_action: action,
@@ -1275,7 +1287,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     status: AdminFollowupStatus = 'planned',
   ) => {
     if (user?.role !== 'admin') throw new Error('Accès administrateur requis.');
-    const { data, error } = await supabase.rpc('rawdha_admin_create_followup', {
+    const { data, error } = await trackedBusinessRpc('rawdha_admin_create_followup', {
       p_target_id: targetId,
       p_channel: channel,
       p_note: note?.trim() || null,
@@ -1294,7 +1306,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     recipientIds?: string[],
   ) => {
     if (user?.role !== 'admin') throw new Error('Accès administrateur requis.');
-    const { data, error } = await supabase.rpc('rawdha_admin_publish_notification', {
+    const { data, error } = await trackedBusinessRpc('rawdha_admin_publish_notification', {
       p_payload: payload,
       p_recipient_ids: recipientIds && recipientIds.length ? recipientIds : null,
     });
@@ -1661,7 +1673,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
   // Cette fonction idempotente sert uniquement de filet de sécurité pour les anciens comptes.
   const ensureInscriptionLink = async () => {
     assertWriteAccess();
-    const { data, error } = await supabase.rpc('rawdha_create_inscription_link', {
+    const { data, error } = await trackedBusinessRpc('rawdha_create_inscription_link', {
       p_label: 'QR permanent de la crèche',
       p_expires_at: null,
     });
@@ -1684,7 +1696,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
 
   const createInscriptionLink = async (label?: string, expiresAt?: string | null) => {
     assertWriteAccess();
-    const { data, error } = await supabase.rpc('rawdha_create_inscription_link', {
+    const { data, error } = await trackedBusinessRpc('rawdha_create_inscription_link', {
       p_label: label?.trim() || null,
       p_expires_at: expiresAt || null,
     });
@@ -1729,7 +1741,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       traiteLe: new Date().toISOString(),
     } : item));
     try {
-      const { data, error } = await supabase.rpc('rawdha_decide_admission', {
+      const { data, error } = await trackedBusinessRpc('rawdha_decide_admission', {
         p_id: id,
         p_statut: statut,
         p_motif: motif?.trim() || null,
@@ -1822,6 +1834,8 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       adminFollowups,
       loading,
       financialDataReady,
+      dataLoading,
+      dataErrors,
       refreshAll,
       addMessage,
       updateMessage,

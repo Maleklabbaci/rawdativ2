@@ -1,0 +1,22 @@
+import { PGlite } from '@electric-sql/pglite'; import {test} from 'node:test'; import assert from 'node:assert/strict'; import fs from 'node:fs';
+test('admin moderation and support audit is atomic and excludes private content',async()=>{const db=new PGlite();try{
+ await db.exec(`create role anon; create role authenticated; create schema auth;
+ create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.uid',true),'')::uuid$$;
+ create function public.rawdha_is_admin() returns boolean language sql stable as $$select auth.uid()='00000000-0000-0000-0000-000000000001'::uuid$$;
+ create table public.admin_audit_logs(id text primary key,data jsonb not null);
+ create table public.signalements(id text primary key,data jsonb not null);
+ create table public.notifications(id text primary key,data jsonb not null);
+ create table public.community_posts(id text primary key,data jsonb not null);
+ create table public.community_features(id text primary key,data jsonb not null);`);
+ await db.exec(fs.readFileSync(new URL('../supabase/migrations/20261108330000_atomic_admin_activity_audit.sql',import.meta.url),'utf8'));
+ await db.exec(`insert into public.signalements values ('ticket','{"statut":"nouveau","reponseAdmin":"contenu privé"}'); insert into public.notifications values ('notif','{}'); insert into public.community_posts values ('post','{"statut":"publie"}'); select set_config('request.uid','00000000-0000-0000-0000-000000000001',false);`);
+ await db.exec(`update public.signalements set data = data || '{"statut":"en_cours","reponseAdmin":"texte secret","priorite":"haute"}'::jsonb where id='ticket'; update public.community_posts set data=jsonb_set(data,'{statut}','"masquee"') where id='post'; insert into public.community_features values('pin','{"kind":"pin","targetId":"post"}'); delete from public.community_features where id='pin'; delete from public.notifications where id='notif';`);
+ let logs=(await db.query('select data from public.admin_audit_logs')).rows.map(r=>r.data);assert.equal(logs.length,7);
+ for(const name of ['ticket_status_updated','ticket_response_saved','ticket_priority_updated','community_post_hidden','community_post_pinned','community_post_unpinned','notification_deleted']) assert.ok(logs.some(l=>l.action===name));
+ assert.doesNotMatch(JSON.stringify(logs),/privé|secret|haute/);
+ await db.exec(`alter table public.admin_audit_logs add constraint reject_new_audit check (false) not valid`);
+ await assert.rejects(db.query("delete from public.signalements where id='ticket'"),/check constraint/);
+ assert.equal((await db.query('select count(*)::int n from public.signalements')).rows[0].n,1);
+ await db.exec(`alter table public.admin_audit_logs drop constraint reject_new_audit;select set_config('request.uid','00000000-0000-0000-0000-000000000002',false);update public.signalements set data=data||'{"statut":"resolu"}'::jsonb where id='ticket'`);
+ assert.equal(Number((await db.query('select count(*) n from public.admin_audit_logs')).rows[0].n),7);
+ }finally{await db.close()}});

@@ -29,6 +29,7 @@ import {
 } from './utils/subscriptionRenewal';
 import { prefetchCoreRoutesOnIdle } from './utils/routePrefetch';
 import { initNotificationAudioUnlock, playNotificationChime } from './utils/notificationSound';
+import { installUnsavedFormGuard } from './utils/unsavedFormGuard';
 import type { Enfant } from './types';
 
 const LazyDemoProviders =
@@ -61,6 +62,7 @@ const PAGE_PATHS: Record<string, string> = {
   activites: '/activites',
   repas: '/repas',
   admin: '/admin',
+  logs: '/logs',
   comptes: '/comptes',
   notifications: '/notifications',
   communication: '/communication',
@@ -135,6 +137,7 @@ const Activites = lazyWithRecovery(() => import('./components/Activites'));
 const Repas = lazyWithRecovery(() => import('./components/Repas'));
 const Parametres = lazyWithRecovery(() => import('./components/Parametres'));
 const AdminCenter = lazyWithRecovery(() => import('./components/AdminCenter'));
+const ApplicationLogs = lazyWithRecovery(() => import('./components/ApplicationLogs'));
 const Comptes = lazyWithRecovery(() => import('./components/Comptes'));
 const Notifications = lazyWithRecovery(() => import('./components/Notifications'));
 const NotificationsDirecteur = lazyWithRecovery(() => import('./components/NotificationsDirecteur'));
@@ -151,14 +154,31 @@ const EnfantDetails = lazyWithRecovery(() => import('./components/EnfantDetails'
 import SubscriptionStatusBadge from './components/SubscriptionStatusBadge';
 import { AlertCircle, Lock, Check, CreditCard } from 'lucide-react';
 import { hasCompletedOnboarding } from './components/OnboardingCrecheModal';
+import DataLoadGuard from './components/DataLoadGuard';
+import FirstRunOnboarding, { type OnboardingProgress, type OnboardingPage } from './components/FirstRunOnboarding';
+import { prepareSetupTask } from './utils/onboardingTask';
+import { supabase } from './supabase';
+import { recordApplicationEvent, recordCodeError } from './utils/applicationEvents';
 
 function AppContent() {
   const { isAuthenticated, user, creche, logout, loading: authLoading } = useAuth();
   const isPendingApproval = user?.role === 'directeur' && user.approvalStatus === 'pending';
   // La route est conservée dans l’état React : history.pushState() seul ne déclenche
   // pas de rendu, notamment dans certains WebViews Android.
+  useEffect(() => {
+    if (!isAuthenticated || typeof window === 'undefined') return;
+    return installUnsavedFormGuard(document, window);
+  }, [isAuthenticated, user?.id]);
   const [routeVersion, setRouteVersion] = useState(0);
   const [currentPage, setCurrentPage] = useState(() => pageFromPathname(window.location.pathname));
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id) return;
+    recordApplicationEvent('page_view', currentPage);
+    const onError = (event: ErrorEvent) => recordCodeError(currentPage, event);
+    const onRejection = (event: PromiseRejectionEvent) => recordApplicationEvent('async_error', currentPage, undefined, event.reason);
+    window.addEventListener('error', onError); window.addEventListener('unhandledrejection', onRejection);
+    return () => { window.removeEventListener('error', onError); window.removeEventListener('unhandledrejection', onRejection); };
+  }, [isAuthenticated, user?.id, currentPage]);
   const [isDesktopViewport, setIsDesktopViewport] = useState(() => (
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
   ));
@@ -177,6 +197,9 @@ function AppContent() {
   const { language, setLanguage, t } = useLanguage();
   const {
     loading: dbLoading,
+    dataLoading = false,
+    dataErrors = [],
+    refreshAll,
     comptes,
     communityFeatures,
     notifications,
@@ -199,7 +222,7 @@ function AppContent() {
   // toute modification interne de l’historique, sans dépendre d’un PopStateEvent.
   void routeVersion;
   const isPublicAdmission = window.location.pathname.replace(/\/+$/, '') === '/admission';
-  const isPublicParentSpace = window.location.pathname.replace(/\/+$/, '') === '/espace-parent';
+  const isPublicParentSpace = window.location.pathname.replace(/\/+$/, '') === '/espace-parent' || Boolean(import.meta.env.DEV && import.meta.env.VITE_ARENA_DEMO === 'true' && import.meta.env.VITE_DEMO_PARENT === 'true' && window.location.pathname === '/');
   const isPublicPrivacy = isLegalPathname(window.location.pathname);
   const normalizedPathname = normalizeAuthPath(window.location.pathname);
   const isPasswordRecoveryUrl =
@@ -237,24 +260,66 @@ function AppContent() {
     setRouteVersion((version) => version + 1);
   };
 
-  // ✅ Onboarding premier login : on vérifie une fois si le directeur a déjà rempli
-  // ses infos de crèche (existence du doc "parametres/creche_{id}"). null = pas encore vérifié.
-  const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
+  // New accounts have their own server-side progress. Existing accounts keep the legacy flow.
+  const [onboarding, setOnboarding] = useState<OnboardingProgress | null>(null);
+  const [onboardingState, setOnboardingState] = useState<'checking' | 'ready' | 'inactive' | 'error'>('checking');
+  const [onboardingReload, setOnboardingReload] = useState(0);
+  const [onboardingBannerError, setOnboardingBannerError] = useState(false);
+  const isDemoOnboarding = Boolean(import.meta.env.DEV && import.meta.env.VITE_ARENA_DEMO === 'true' && typeof window !== 'undefined' && (import.meta.env.VITE_DEMO_ONBOARDING === 'true' || new URLSearchParams(window.location.search).get('setup_preview') === '1' || sessionStorage.getItem('rawdha:setup-demo') === '1'));
   useEffect(() => {
+    let cancelled = false;
+    if (!user?.id || user.role !== 'directeur' || isPendingApproval) { setOnboarding(null); setOnboardingState('inactive'); return; }
     if (import.meta.env.DEV && import.meta.env.VITE_ARENA_DEMO === 'true') {
-      setNeedsOnboarding(false);
-    } else if (user?.role === 'directeur' && user.approvalStatus !== 'pending') {
-      hasCompletedOnboarding(user.id).then(done => {
-        setNeedsOnboarding(!done);
-        if (!done && window.location.pathname !== PAGE_PATHS.demarrage) {
-          window.history.replaceState({}, '', PAGE_PATHS.demarrage);
-          setCurrentPage('demarrage');
-        }
-      });
-    } else {
-      setNeedsOnboarding(false);
+      if (isDemoOnboarding) {
+        sessionStorage.setItem('rawdha:setup-demo', '1');
+        const stored = sessionStorage.getItem(`rawdha:setup-demo:${user.id}`);
+        let progress: OnboardingProgress = { account_id: user.id, step: 'welcome', language: null, task_page: null };
+        try { if (stored) progress = JSON.parse(stored) as OnboardingProgress; } catch { /* start preview over */ }
+        setOnboarding(progress); setOnboardingState('ready');
+      } else { setOnboarding(null); setOnboardingState('inactive'); }
+      return;
     }
-  }, [user?.id, user?.role, user?.approvalStatus]);
+    setOnboardingState('checking'); setOnboarding(null);
+    void (async () => {
+      try {
+        const { data, error } = await supabase.from('director_onboarding').select('account_id,step,language,task_page').eq('account_id', user.id).maybeSingle();
+        if (error) throw error;
+        if (cancelled) return;
+        if (data) {
+          const progress = data as OnboardingProgress;
+          setOnboarding(progress); setOnboardingState('ready');
+          if (progress.language) setLanguage(progress.language);
+        } else {
+          setOnboardingState('inactive');
+          // Preserve the old first-configuration screen for legacy accounts.
+          const done = await hasCompletedOnboarding(user.id);
+          if (!cancelled && !done && window.location.pathname !== PAGE_PATHS.demarrage) navigateToPage('demarrage', { replace: true });
+        }
+      } catch { if (!cancelled) setOnboardingState('error'); }
+    })();
+    return () => { cancelled = true; };
+  }, [user?.id, user?.role, user?.approvalStatus, onboardingReload]);
+  const saveOnboarding = async (patch: Partial<OnboardingProgress>) => {
+    if (!user?.id || !onboarding || onboarding.account_id !== user.id) throw new Error('onboarding unavailable');
+    if (isDemoOnboarding) {
+      const next = { ...onboarding, ...patch }; sessionStorage.setItem(`rawdha:setup-demo:${user.id}`, JSON.stringify(next)); setOnboarding(next); if (patch.step === 'done') navigateToPage('dashboard'); return;
+    }
+    const { data, error } = await supabase.from('director_onboarding').update({ ...patch, updated_at: new Date().toISOString() }).eq('account_id', user.id).select('account_id,step,language,task_page').single();
+    if (error || !data) throw error || new Error('onboarding save failed');
+    setOnboarding(data as OnboardingProgress);
+    if (patch.step === 'done') navigateToPage('dashboard');
+  };
+  const openOnboardingTask = async (page: OnboardingPage) => {
+    await saveOnboarding({ task_page: page });
+    if (user?.id) prepareSetupTask(user.id, page);
+    navigateToPage(page);
+  };
+  const resumeOnboarding = async () => {
+    if (!onboarding) return;
+    const next = onboarding.step === 'children' ? 'classes' : onboarding.step === 'classes' ? 'team' : 'done';
+    try { setOnboardingBannerError(false); await saveOnboarding({ task_page: null, step: next }); }
+    catch { setOnboardingBannerError(true); }
+  };
 
   useEffect(() => {
     const handleFullscreenChange = () => setIsBrowserFullscreen(Boolean(document.fullscreenElement));
@@ -677,10 +742,10 @@ function AppContent() {
 
   useEffect(() => {
     if (user?.role === 'admin') {
-      if (currentPage !== 'admin' && currentPage !== 'comptes' && currentPage !== 'parametres' && currentPage !== 'notifications' && currentPage !== 'communication' && currentPage !== 'community') {
+      if (currentPage !== 'admin' && currentPage !== 'logs' && currentPage !== 'comptes' && currentPage !== 'parametres' && currentPage !== 'notifications' && currentPage !== 'communication' && currentPage !== 'community') {
         navigateToPage('admin', { replace: true });
       }
-    } else if (currentPage === 'comptes' || currentPage === 'admin') {
+    } else if (currentPage === 'comptes' || currentPage === 'admin' || currentPage === 'logs') {
       navigateToPage('dashboard', { replace: true });
     } else if (user?.role === 'directeur' && activeProfile && !canAccessPage(currentPage)) {
       const fallbackPage = activeProfile.allowedPages.find(p => PAGE_PATHS[p]) || 'presences';
@@ -732,6 +797,7 @@ function AppContent() {
       activites: 'activities',
       repas: 'meals',
       admin: language === 'ar' ? 'مركز الإدارة' : 'Centre Administrateur',
+      logs: language === 'ar' ? 'السجل والأحداث' : 'Historique & logs',
       parametres: 'settings',
       comptes: 'comptes',
     };
@@ -1011,14 +1077,36 @@ if (isSubscriptionExpired && !isPendingApproval) {
     );
   }
 
+  if (user?.role === 'directeur' && !isPendingApproval && onboardingState === 'checking') {
+    return <div role="status" className="flex min-h-screen items-center justify-center bg-white text-sm font-semibold text-slate-600">{language === 'ar' ? 'جارٍ إعداد فضائك...' : 'Préparation de votre espace...'}</div>;
+  }
+  if (user?.role === 'directeur' && !isPendingApproval && onboardingState === 'error') {
+    return <div role="alert" className="flex min-h-screen flex-col items-center justify-center gap-4 bg-white p-6 text-center text-sm text-slate-700"><p>{language === 'ar' ? 'تعذر تحميل خطوات البدء.' : 'Impossible de charger les étapes de démarrage.'}</p><div className="flex flex-wrap justify-center gap-3"><button className="rounded-xl bg-indigo-600 px-4 py-2 font-bold text-white" onClick={() => setOnboardingReload(value => value + 1)}>{language === 'ar' ? 'إعادة المحاولة' : 'Réessayer'}</button><button className="rounded-xl border border-slate-300 px-4 py-2" onClick={() => setOnboardingState('inactive')}>{language === 'ar' ? 'الدخول إلى فضائي' : 'Accéder à mon espace'}</button><button onClick={logout} className="rounded-xl px-4 py-2">{language === 'ar' ? 'تسجيل الخروج' : 'Déconnexion'}</button></div></div>;
+  }
+  if (onboardingState === 'ready' && onboarding && onboarding.account_id === user?.id && onboarding.step !== 'done' && !onboarding.task_page) {
+    return <FirstRunOnboarding firstName={user.prenom || ''} progress={onboarding} language={language === 'ar' ? 'ar' : 'fr'} onChangeLanguage={setLanguage} onSave={saveOnboarding} onOpenTask={openOnboardingTask} onLogout={logout} />;
+  }
+
   if (requiresProfileSelection && !isPendingApproval) {
     return <ProfileSelectorScreen />;
   }
 
+  const requiredCollections: Record<string, string[]> = {
+    dashboard: ['enfants', 'paiements', 'presences', 'presence_journees', 'personnel', 'classes', 'activites', 'repas'],
+    enfants: ['enfants', 'classes'], admissions: ['enfants', 'inscription_liens', 'demandes_admission'],
+    classes: ['classes', 'enfants'], presences: ['enfants', 'classes', 'presences', 'presence_journees'], paiements: ['enfants', 'paiements'],
+    achats: ['achats'], personnel: ['personnel'], activites: ['activites', 'classes'], repas: ['repas'],
+    community: ['community_posts', 'community_comments', 'community_reactions', 'community_features'],
+    communication: ['enfants', 'paiements', 'discussion_messages'], notifications: ['notifications'],
+    admin: ['admin_audit_logs', 'admin_followups'], comptes: [], rapports: ['enfants', 'paiements', 'achats', 'presences'],
+  };
+  const missingData = dataErrors.includes('initial') || dataErrors.some(name => (requiredCollections[currentPage] || []).includes(name));
+  const dataGate = dataLoading ? <div className="mx-auto max-w-4xl p-4"><PageSkeleton /></div> : missingData ? <div role="alert" className="mx-auto max-w-xl rounded-2xl border border-amber-200 bg-amber-50 p-5 text-center text-amber-900"><p className="text-sm font-bold">{language === 'ar' ? 'تعذر تحميل بيانات هذه الصفحة.' : 'Impossible de charger les données de cette page.'}</p><p className="mt-2 text-xs">{language === 'ar' ? 'تحقق من الاتصال ثم حاول مجدداً.' : 'Vérifiez la connexion puis réessayez.'}</p><button type="button" onClick={() => void refreshAll()} className="mt-4 rounded-xl bg-slate-800 px-4 py-2 text-xs font-bold text-white">{language === 'ar' ? 'إعادة المحاولة' : 'Réessayer'}</button></div> : null;
+
   if (currentPage === 'community') {
     const isAr = language === 'ar';
     return (
-      <div className="min-h-screen bg-[#f5f7fb]" dir={isAr ? 'rtl' : 'ltr'}>
+      <div className="min-h-screen bg-[#f3fafb]" dir={isAr ? 'rtl' : 'ltr'}>
         {globalSlickPayLockOverlay}
         <a href="#main-content" className="rawdha-skip-link">
           {isAr ? 'الانتقال إلى المحتوى الرئيسي' : 'Aller au contenu principal'}
@@ -1026,13 +1114,13 @@ if (isSubscriptionExpired && !isPendingApproval) {
         <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur">
           <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-2 px-3 py-2.5 sm:gap-4 sm:px-6 sm:py-3">
             <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-600/20">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#1b7a62] text-white shadow-sm shadow-emerald-700/20">
                 <Network className="h-5 w-5" />
               </div>
               <div className="min-w-0">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <h1 className="max-w-[145px] truncate text-sm font-black tracking-tight text-slate-900 sm:max-w-none sm:text-lg">Rawdha Connect</h1>
-                  <span className="hidden rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-black text-indigo-700 sm:inline-flex">Extension Rawdha+</span>
+                  <span className="hidden rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-800 sm:inline-flex">Extension Rawdha+</span>
                   {socialUnreadCount > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-[10px] font-black text-rose-700"><Bell className="h-3 w-3" />{socialUnreadCount > 99 ? '99+' : socialUnreadCount}</span>}
                 </div>
                 <p className="max-w-[145px] truncate text-[10px] font-semibold text-slate-500 sm:max-w-none sm:text-[11px]">{isAr ? 'المساحة الاجتماعية المهنية لدور الحضانة' : 'L’espace social professionnel des crèches'}</p>
@@ -1044,10 +1132,10 @@ if (isSubscriptionExpired && !isPendingApproval) {
                 <span>{isAr ? 'متصل بمنصة Rawdha+' : 'Connecté à la plateforme Rawdha+'}</span>
               </div>
               <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-0.5 sm:gap-1 sm:rounded-xl sm:p-1">
-                <button type="button" onClick={() => setLanguage('fr')} aria-pressed={!isAr} className={`rounded-lg px-1.5 py-1 text-[9px] font-black transition sm:px-2 sm:py-1.5 sm:text-[10px] ${!isAr ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>FR</button>
-                <button type="button" onClick={() => setLanguage('ar')} aria-pressed={isAr} className={`rounded-lg px-1.5 py-1 text-[9px] font-black transition sm:px-2 sm:py-1.5 sm:text-[10px] ${isAr ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>عربي</button>
+                <button type="button" onClick={() => setLanguage('fr')} aria-pressed={!isAr} className={`rounded-lg px-1.5 py-1 text-[9px] font-black transition sm:px-2 sm:py-1.5 sm:text-[10px] ${!isAr ? 'bg-white text-emerald-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>FR</button>
+                <button type="button" onClick={() => setLanguage('ar')} aria-pressed={isAr} className={`rounded-lg px-1.5 py-1 text-[9px] font-black transition sm:px-2 sm:py-1.5 sm:text-[10px] ${isAr ? 'bg-white text-emerald-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>عربي</button>
               </div>
-              <button type="button" onClick={() => navigateToPage('dashboard')} className="inline-flex items-center gap-1 rounded-xl border border-indigo-200 bg-white px-2 py-2 text-[11px] font-black sm:gap-2 sm:py-2.5 sm:text-xs text-indigo-700 shadow-sm transition hover:bg-indigo-50 active:scale-[0.98] sm:px-4">
+              <button type="button" onClick={() => navigateToPage('dashboard')} className="inline-flex items-center gap-1 rounded-xl border border-emerald-200 bg-white px-2 py-2 text-[11px] font-black sm:gap-2 sm:py-2.5 sm:text-xs text-emerald-800 shadow-sm transition hover:bg-emerald-50 active:scale-[0.98] sm:px-4">
                 {isAr ? <ArrowRight className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
                 <span className="hidden sm:inline">{isAr ? 'العودة إلى التسيير' : 'Retour à la gestion'}</span>
                 <span className="sm:hidden">{isAr ? 'التسيير' : 'Gestion'}</span>
@@ -1057,7 +1145,7 @@ if (isSubscriptionExpired && !isPendingApproval) {
         </header>
         <main id="main-content" tabIndex={-1} className="min-h-[calc(100vh-73px)] pb-28 outline-none lg:pb-0 [@media(max-height:430px)]:pb-0">
           <Suspense fallback={<div className="flex min-h-[50vh] items-center justify-center text-sm font-bold text-slate-400">{isAr ? 'جارٍ تحميل Rawdha Connect...' : 'Chargement de Rawdha Connect...'}</div>}>
-            <Community />
+            <DataLoadGuard loading={dataLoading} failed={missingData} fallback={dataGate}><Community /></DataLoadGuard>
           </Suspense>
         </main>
 
@@ -1080,10 +1168,11 @@ if (isSubscriptionExpired && !isPendingApproval) {
         case 'activites': return <Activites />;
         case 'repas': return <Repas />;
         case 'admin': return <AdminCenter onNavigate={navigateToPage} />;
+        case 'logs': return user?.role === 'admin' ? <ApplicationLogs /> : null;
         case 'comptes': return <Comptes />;
         case 'notifications': return user?.role === 'directeur' ? <NotificationsDirecteur onNavigateToPaiements={() => navigateToPage('paiements')} /> : <Notifications />;
         case 'communication': return user?.role === 'directeur' ? <Communication /> : <CommunicationAdmin />;
-        case 'demarrage': return <Demarrage onDone={() => { setNeedsOnboarding(false); navigateToPage('dashboard'); }} />;
+        case 'demarrage': return <Demarrage onDone={() => navigateToPage('dashboard')} />;
         case 'aide': return <Aide onNavigate={navigateToPage} />;
         case 'support': return <Support />;
         case 'rapports': return <Rapports />;
@@ -1313,6 +1402,7 @@ if (isSubscriptionExpired && !isPendingApproval) {
 
         {/* Page Content */}
         <main id="main-content" tabIndex={-1} className="min-w-0 overflow-x-hidden outline-none p-3 pb-32 sm:p-6 sm:pb-32 lg:p-10 lg:pb-10 max-w-[1600px] mx-auto">
+          {onboardingState === 'ready' && onboarding?.task_page && onboarding.account_id === user?.id && <div role="status" className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs font-semibold text-indigo-900"><span>{language === 'ar' ? 'يمكنك العودة إلى خطوات البدء عندما تنتهين.' : 'Reprenez les étapes quand vous avez terminé.'}</span><button type="button" onClick={() => void resumeOnboarding()} className="rounded-lg bg-indigo-600 px-3 py-2 font-bold text-white">{language === 'ar' ? 'متابعة البدء' : 'Continuer le démarrage'}</button>{onboardingBannerError && <span role="alert">{language === 'ar' ? 'تعذر الحفظ. حاولي مجدداً.' : 'Enregistrement impossible. Réessayez.'}</span>}</div>}
           {isOffline && (
             <div role="alert" className="mb-4 flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs sm:text-sm font-bold text-rose-800 shadow-xs">
               <WifiOff className="h-5 w-5 shrink-0 text-rose-600" />
@@ -1355,7 +1445,7 @@ if (isSubscriptionExpired && !isPendingApproval) {
               )}
             </div>
           )}
-          {!isPendingApproval && renderPage()}
+          {!isPendingApproval && <div key={currentPage} className="rawdha-page-enter rawdha-app-motion"><DataLoadGuard loading={dataLoading} failed={missingData} fallback={dataGate}>{renderPage()}</DataLoadGuard></div>}
         </main>
       </div>
       <MobileBottomNav

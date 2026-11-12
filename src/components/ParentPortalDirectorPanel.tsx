@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   BellRing,
   Check,
@@ -73,6 +73,8 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
   const [targetGroup, setTargetGroup] = useState<'Bébés' | 'Moyens' | 'Grands'>('Bébés');
   const [targetEnfantId, setTargetEnfantId] = useState('');
   const [sendingPush, setSendingPush] = useState(false);
+  const sendingPushRef = useRef(false);
+  const [sendResult, setSendResult] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -191,6 +193,8 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
     try {
       await rejectParentLinkRequest(req.id, isFr ? 'Dossier non trouvé' : 'الملف غير مطابق');
       toast.info(isFr ? 'Demande refusée.' : 'تم رفض الطلب.');
+    } catch {
+      toast.error(isFr ? 'Refus non confirmé. Actualisez avant de réessayer.' : 'لم يتم تأكيد الرفض. حدّثي الصفحة قبل إعادة المحاولة.');
     } finally {
       setBusyReqId(null);
     }
@@ -234,10 +238,17 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
 
   const handleSendPush = async (e: FormEvent) => {
     e.preventDefault();
+    if (sendingPushRef.current) return;
+    setSendResult('');
     if (!annTitle.trim() || !annMessage.trim()) {
       toast.error(isFr ? 'Renseignez le titre et le message.' : 'يرجى ملء العنوان والرسالة.');
       return;
     }
+    if (targetScope === 'child' && !targetEnfantId) {
+      setSendResult(isFr ? 'Choisissez l’enfant destinataire.' : 'اختاري الطفل المعني.');
+      return;
+    }
+    sendingPushRef.current = true;
     setSendingPush(true);
     try {
       const res = await publishParentAnnouncement({
@@ -253,14 +264,19 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
       });
       setAnnTitle('');
       setAnnMessage('');
-      toast.success(
-        isFr
-          ? `Annonce publiée & Push envoyé (${res.sentPushCount} appareil(s) notifié(s))`
-          : `تم نشر الإعلان وإرسال الإشعار الفوري (${res.sentPushCount} جهاز)`,
-      );
+      if (res.pushStatus === 'demo') {
+        setSendResult(isFr ? 'Annonce de démonstration uniquement : aucune notification réelle.' : 'إعلان تجريبي فقط، لم يُرسل إشعار حقيقي.');
+      } else if (res.pushStatus === 'unknown') {
+        setSendResult(isFr ? 'Annonce publiée. Résultat du Push inconnu : vérifiez avant de renvoyer.' : 'تم نشر الإعلان. نتيجة الإشعارات غير معروفة؛ تحققي قبل الإرسال مجدداً.');
+      } else if (res.pushStatus === 'incomplete') {
+        setSendResult(isFr ? `Annonce publiée. Push incomplet ou indisponible (${res.sentPushCount} accepté(s)).` : 'تم نشر الإعلان، لكن إرسال الإشعارات غير مكتمل أو غير متاح.');
+      } else {
+        setSendResult(isFr ? `Annonce publiée. Push accepté pour ${res.sentPushCount} appareil(s) ; réception non garantie.` : `تم نشر الإعلان وقبول الإشعارات لـ ${res.sentPushCount} جهاز؛ الاستلام غير مضمون.`);
+      }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erreur d’envoi.');
+      setSendResult(err instanceof Error ? err.message : (isFr ? 'Envoi non confirmé. Vérifiez l’historique avant de réessayer.' : 'لم يتم تأكيد الإرسال. تحققي من السجل قبل إعادة المحاولة.'));
     } finally {
+      sendingPushRef.current = false;
       setSendingPush(false);
     }
   };
@@ -299,8 +315,8 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
                 </h2>
                 <p className="text-xs text-slate-500 truncate">
                   {isFr
-                    ? `0 DA · Sans API WhatsApp · ${approvedRequests.length} famille(s) liée(s) (${pushActiveCount} Push actif)`
-                    : `مجاناً بدون API واتساب · ${approvedRequests.length} عائلة مرتبطة`}
+                    ? `${approvedRequests.length} famille(s) liée(s) · ${pushActiveCount} accès avec Push enregistré`
+                    : `${approvedRequests.length} عائلة مرتبطة · ${pushActiveCount} إشعار مسجل`}
                 </p>
               </div>
             </div>
@@ -317,7 +333,8 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
           </div>
 
           {/* Modèles rapides en 1 clic */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+          <details className="rounded-xl border border-slate-100 bg-slate-50 p-3"><summary className="cursor-pointer text-xs font-bold text-slate-600">{isFr ? 'Utiliser un modèle (facultatif)' : 'استخدام نموذج (اختياري)'}</summary>
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-1.5">
             {(
               [
                 { id: 'fermeture', fr: 'Jour férié', ar: 'عطلة / غلق' },
@@ -342,7 +359,40 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
             ))}
           </div>
 
+          </details>
+
           <form onSubmit={handleSendPush} className="space-y-3">
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
+                {isFr ? 'Titre de la notification *' : 'عنوان الإشعار *'}
+              </label>
+              <input
+                type="text"
+                required
+                maxLength={120}
+                placeholder={isFr ? 'Ex: Crèche fermée dimanche (Jour férié)' : 'مثال: غلق الروضة يوم الأحد'}
+                value={annTitle}
+                onChange={(e) => setAnnTitle(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
+                {isFr ? 'Message / sous-titre *' : 'الرسالة / العنوان الفرعي *'}
+              </label>
+              <textarea
+                rows={3}
+                required
+                maxLength={600}
+                placeholder={isFr ? 'Écrivez votre message aux familles...' : 'اكتبوا رسالتكم للأولياء...'}
+                value={annMessage}
+                onChange={(e) => setAnnMessage(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-semibold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white resize-none"
+              />
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
@@ -397,34 +447,12 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
               )}
             </div>
 
-            <div>
-              <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
-                {isFr ? 'Titre de la notification *' : 'عنوان الإشعار *'}
-              </label>
-              <input
-                type="text"
-                required
-                placeholder={isFr ? 'Ex: Crèche fermée dimanche (Jour férié)' : 'مثال: غلق الروضة يوم الأحد'}
-                value={annTitle}
-                onChange={(e) => setAnnTitle(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white"
-              />
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">{isFr ? 'Aperçu sur le téléphone' : 'معاينة على الهاتف'}</p>
+              <div className="flex items-start gap-3 rounded-xl bg-white p-3"><img src="/rawdah-logo.png" alt="" className="h-9 w-9 shrink-0 rounded-xl"/><div className="min-w-0"><p className="text-[10px] font-bold text-slate-500">{crecheNom}</p><p className="break-words text-sm font-bold text-slate-900">{annTitle.trim() || (isFr ? 'Titre de la notification' : 'عنوان الإشعار')}</p><p className="break-words text-xs text-slate-600">{annMessage.trim() || (isFr ? 'Votre message apparaîtra ici.' : 'تظهر رسالتك هنا.')}</p></div></div>
             </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
-                {isFr ? 'Message reçu sur le téléphone *' : 'نص الإشعار *'}
-              </label>
-              <textarea
-                rows={3}
-                required
-                placeholder={isFr ? 'Écrivez votre message aux familles...' : 'اكتبوا رسالتكم للأولياء...'}
-                value={annMessage}
-                onChange={(e) => setAnnMessage(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-semibold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white resize-none"
-              />
-            </div>
-
+            <p className="text-xs leading-relaxed text-slate-500">{isFr ? 'La notification peut être visible sur l’écran verrouillé. Évitez les informations sensibles. Seuls les parents ayant activé les notifications peuvent recevoir le Push.' : 'قد يظهر الإشعار على شاشة الهاتف المقفلة. تجنبي المعلومات الحساسة. يصل الإشعار للأولياء الذين فعّلوا الإشعارات فقط.'}</p>
+            {sendResult && <p role="status" className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-xs font-semibold leading-relaxed text-indigo-900">{sendResult}</p>}
             <div className="flex justify-end">
               <button
                 type="submit"

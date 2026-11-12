@@ -1,3 +1,4 @@
+import { takeSetupTask } from '../utils/onboardingTask';
 import { importBatches } from '../utils/importBatches';
 import {
   buildChildrenImportTemplateCsv,
@@ -226,6 +227,8 @@ export default function Enfants() {
   const [filterGroupe, setFilterGroupe] = useState('Tous');
   const [showModal, setShowModal] = useState(false);
   const [isSavingChild, setIsSavingChild] = useState(false);
+  const [childFormError, setChildFormError] = useState('');
+  useEffect(() => { if (showModal) setChildFormError(''); }, [showModal]);
   const childSaveInFlight = useRef(false);
   const childCreationId = useRef<string | null>(null);
   const [savingExit, setSavingExit] = useState(false);
@@ -256,6 +259,7 @@ export default function Enfants() {
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [showImportWizard, setShowImportWizard] = useState(false);
+  useEffect(() => { if (!isReadOnly && takeSetupTask(user?.id, 'enfants')) setShowImportWizard(true); }, [user?.id, isReadOnly]);
   const [pasteImportText, setPasteImportText] = useState('');
 
   const [formData, setFormData] = useState({
@@ -733,14 +737,19 @@ export default function Enfants() {
 
   const handleAjouter = async () => {
     if (childSaveInFlight.current) return;
-    if (!formData.nom || !formData.prenom || !formData.dateNaissance || 
-        !formData.parentNom || !formData.parentTelephone) {
-      showToast(
-        isArabic ? 'يرجى ملء جميع الحقول المطلوبة *' : 'Veuillez remplir tous les champs obligatoires *',
-        'error',
-      );
+    const missing = [
+      !formData.prenom.trim() && [isArabic ? 'اسم الطفل' : 'Prénom de l’enfant', 'child-prenom'],
+      !formData.nom.trim() && [isArabic ? 'لقب الطفل' : 'Nom de l’enfant', 'child-nom'],
+      !formData.dateNaissance && [isArabic ? 'تاريخ الميلاد' : 'Date de naissance', 'child-date'],
+      !formData.parentNom.trim() && [isArabic ? 'لقب الولي' : 'Nom du parent', 'child-parent-nom'],
+      !formData.parentTelephone.trim() && [isArabic ? 'رقم هاتف الولي' : 'Téléphone du parent', 'child-parent-telephone'],
+    ].filter((item): item is string[] => Array.isArray(item));
+    if (missing.length) {
+      setChildFormError(`${isArabic ? 'يرجى إكمال' : 'À compléter'} : ${missing.map(item => item[0]).join(', ')}.`);
+      document.getElementById(missing[0][1])?.focus();
       return;
     }
+    setChildFormError('');
 
     childSaveInFlight.current = true;
     setIsSavingChild(true);
@@ -1912,7 +1921,6 @@ export default function Enfants() {
         {showModal && (
           <div 
             className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[9999] flex items-start justify-center p-2 sm:p-4 pt-2 sm:pt-24 font-sans overflow-y-auto"
-            onClick={() => { if (!isSavingChild) setShowModal(false); }}
           >
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
@@ -1931,7 +1939,7 @@ export default function Enfants() {
                   <p className="text-xs text-indigo-100 mt-0.5">
                     {editingEnfantId 
                       ? (isArabic ? 'تحديث المعلومات الطبية، العائلية وتراخيص الملف الإداري' : 'Mise à jour des indicateurs et contacts du tuteur légal') 
-                      : (isArabic ? 'يرجى تعبئة جميع المعلومات الطبية والعائلية والمستندات الإدارية الملحقة بدقة' : 'Saisie exhaustive d\'indicateurs physiologiques, pédiatriques et tuteur légal')}
+                      : (isArabic ? 'املئي الحقول المطلوبة (*) ويمكنك إكمال باقي الملف لاحقاً.' : 'Remplissez les champs obligatoires (*). Le reste peut être complété plus tard.')}
                   </p>
                 </div>
                 <button 
@@ -1947,43 +1955,49 @@ export default function Enfants() {
                 <div>
                   <h4 className="text-xs font-black text-indigo-600 uppercase tracking-widest mb-3.5 pb-1 border-b border-slate-100 flex items-center gap-1.5">
                     <Baby className="w-4 h-4" />
-                    {isArabic ? 'أولاً: هوية الطفل ومواصفاته الصحية' : '1. Identité et Paramètres Physiologiques du Nourrisson'}
+                    {isArabic ? '1. معلومات الطفل' : '1. Informations de l’enfant'}
                   </h4>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                      <label htmlFor="child-prenom" className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
                         {isArabic ? 'الاسم الأول *' : 'Prénom *'}
                       </label>
                       <input 
                         type="text" 
                         placeholder={isArabic ? 'مثال: أمين' : 'Ex: Amine'}
                         className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800" 
+                        id="child-prenom"
+                        aria-required="true"
                         value={formData.prenom}
                         onChange={e => setFormData({...formData, prenom: e.target.value})} 
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                      <label htmlFor="child-nom" className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
                         {isArabic ? 'اللقب *' : 'Nom *'}
                       </label>
                       <input 
                         type="text" 
                         placeholder={isArabic ? 'مثال: بلالي' : 'Ex: Belali'}
                         className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800" 
+                        id="child-nom"
+                        aria-required="true"
                         value={formData.nom}
                         onChange={e => setFormData({...formData, nom: e.target.value})} 
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                      <label htmlFor="child-date" className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
                         {isArabic ? 'تاريخ الميلاد *' : 'Date de Naissance *'}
                       </label>
                       <input 
                         type="date"
                         className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800" 
+                        id="child-date"
+                        aria-required="true"
                         value={formData.dateNaissance}
                         onChange={e => setFormData({...formData, dateNaissance: e.target.value})} 
                       />
@@ -2069,27 +2083,11 @@ export default function Enfants() {
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
-                        {isArabic ? 'يوم استحقاق الدفع الشهري' : 'Jour d\'échéance de paiement mensuel'}
-                      </label>
-                      <select
-                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
-                        value={formData.jourEcheanceMensuel}
-                        onChange={e => setFormData({...formData, jourEcheanceMensuel: e.target.value})}
-                      >
-                        {Array.from({ length: 28 }, (_, i) => i + 1).map(jour => (
-                          <option key={jour} value={jour}>{jour}</option>
-                        ))}
-                      </select>
-                      <p className="text-[10px] text-slate-400 mt-1.5">
-                        {isArabic
-                          ? 'كل شهر، في هذا اليوم، يتم إنشاء فاتورة تلقائياً وتبقى الإشعارات ظاهرة حتى يتم الدفع.'
-                          : 'Chaque mois, à ce jour, une facture est générée automatiquement et une notification reste active jusqu\'au règlement.'}
-                      </p>
-                    </div>
+
                   </div>
 
+                  <details className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                    <summary className="cursor-pointer text-sm font-bold text-slate-700">{isArabic ? 'معلومات صحية إضافية (اختيارية)' : 'Informations de santé complémentaires (facultatif)'}</summary>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                     <div>
                       <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
@@ -2143,12 +2141,34 @@ export default function Enfants() {
                       />
                     </div>
                   </div>
+                  </details>
+                  <div className="mt-4">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                        {isArabic ? 'يوم استحقاق الدفع الشهري' : 'Jour d\'échéance de paiement mensuel'}
+                      </label>
+                      <select
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800"
+                        value={formData.jourEcheanceMensuel}
+                        onChange={e => setFormData({...formData, jourEcheanceMensuel: e.target.value})}
+                      >
+                        {Array.from({ length: 28 }, (_, i) => i + 1).map(jour => (
+                          <option key={jour} value={jour}>{jour}</option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-slate-400 mt-1.5">
+                        {isArabic
+                          ? 'كل شهر، في هذا اليوم، يتم إنشاء فاتورة تلقائياً وتبقى الإشعارات ظاهرة حتى يتم الدفع.'
+                          : 'Chaque mois, à ce jour, une facture est générée automatiquement et une notification reste active jusqu\'au règlement.'}
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
                 <div>
                   <h4 className="text-xs font-black text-indigo-600 uppercase tracking-widest mb-3.5 pb-1 border-b border-slate-100 flex items-center gap-1.5 pt-2">
                     <User className="w-4 h-4" />
-                    {isArabic ? 'ثانياً: معلومات الاتصال وولي الأمر' : '2. Coordonnées et Profil du Représentant Légal / Parent'}
+                    {isArabic ? '2. معلومات الولي' : '2. Contact du parent'}
                   </h4>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2169,7 +2189,7 @@ export default function Enfants() {
 
                     <div>
                       <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
-                        {isArabic ? 'اسم الولي *' : 'Prénom Parent *'}
+                        {isArabic ? 'اسم الولي (اختياري)' : 'Prénom du parent (facultatif)'}
                       </label>
                       <input 
                         type="text" 
@@ -2181,13 +2201,15 @@ export default function Enfants() {
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                      <label htmlFor="child-parent-nom" className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
                         {isArabic ? 'لقب الولي *' : 'Nom Parent *'}
                       </label>
                       <input 
                         type="text" 
                         placeholder={isArabic ? 'مثال: بلالي' : 'Ex: Belali'}
                         className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-semibold text-slate-800" 
+                        id="child-parent-nom"
+                        aria-required="true"
                         value={formData.parentNom}
                         onChange={e => setFormData({...formData, parentNom: e.target.value})} 
                       />
@@ -2196,13 +2218,15 @@ export default function Enfants() {
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
+                      <label htmlFor="child-parent-telephone" className="block text-[11px] font-bold text-slate-500 uppercase mb-2">
                         {isArabic ? 'رقم الهاتف *' : 'Téléphone principal *'}
                       </label>
                       <input 
                         type="tel" 
                         placeholder="0555 12 89 90"
                         className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold text-slate-800" 
+                        id="child-parent-telephone"
+                        aria-required="true"
                         value={formData.parentTelephone}
                         onChange={e => setFormData({...formData, parentTelephone: e.target.value})} 
                       />
@@ -2249,7 +2273,8 @@ export default function Enfants() {
                   </div>
                 </div>
 
-                <div>
+                <details className="rounded-2xl border border-slate-200 p-4">
+                  <summary className="cursor-pointer text-sm font-bold text-slate-700">{isArabic ? 'الوثائق (يمكن إضافتها لاحقاً)' : 'Documents (à ajouter maintenant ou plus tard)'}</summary>
                   <h4 className="text-xs font-black text-indigo-600 uppercase tracking-widest mb-3.5 pb-1 border-b border-slate-100 flex items-center gap-1.5 pt-2">
                     <FileText className="w-4 h-4" />
                     {isArabic ? 'ثالثاً: الملف الإداري والتصاريح' : '3. Liste des documents remis à l\'admission'}
@@ -2298,11 +2323,12 @@ export default function Enfants() {
                       ? 'تحويل محلي تلقائي للصور (صفحة أو عدة صفحات مثل دفتر التلقيح) إلى ملف PDF مضغوط وأقل من 2 ميغابايت.'
                       : 'Conversion locale automatique de vos photos (1 ou plusieurs pages pour le carnet de vaccination) en PDF propre < 2 Mo.'}
                   </p>
-                </div>
+                </details>
 
               </div>
 
-              <div className="p-6 pt-4 border-t border-slate-100 flex gap-3 flex-shrink-0 bg-slate-50/50">
+              {childFormError && <p role="alert" className="border-t border-rose-100 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-800">{childFormError}</p>}
+              <div className="p-4 sm:p-6 pt-3 border-t border-slate-100 flex gap-3 flex-shrink-0 bg-slate-50/50">
                 <button 
                   type="button"
                   className="flex-1 p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer text-sm"
@@ -2316,7 +2342,7 @@ export default function Enfants() {
                   disabled={isSavingChild}
                   onClick={() => void handleAjouter()}
                 >
-                  {t('common.save')}
+                  {isSavingChild ? (isArabic ? 'جارٍ الحفظ...' : 'Enregistrement...') : t('common.save')}
                 </button>
               </div>
             </motion.div>

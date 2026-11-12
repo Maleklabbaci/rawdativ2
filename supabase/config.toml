@@ -11,3 +11,9 @@ verify_jwt = false
 
 [functions.send-parent-web-push]
 verify_jwt = true
+
+[functions.identity-document-review]
+verify_jwt = true
+
+[functions.register-director-request]
+verify_jwt = false

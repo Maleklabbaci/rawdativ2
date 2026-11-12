@@ -4,7 +4,7 @@ import { JSDOM } from 'jsdom';
 import { createServer } from 'vite';
 import React from 'react';
 
-test('settings expose clean operational controls and 1 900 DA BaridiMob/CCP renewal without dead Non disponible placeholders', async () => {
+test('settings expose 1 900 DA subscription and card/WhatsApp options without dead placeholders', async () => {
   const dom = new JSDOM('<!doctype html><div id="root"></div>', { url: 'http://localhost:3000', pretendToBeVisual: true });
   for (const key of ['window', 'document', 'navigator', 'localStorage', 'sessionStorage', 'HTMLElement', 'Element', 'Node', 'Event', 'MouseEvent', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
     if (key in dom.window) {
@@ -45,21 +45,25 @@ test('settings expose clean operational controls and 1 900 DA BaridiMob/CCP rene
     const text = () => document.body.textContent.replace(/\s+/g, ' ');
     assert.equal([...document.querySelectorAll('span')].filter(s => s.textContent === 'Non disponible').length, 0);
     assert.match(text(), /1[\s\u202f\u00a0]?900 DA/);
-    assert.match(text(), /Renouveler \(BaridiMob \/ CCP\)/);
+    assert.match(text(), /Gérer \/ Renouveler mon abonnement/);
+    assert.doesNotMatch(text(), /Renouveler \(BaridiMob \/ CCP\)/);
     assert.match(text(), /Sonnerie des notifications/);
 
     setLanguage('ar');
     await wait();
     assert.equal(document.documentElement.dir, 'rtl');
     assert.equal([...document.querySelectorAll('span')].filter(s => s.textContent === 'غير متاح').length, 0);
-    assert.match(text(), /تجديد الاشتراك \(بريدي موب \/ CCP\)/);
+    assert.doesNotMatch(text(), /تجديد الاشتراك \(بريدي موب \/ CCP\)/);
+    assert.match(text(), /الاشتراك/);
 
     setLanguage('fr');
     render('admin');
     await wait();
     assert.equal([...document.querySelectorAll('span')].filter(s => s.textContent === 'Non disponible').length, 0);
     assert.match(text(), /Offre publique & encaissement/);
-    assert.match(text(), /RIP BaridiMob/);
+    assert.match(text(), /CIB \/ Edahabia/);
+    assert.match(text(), /WhatsApp/);
+    assert.doesNotMatch(text(), /RIP BaridiMob/);
   } finally {
     root?.unmount();
     await server.close();

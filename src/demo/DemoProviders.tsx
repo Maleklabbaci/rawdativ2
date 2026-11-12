@@ -17,6 +17,7 @@ const adminUser: UserAccount = { id: 'adm1', nom: 'Plateforme', prenom: 'Admin',
 
 function readDemoPersona(): DemoPersona {
   if (typeof window === 'undefined') return 'director';
+  if (import.meta.env.DEV && import.meta.env.VITE_DEMO_ADMIN === 'true') return 'admin';
   try {
     const raw = window.sessionStorage.getItem('rawdha_demo_persona');
     if (raw === 'admin' || raw === 'pending' || raw === 'expired' || raw === 'guest') return raw;
@@ -49,7 +50,12 @@ function initialStore(persona: DemoPersona): Store {
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const activeUser = resolveUser(persona) || directorUser;
   if (shouldUseRealCrecheDataset()) {
-    return buildRealCrecheStore({ persona, demoId, directorUser, adminUser, activeUser });
+    const store = buildRealCrecheStore({ persona, demoId, directorUser, adminUser, activeUser });
+    if (persona === 'admin') {
+      const actions = ['subscription_reactivated', 'ticket_status_updated', 'identity_document_reviewed', 'community_post_hidden', 'notification_sent', 'followup_recorded', 'director_approved', 'trial_extended'];
+      store.adminAuditLogs = Array.from({ length: 1248 }, (_, i) => ({ id: `demo-log-${String(i).padStart(5, '0')}`, actorId: 'adm1', action: actions[i % actions.length], targetType: 'director_account', targetId: `demo-target-${i % 72}`, targetLabel: `Crèche exemple ${String(i % 72 + 1).padStart(2, '0')}`, createdAt: new Date(now.getTime() - i * 43 * 60_000).toISOString() }));
+    }
+    return store;
   }
   const makeChild = (id: string, prenom: string, nom: string, groupeAge: string) => ({
     id, prenom, nom, crecheId: demoId, dateNaissance: '2023-05-15', dateInscription: date,
@@ -210,6 +216,18 @@ export function DemoProviders({ children }: { children: ReactNode }) {
   const remove = (key: string) => async (id: string) => {
     setData(previous => ({ ...previous, [key]: previous[key].filter(item => item.id !== id) }));
   };
+  // In-memory demo events mirror the transactional audit without contacting Supabase.
+  const demoAudit = (action: string, targetType: string, targetId: string) => ({ id:`demo-audit-${crypto.randomUUID()}`, actorId:adminUser.id, action, targetType, targetId, createdAt:new Date().toISOString() });
+  const updateDemoTicket = async (id:string, patch:Partial<Item>) => {
+    setData(previous => {
+      const current=previous.signalements.find(item=>item.id===id); if(!current) throw new Error('Ticket introuvable');
+      const actions:string[]=[];
+      for(const [fields,action] of [[['statut'],'ticket_status_updated'],[['reponseAdmin'],'ticket_response_saved'],[['assigneeId','assigneeName'],'ticket_assigned'],[['priorite'],'ticket_priority_updated'],[['dueAt'],'ticket_due_date_updated']] as Array<[string[],string]>) {
+        if(fields.some(field => field in patch && current[field] !== patch[field])) actions.push(action);
+      }
+      return {...previous,signalements:previous.signalements.map(item=>item.id===id?{...item,...patch}:item),adminAuditLogs:[...actions.map(action=>demoAudit(action,'ticket',id)),...previous.adminAuditLogs]};
+    });
+  };
   const unsupported = async () => {
     showToast('Cette action nécessite un service et n’est pas disponible dans cet aperçu.', 'error');
     throw new Error('Action indisponible dans la démonstration');
@@ -217,6 +235,8 @@ export function DemoProviders({ children }: { children: ReactNode }) {
   const db = new Proxy({
     ...data,
     loading: false,
+    dataLoading: false,
+    dataErrors: [],
     financialDataReady: true,
     refreshAll: async () => {},
     addEnfant: add('enfants'), updateEnfant: update('enfants'), deleteEnfant: async () => { throw new Error('child_permanent_deletion_temporarily_unavailable'); },
@@ -388,7 +408,9 @@ export function DemoProviders({ children }: { children: ReactNode }) {
       }));
       return created;
     },
-    deleteNotification: remove('notifications'),
+    updateSignalement: updateDemoTicket,
+    deleteSignalement: async (id:string) => setData(previous => ({...previous,signalements:previous.signalements.filter(item=>item.id!==id),adminAuditLogs:[demoAudit('ticket_deleted','ticket',id),...previous.adminAuditLogs]})),
+    deleteNotification: async (id:string) => setData(previous => ({...previous,notifications:previous.notifications.filter(item=>item.id!==id),adminAuditLogs:[demoAudit('notification_deleted','notification',id),...previous.adminAuditLogs]})),
     markCommunityFeatureRead: async (id: string) => update('communityFeatures')(id, { payload: { read: true } }),
     ensureInscriptionLink: async () => ({
       id: 'demo-qr-link-1',

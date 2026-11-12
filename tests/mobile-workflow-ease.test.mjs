@@ -258,7 +258,8 @@ test('mobile workflow ease: batch monthly invoices, quick search, 1-tap attendan
     click(presentBtn);
     await wait();
     const arrivalInput = presencesScope.querySelector('input[type="time"]');
-    assert.equal(arrivalInput.value, '');
+    assert.match(arrivalInput.value, /^\d{2}:\d{2}$/); // Present pre-fills the current time.
+    setInput(arrivalInput, '');
     click([...presencesScope.querySelectorAll('button')].find(b => b.textContent.trim() === 'Maintenant'));
     await wait();
     assert.match(arrivalInput.value, /^\d{2}:\d{2}$/);

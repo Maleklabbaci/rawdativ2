@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { takeSetupTask } from '../utils/onboardingTask';
 import { 
   Plus, 
   Trash2, 
@@ -80,6 +81,7 @@ export default function Personnel() {
   const [selectedPersonnel, setSelectedPersonnel] = useState<any | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeSection, setActiveSection] = useState<'team' | 'hr' | 'access'>('team');
+  useEffect(() => { if (canManageAccess && takeSetupTask(user?.id, 'personnel')) setActiveSection('access'); }, [user?.id, canManageAccess]);
 
   const emptyStaffForm = () => ({
     nom: '',

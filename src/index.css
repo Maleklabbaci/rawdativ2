@@ -370,3 +370,27 @@ input[type="radio"]:focus-visible,
     flex-shrink: 0;
   }
 }
+
+/* Discreet motion: content stays visible even when observers or scripts are unavailable. */
+@keyframes rawdha-page-in {
+  from { opacity: .84; }
+  to { opacity: 1; }
+}
+@keyframes rawdha-soft-rise {
+  from { opacity: .86; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .rawdha-page-enter { animation: rawdha-page-in 220ms ease-out; }
+  .rawdha-hero-enter { animation: rawdha-soft-rise 550ms cubic-bezier(.22, 1, .36, 1); }
+  .rawdha-reveal-active { animation: rawdha-soft-rise 480ms cubic-bezier(.22, 1, .36, 1); }
+  .rawdha-post-enter { animation: rawdha-soft-rise 260ms ease-out; }
+  :where(.rawdha-app-motion, .rawdha-community-motion, .landing-typography) button:not(:disabled) {
+    transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  }
+  @media (hover: hover) {
+    :where(.rawdha-app-motion, .rawdha-community-motion, .landing-typography) button:not(:disabled):hover {
+      box-shadow: 0 3px 10px -5px rgb(37 67 76 / .32);
+    }
+  }
+}

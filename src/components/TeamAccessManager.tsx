@@ -227,6 +227,8 @@ export function ProfilePermissionEditorModal({
         return;
       }
       onClose();
+    } catch {
+      setError(isAr ? 'تعذر حفظ الحساب. تحققي من الاتصال وحاولي مجدداً.' : 'Impossible d’enregistrer ce profil. Vérifiez la connexion puis réessayez.');
     } finally {
       setBusy(false);
     }
@@ -618,7 +620,12 @@ export default function TeamAccessManager() {
   const allClasses = db?.classes || [];
   const { language } = useLanguage();
   const isAr = language === 'ar';
-  const { profiles, isOwnerProfile } = useWorkspaceProfile();
+  const { profiles, isOwnerProfile, setupOwnerPasswordAndUnlock } = useWorkspaceProfile();
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [setupPassword, setSetupPassword] = useState('');
+  const [setupConfirm, setSetupConfirm] = useState('');
+  const [setupError, setSetupError] = useState('');
+  const [setupBusy, setSetupBusy] = useState(false);
 
   const [editorTarget, setEditorTarget] = useState<WorkspaceSubProfile | 'new' | null>(null);
 
@@ -654,13 +661,20 @@ export default function TeamAccessManager() {
 
         <button
           type="button"
-          onClick={() => setEditorTarget('new')}
+          onClick={() => {
+            if (profiles.find(profile => profile.isOwner)?.passwordHash) setEditorTarget('new');
+            else { setSetupPassword(''); setSetupConfirm(''); setSetupError(''); setSetupOpen(true); }
+          }}
           className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#c94b30] px-4 py-2.5 text-xs font-bold text-white transition hover:bg-[#b53f26] cursor-pointer"
         >
           <Plus className="h-4 w-4" />
           <span>{isAr ? 'إضافة حساب للفريق' : 'Ajouter un profil'}</span>
         </button>
       </div>
+
+      <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-900" role="note">
+        {isAr ? 'تنبيه: صلاحيات الفريق محدودة داخل الواجهة فقط، وليست حماية مستقلة على الخادم. استخدمي بيانات تجريبية فقط.' : 'Attention : les droits des profils sont limités dans l’interface, mais ne sont pas encore sécurisés individuellement côté serveur. Utilisez uniquement des données de test.'}
+      </p>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {profiles.map(profile => {
@@ -741,6 +755,34 @@ export default function TeamAccessManager() {
           );
         })}
       </div>
+
+      {setupOpen && (
+        <div className="fixed inset-0 z-[1050] flex items-center justify-center bg-slate-950/55 p-4" onClick={() => !setupBusy && setSetupOpen(false)}>
+          <form className="w-full max-w-md space-y-4 rounded-3xl bg-white p-6 shadow-xl" onClick={event => event.stopPropagation()} onSubmit={async event => {
+            event.preventDefault();
+            if (setupBusy) return;
+            if (setupPassword.trim().length < 4 || setupPassword.trim() !== setupConfirm.trim()) {
+              setSetupError(isAr ? 'استخدمي 4 أحرف على الأقل وتأكدي من تطابق الكلمتين.' : 'Utilisez au moins 4 caractères et vérifiez que les deux codes correspondent.');
+              return;
+            }
+            setSetupBusy(true); setSetupError('');
+            try {
+              const result = await setupOwnerPasswordAndUnlock(setupPassword);
+              if (!result.ok) throw new Error('setup_failed');
+              setSetupPassword(''); setSetupConfirm(''); setSetupOpen(false); setEditorTarget('new');
+            } catch {
+              setSetupError(isAr ? 'تعذر حفظ الرمز. تحققي من الاتصال وحاولي مجدداً.' : 'Impossible d’enregistrer le code. Vérifiez la connexion puis réessayez.');
+            } finally { setSetupBusy(false); }
+          }}>
+            <h2 className="text-lg font-extrabold text-slate-900">{isAr ? 'حماية حساب المديرة' : 'Protéger le profil Direction'}</h2>
+            <p className="text-sm text-slate-600">{isAr ? 'حددي رمز المديرة قبل إضافة عضو للفريق.' : 'Choisissez un code Direction avant d’ajouter un membre à l’équipe.'}</p>
+            <label className="block text-sm font-bold">{isAr ? 'رمز المديرة' : 'Code Direction'}<input className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3" type="password" minLength={4} autoComplete="new-password" value={setupPassword} onChange={event => setSetupPassword(event.target.value)} required /></label>
+            <label className="block text-sm font-bold">{isAr ? 'تأكيد الرمز' : 'Confirmer le code'}<input className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3" type="password" minLength={4} autoComplete="new-password" value={setupConfirm} onChange={event => setSetupConfirm(event.target.value)} required /></label>
+            {setupError && <p role="alert" className="text-sm text-red-700">{setupError}</p>}
+            <div className="flex gap-2"><button disabled={setupBusy} className="rounded-xl bg-[#c94b30] px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{setupBusy ? (isAr ? 'جاري الحفظ...' : 'Enregistrement...') : (isAr ? 'حفظ ومتابعة' : 'Enregistrer et continuer')}</button><button type="button" disabled={setupBusy} onClick={() => setSetupOpen(false)} className="rounded-xl border px-4 py-3 text-sm font-bold">{isAr ? 'إلغاء' : 'Annuler'}</button></div>
+          </form>
+        </div>
+      )}
 
       {editorTarget && (
         <ProfilePermissionEditorModal

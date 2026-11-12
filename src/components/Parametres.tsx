@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { IdentityDocumentRequest } from './IdentityDocumentReview';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
+const IdentityOcrDemo = import.meta.env.DEV && import.meta.env.VITE_ARENA_DEMO === 'true' ? lazy(() => import('../demo/IdentityOcrDemo')) : null;
 import {
   Settings,
   Building,
@@ -337,6 +339,8 @@ export default function Parametres({ onNavigate }: { onNavigate?: (page: string)
           </p>
         </div>
       </div>
+
+      {user?.role === 'directeur' && (IdentityOcrDemo ? <Suspense fallback={null}><IdentityOcrDemo firstName={user.prenom || ''} lastName={user.nom || ''} isFrench={isFrench} /></Suspense> : <IdentityDocumentRequest userId={user.id} firstName={user.prenom || ''} lastName={user.nom || ''} isFrench={isFrench} />)}
 
       {errorMessage && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm flex items-start gap-2.5">

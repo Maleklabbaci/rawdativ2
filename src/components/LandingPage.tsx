@@ -7,7 +7,6 @@ import {
   ArrowRight,
   Bell,
   CalendarCheck,
-  CheckCircle2,
   Globe2,
   Heart,
   Menu,
@@ -16,7 +15,7 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { buildLegalHref, LEGAL_CONFIG } from '../config/legal';
 
@@ -27,9 +26,11 @@ interface LandingPageProps {
 }
 
 const visuals = {
-  hero: 'https://files.manuscdn.com/user_upload_by_module/session_file/310519663894126178/wDSPFWHwBTHXuVZg.jpg',
-  activity: 'https://files.manuscdn.com/user_upload_by_module/session_file/310519663894126178/beGjcFPhgYuNlfQd.jpg',
-  team: 'https://files.manuscdn.com/user_upload_by_module/session_file/310519663894126178/hzgOSfVeYrxGYFUs.jpg',
+  hero: '/landing/hero-focus.jpg',
+  heroActivity: '/landing/hero-motion.jpg',
+  heroTeam: '/landing/hero-macro.jpg',
+  activity: '/landing/hero-activites.jpg?v=4',
+  team: '/landing/connect-selfie.jpg?v=2',
 };
 
 const copy = {
@@ -47,11 +48,22 @@ const copy = {
     close: 'Fermer la navigation',
     heroAlt: 'Enfant découvrant des jeux éducatifs à la crèche',
     eyebrow: 'Pour les crèches qui font grandir les petits chaque jour',
-    title: 'Des journées de crèche plus simples à vivre, pour tous.',
+    title: '15 jours gratuits',
+    titleRest: 'pour gérer votre crèche',
+    heroSlides: [
+      { title: '15 jours gratuits', subtitle: 'pour gérer votre crèche' },
+      { title: 'Une crèche organisée', subtitle: 'pour simplifier votre quotidien' },
+      { title: 'Plus de temps', subtitle: 'pour les enfants et votre équipe' },
+    ],
+    trialBadge: '15 jours gratuits',
+    pauseHero: 'Mettre le défilement en pause',
+    playHero: 'Reprendre le défilement',
+    slideLabel: 'Afficher la photo',
+    heroPrice: '1 900 DA / mois après les 15 jours',
     text: 'Rawdha+ aide votre équipe à accueillir les enfants, rester organisée et partager les bons moments avec les familles.',
-    primary: 'Essai gratuit de 15 jours',
+    primary: 'Commencer mon essai',
     secondary: 'Se connecter',
-    guarantees: ['15 jours gratuits', 'Sans engagement', '1 900 DA / mois ensuite · 0 frais caché'],
+    guarantees: ['Sans engagement', 'Sans carte bancaire pour l’essai'],
     welcomeTag: 'Bienvenue chez Rawdha+',
     welcomeTitle: 'Une journée mieux organisée commence par un accueil plus serein.',
     welcomeText:
@@ -102,8 +114,8 @@ const copy = {
     ],
     securityTitle: 'Votre crèche garde un espace à elle, simple et sécurisé.',
     securityText:
-      'Chaque demande est relue avant activation pour protéger votre équipe et les informations confiées par les familles.',
-    securityStatus: 'Demande en attente',
+      'L’accès à votre espace est immédiat. Le contrôle du document d’identité reste facultatif.',
+    securityStatus: 'Compte créé',
     trialTag: 'Commencez en douceur',
     trialTitle: '15 jours pour imaginer des journées de crèche plus sereines.',
     trialText:
@@ -125,18 +137,29 @@ const copy = {
       modules: 'الوظائف',
       network: 'Rawdha Connect',
       login: 'تسجيل الدخول',
-      request: 'اطلبي الولوج',
+      request: 'ابدئي مجاناً',
     },
     footer: 'منصة احترافية لتسيير الحضانة',
     menu: 'فتح التنقل',
     close: 'غلق التنقل',
     heroAlt: 'طفل يكتشف ألعاباً تعليمية في الحضانة',
     eyebrow: 'للحضانات التي تساعد الصغار على النمو كل يوم',
-    title: 'أيام حضانة أبسط للجميع.',
+    title: '15 يوماً مجاناً',
+    titleRest: 'لتسيير حضانتك',
+    heroSlides: [
+      { title: '15 يوماً مجاناً', subtitle: 'لتسيير حضانتك' },
+      { title: 'حضانة منظمة', subtitle: 'لتسهيل يومك' },
+      { title: 'وقت أكثر', subtitle: 'للأطفال ولفريقك' },
+    ],
+    trialBadge: '15 يوماً مجاناً',
+    pauseHero: 'إيقاف الانتقال مؤقتاً',
+    playHero: 'استئناف الانتقال',
+    slideLabel: 'عرض الصورة',
+    heroPrice: '1900 د.ج / شهر بعد 15 يوماً',
     text: 'تساعد Rawdha+ فريقك على استقبال الأطفال والبقاء منظماً ومشاركة اللحظات الجميلة مع الأولياء.',
-    primary: 'تجربة مجانية لمدة 15 يوماً',
+    primary: 'ابدئي تجربتك',
     secondary: 'تسجيل الدخول',
-    guarantees: ['15 يوماً مجاناً', 'دون التزام', 'ثم 1900 د.ج / شهر دون رسوم خفية'],
+    guarantees: ['دون التزام', 'التجربة دون بطاقة بنكية'],
     welcomeTag: 'مرحباً بكِ في Rawdha+',
     welcomeTitle: 'يوم أكثر تنظيماً يبدأ باستقبال أكثر هدوءاً.',
     welcomeText:
@@ -178,8 +201,8 @@ const copy = {
     trustItems: ['فضاء بسيط لفريقك', 'أولياء أكثر اطلاعاً', 'معلومات محمية'],
     securityTitle: 'حضانتك تحتفظ بفضائها، ببساطة وأمان.',
     securityText:
-      'يُراجع كل طلب قبل التفعيل لحماية فريقك والمعلومات التي يمنحها الأولياء.',
-    securityStatus: 'الطلب في انتظار المراجعة',
+      'الدخول إلى فضائك مباشر، ومراجعة وثيقة الهوية اختيارية.',
+    securityStatus: 'تم إنشاء الحساب',
     trialTag: 'ابدئي بهدوء',
     trialTitle: '15 يوماً لتتخيلي أياماً أكثر راحة في الحضانة.',
     trialText:
@@ -202,6 +225,31 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
   const content = isArabic ? copy.ar : copy.fr;
   const Arrow = isArabic ? ArrowLeft : ArrowRight;
   const [menuOpen, setMenuOpen] = useState(false);
+  const [heroIndex, setHeroIndex] = useState(0);
+  const [heroPaused] = useState(() => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches));
+  const heroImages = [visuals.hero, visuals.heroActivity, visuals.heroTeam];
+  useEffect(() => {
+    if (heroPaused) return;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') setHeroIndex(index => (index + 1) % 3);
+    }, 6500);
+    return () => window.clearInterval(interval);
+  }, [heroPaused]);
+  const landingMainRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const main = landingMainRef.current;
+    if (!main || typeof IntersectionObserver === 'undefined' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        entry.target.classList.add('rawdha-reveal-active');
+        observer.unobserve(entry.target);
+      }
+    }, { threshold: 0.08 });
+    main.querySelectorAll('.rawdha-reveal').forEach(section => observer.observe(section));
+    return () => observer.disconnect();
+  }, []);
+
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -214,11 +262,12 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
 
   const scrollTo = (id: string) => {
     setMenuOpen(false);
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    document.getElementById(id)?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
   };
 
   return (
-    <div dir={isArabic ? 'rtl' : 'ltr'} className="landing-typography min-h-screen overflow-x-hidden bg-[#f3fafb] text-[#25434c]">
+    <div dir={isArabic ? 'rtl' : 'ltr'} className="landing-typography min-h-screen overflow-x-clip bg-[#f3fafb] text-[#25434c]">
       <a href="#main-content" className="rawdha-skip-link">
         {content.skipToContent}
       </a>
@@ -230,7 +279,42 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
         .landing-paper::before, .landing-paper::after { content: ''; position: absolute; width: 150px; height: 6px; border-radius: 999px; background: #f26b4d; opacity: .8; transform: rotate(-28deg); }
         .landing-paper::before { left: -52px; top: 72px; } .landing-paper::after { right: -52px; bottom: 64px; background: #f1b62f; transform: rotate(28deg); }
         .landing-hero-caption { text-shadow: 0 2px 20px rgba(20, 42, 44, .32); }
-        @media (prefers-reduced-motion: reduce) { .landing-photo img { transition: none; } }
+        .landing-hero-slide { transition: opacity 900ms ease; }
+        .landing-card { position: relative; overflow: hidden; transition: transform 350ms ease, box-shadow 350ms ease, border-color 350ms ease; }
+        .landing-card::after { content: ''; position: absolute; inset-inline-end: -42px; top: -42px; width: 120px; height: 120px; border-radius: 50%; background: rgba(241, 182, 47, .09); pointer-events: none; }
+        .landing-preview-card { transition: transform 400ms ease, box-shadow 400ms ease; }
+        .landing-float-orb { position:absolute; border-radius:999px; pointer-events:none; }
+        .landing-float-orb-one { width:120px; height:120px; left:7%; top:12%; background:rgba(241,182,47,.16); }
+        .landing-float-orb-two { width:74px; height:74px; right:10%; bottom:12%; background:rgba(27,122,98,.10); }
+        .landing-float-orb-three { width:25px; height:25px; right:22%; top:20%; background:rgba(201,75,48,.18); }
+        .landing-card-icon { position:relative; z-index:1; }
+        .landing-stack { position:relative; display:grid; gap:14px; }
+        .landing-stack .landing-card { min-height:200px; }
+        .landing-stack .landing-card:nth-child(1) { background:linear-gradient(145deg,#fffdf5,#fff1cd); }
+        .landing-stack .landing-card:nth-child(2) { background:linear-gradient(145deg,#f6fffb,#ddf2e8); }
+        .landing-stack .landing-card:nth-child(3) { background:linear-gradient(145deg,#f8f8ff,#e7e9fb); }
+        .landing-reveal-side { overflow:hidden; }
+        @keyframes landing-from-start { from { opacity:.15; transform:translateX(-55px) scale(.97); } to { opacity:1; transform:translateX(0) scale(1); } }
+        @keyframes landing-from-end { from { opacity:.15; transform:translateX(55px) scale(.97); } to { opacity:1; transform:translateX(0) scale(1); } }
+        @keyframes landing-orbit { 0%,100% { transform:translate3d(0,0,0) rotate(0deg); } 50% { transform:translate3d(8px,-18px,0) rotate(9deg); } }
+        @keyframes landing-float { 0%,100% { transform:translateY(0) rotate(-2deg); } 50% { transform:translateY(-8px) rotate(3deg); } }
+        @keyframes landing-hero-in { from { opacity:0; transform:translateY(18px) scale(.98); } to { opacity:1; transform:translateY(0) scale(1); } }
+        @keyframes landing-card-appear { from { opacity: .5; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+        @media (prefers-reduced-motion: no-preference) {
+          .landing-float-orb { animation: landing-orbit 7s ease-in-out infinite; }
+          .landing-float-orb-two { animation-duration: 8.5s; animation-delay: -3s; }
+          .landing-float-orb-three { animation-duration: 6s; animation-delay: -1s; }
+          .landing-card-icon, .landing-trust-icon { animation: landing-float 5s ease-in-out infinite; animation-delay: var(--card-delay, 0ms); }
+          .landing-hero-copy { animation: landing-hero-in 650ms cubic-bezier(.22,1,.36,1) both; }
+          .landing-stack .landing-card { position:sticky; top:calc(90px + var(--stack-offset, 0px)); z-index:var(--stack-order, 1); box-shadow:0 -4px 22px rgba(37,67,76,.08), 0 18px 45px rgba(37,67,76,.12); }
+          .landing-reveal-side.rawdha-reveal-active .landing-slide-content { animation:landing-from-start 950ms cubic-bezier(.22,1,.36,1) both; }
+          .landing-reveal-side.rawdha-reveal-active .landing-slide-image { animation:landing-from-end 1100ms cubic-bezier(.22,1,.36,1) both; }
+          .landing-reveal-side:nth-of-type(even).rawdha-reveal-active .landing-slide-content { animation-name:landing-from-end; }
+          .landing-reveal-side:nth-of-type(even).rawdha-reveal-active .landing-slide-image { animation-name:landing-from-start; }
+          .rawdha-reveal-active .landing-card, .rawdha-reveal-active .landing-preview-card, .rawdha-reveal-active .landing-trust-card { animation: landing-card-appear 600ms cubic-bezier(.22,1,.36,1) both; animation-delay: var(--card-delay, 0ms); }
+          @media (hover: hover) { .landing-card:hover, .landing-preview-card:hover { transform: translateY(-6px); box-shadow: 0 20px 45px rgba(37,67,76,.14); border-color: #b4d4c7; } }
+        }
+        @media (prefers-reduced-motion: reduce) { .landing-photo img, .landing-hero-slide, .landing-card, .landing-preview-card { transition: none; } }
       `}</style>
 
       <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur-xl">
@@ -398,57 +482,31 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
         )}
       </header>
 
-      <main id="main-content" tabIndex={-1} className="outline-none">
-        <section
-          id="plateforme"
-          className="relative isolate min-h-[520px] overflow-hidden bg-[#25434c] sm:min-h-[590px] lg:min-h-[650px]"
-        >
-          <img
-            src={visuals.hero}
-            alt={content.heroAlt}
-            className="absolute inset-0 h-full w-full object-cover object-[62%_center]"
-          />
+      <main id="main-content" ref={landingMainRef} tabIndex={-1} className="outline-none">
+        <section id="plateforme" className="relative isolate min-h-[520px] overflow-hidden bg-[#25434c] sm:min-h-[590px] lg:min-h-[650px]">
+          {heroImages.map((src, index) => <img key={src} src={src} alt="" aria-hidden="true" loading={index === 0 ? 'eager' : 'lazy'} className={`landing-hero-slide absolute inset-0 h-full w-full object-cover object-center ${index === heroIndex ? 'opacity-100' : 'opacity-0'}`} />)}
           <div className="absolute inset-0 bg-[#182e35]/45" />
           <div className="absolute inset-0 bg-gradient-to-b from-[#182e35]/35 via-[#182e35]/25 to-[#182e35]/60" />
-          <div className="relative mx-auto flex min-h-[520px] max-w-7xl items-center justify-center px-4 py-20 text-center text-white sm:min-h-[590px] sm:px-6 lg:min-h-[650px] lg:px-8">
-            <div className="landing-hero-caption max-w-3xl">
-              <p className="text-xs font-black uppercase tracking-[0.14em] text-[#fff0a9]">{content.eyebrow}</p>
-              <h1 className="mt-5 text-4xl font-medium leading-[1.12] tracking-[-0.04em] sm:text-5xl lg:text-6xl">
-                {content.title}
+          <div className="relative mx-auto flex min-h-[520px] max-w-7xl items-center justify-center px-4 pb-24 pt-20 text-center text-white sm:min-h-[590px] sm:px-6 lg:min-h-[650px] lg:px-8">
+            <div className="landing-hero-caption rawdha-hero-enter max-w-3xl">
+              <h1 key={`${language}-${heroIndex}`} className="landing-hero-copy mt-5 leading-[1.12] tracking-[-0.04em]" aria-live={heroPaused ? 'polite' : 'off'}>
+                <span className="block text-[clamp(2.5rem,9vw,4.5rem)] font-extrabold">{content.heroSlides[heroIndex].title}</span>
+                <span className="mt-2 block text-xl font-medium tracking-[-0.02em] sm:text-2xl lg:text-3xl">{content.heroSlides[heroIndex].subtitle}</span>
               </h1>
-              <p className="mx-auto mt-5 max-w-2xl text-base font-medium leading-7 text-white/95 sm:text-lg">
-                {content.text}
-              </p>
-              <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={() => onNavigate('request')}
-                  className="inline-flex items-center justify-center gap-2 rounded-md bg-[#1b7a62] px-6 py-3.5 text-sm font-bold text-white shadow-lg transition hover:bg-[#15634f] active:scale-[0.98] cursor-pointer"
-                >
-                  {content.primary}
-                  <Arrow className="h-4 w-4" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('login')}
-                  className="inline-flex items-center justify-center rounded-md border border-white/80 bg-[#182e35]/50 px-6 py-3.5 text-sm font-bold text-white transition hover:bg-[#182e35]/75 cursor-pointer"
-                >
-                  {content.secondary}
-                </button>
-              </div>
-              <div className="mt-6 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs font-bold text-white">
-                {content.guarantees.map(item => (
-                  <span key={item} className="inline-flex items-center gap-1.5">
-                    <CheckCircle2 className="h-4 w-4 text-[#fff0a9]" aria-hidden="true" />
-                    {item}
-                  </span>
-                ))}
+              <p className="mt-4 text-base font-bold text-[#fff0a9] sm:text-lg">{content.heroPrice}</p>
+              <button type="button" onClick={() => onNavigate('request')} className="mt-8 inline-flex items-center justify-center gap-2 rounded-md bg-[#1b7a62] px-6 py-3.5 text-sm font-bold text-white shadow-lg transition hover:bg-[#15634f] active:scale-[0.98] cursor-pointer">{content.primary}<Arrow className="h-4 w-4" aria-hidden="true" /></button>
+              <div className="mt-7 flex items-center justify-center gap-2" role="group" aria-label={isArabic ? 'صور العرض' : 'Photos de présentation'}>
+                {heroImages.map((src, index) => <button key={src} type="button" onClick={() => setHeroIndex(index)} aria-label={`${content.slideLabel} ${index + 1}`} aria-pressed={heroIndex === index} className="grid h-9 w-9 place-items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"><span className={`block rounded-full transition-all ${heroIndex === index ? 'h-2.5 w-6 bg-white' : 'h-2.5 w-2.5 bg-white/60'}`} /></button>)}
               </div>
             </div>
           </div>
+          <svg className="pointer-events-none absolute inset-x-0 bottom-0 block h-8 w-full sm:h-12" viewBox="0 0 1440 48" preserveAspectRatio="none" aria-hidden="true"><path fill="#f3fafb" d="M0 48V12C280 42 510 48 720 34S1170 0 1440 20V48Z" /></svg>
         </section>
 
-        <section className="landing-paper relative overflow-hidden bg-[#f3fafb] px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
+        <section className="rawdha-reveal landing-paper relative overflow-hidden bg-[#f3fafb] px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
+          <span className="landing-float-orb landing-float-orb-one" aria-hidden="true" />
+          <span className="landing-float-orb landing-float-orb-two" aria-hidden="true" />
+          <span className="landing-float-orb landing-float-orb-three" aria-hidden="true" />
           <div className="relative z-10 mx-auto max-w-3xl text-center">
             <p className="text-sm font-bold text-[#1b7a62]">{content.welcomeTag}</p>
             <h2 className="mt-3 text-3xl font-medium leading-tight tracking-[-0.035em] text-[#25434c] sm:text-4xl">
@@ -459,7 +517,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
           </div>
         </section>
 
-        <section className="bg-white px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+        <section className="rawdha-reveal bg-white px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
           <div className="mx-auto max-w-6xl">
             <div className="max-w-2xl">
               <p className="text-sm font-bold text-[#1b7a62]">{content.detailsTag}</p>
@@ -468,10 +526,10 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
               </h2>
               <p className="mt-4 text-base font-medium leading-7 text-slate-700">{content.detailsText}</p>
             </div>
-            <div className="mt-9 grid gap-4 md:grid-cols-3">
+            <div className="landing-stack mt-9">
               {content.dailyDetails.map((detail, index) => (
-                <article key={detail.title} className="rounded-xl border border-[#dcebed] bg-[#fbfefe] p-5">
-                  <span className="grid h-9 w-9 place-items-center rounded-full bg-[#fff0d1] text-sm font-black text-[#8f5e00]">
+                <article key={detail.title} style={{ '--card-delay': `${index * 100}ms`, '--stack-order': index + 1, '--stack-offset': `${index * 14}px` } as CSSProperties} className="landing-card rounded-3xl border border-[#dcebed] bg-gradient-to-br from-white to-[#f2faf5] p-6 shadow-[0_10px_30px_rgba(37,67,76,0.06)]">
+                  <span className="landing-card-icon grid h-11 w-11 place-items-center rounded-2xl bg-[#fff0d1] text-sm font-black text-[#8f5e00]">
                     0{index + 1}
                   </span>
                   <h3 className="mt-5 text-lg font-bold text-[#25434c]">{detail.title}</h3>
@@ -483,7 +541,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
           </div>
         </section>
 
-        <section id="modules" className="scroll-mt-16 bg-white">
+        <section id="modules" className="rawdha-reveal scroll-mt-16 bg-white">
           <div className="mx-auto grid max-w-[1440px] lg:grid-cols-2">
             <div className="flex min-h-[450px] flex-col justify-center bg-[#f3c24f] px-7 py-14 text-[#1d363e] sm:px-12 lg:px-16">
               <p className="text-sm font-bold text-[#1d363e]/85">{content.featureTag}</p>
@@ -520,15 +578,43 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
           </div>
         </section>
 
-        <section id="connect" className="scroll-mt-16 bg-[#f3fafb]">
+        <section aria-labelledby="platform-preview-title" className="rawdha-reveal bg-[#fbfcf9] px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
+          <div className="mx-auto max-w-6xl">
+            <div className="mx-auto mb-10 max-w-2xl text-center sm:mb-16">
+              <p className="text-xs font-bold uppercase tracking-widest text-[#1b7a62]">{isArabic ? 'المنصة بالصور' : 'La plateforme en images'}</p>
+              <h2 id="platform-preview-title" className="mt-3 text-3xl font-medium leading-tight tracking-[-0.035em] text-[#25434c] sm:text-4xl">{isArabic ? 'كل ما تحتاجه حضانتك في مكان واحد' : 'Tout ce dont votre crèche a besoin, au même endroit'}</h2>
+              <p className="mt-4 text-base leading-7 text-[#526a6d]">{isArabic ? 'نظرة على الأدوات التي تسهّل يومك.' : 'Un aperçu concret des outils qui simplifient votre quotidien.'}</p>
+            </div>
+            {[
+              { image: 'bord', tag: isArabic ? 'نظرة عامة' : 'Vue d’ensemble', title: isArabic ? 'يومك في لمحة' : 'Votre journée en un coup d’œil', text: isArabic ? 'تابعي الحضور والنقاط التي تحتاج إلى مراجعة منذ البداية.' : 'Retrouvez les présences et les points à vérifier dès l’ouverture.' },
+              { image: 'enfants', tag: isArabic ? 'الأطفال' : 'Enfants', title: isArabic ? 'ملفات منظمة' : 'Des dossiers bien organisés', text: isArabic ? 'اعثري بسرعة على الأطفال وأقسامهم وحالة ملفاتهم.' : 'Retrouvez rapidement les enfants, leurs classes et l’état de leurs dossiers.' },
+              { image: 'presences', tag: isArabic ? 'الحضور' : 'Présences', title: isArabic ? 'تسجيل حضور أبسط' : 'L’appel, simplifié', text: isArabic ? 'تابعي الحضور حسب القسم والأطفال الذين لم يُسجّل حضورهم بعد.' : 'Suivez les présences par classe et repérez les enfants à pointer.' },
+              { image: 'connect', tag: 'Rawdha Connect', title: isArabic ? 'شبكة للحضانات' : 'Un réseau pour les crèches', text: isArabic ? 'شاركي تجاربك وتواصلي مع مهنيين آخرين.' : 'Partagez vos expériences et échangez avec d’autres professionnels.' },
+            ].map((item, index) => (
+              <article key={item.image} className="landing-reveal-side rawdha-reveal grid items-center gap-5 border-t border-[#e0eae4] py-8 md:grid-cols-5 md:gap-12 md:py-10">
+                <div className={`landing-slide-content md:col-span-2 ${index % 2 ? 'md:order-2' : ''}`}>
+                  <p className="text-xs font-bold uppercase tracking-widest text-[#1b7a62]">{item.tag}</p>
+                  <h3 className="mt-3 text-2xl font-medium leading-tight tracking-tight text-[#25434c] sm:text-3xl">{item.title}</h3>
+                  <p className="mt-3 text-base leading-7 text-[#526a6d]">{item.text}</p>
+                </div>
+                <div className={`landing-slide-image landing-preview-card min-w-0 rounded-2xl border border-[#dbe7e1] bg-[#eaf3ee] p-2 shadow-sm sm:rounded-3xl sm:p-3 md:col-span-3 ${index % 2 ? 'md:order-1' : ''}`}>
+                  <img src={`/landing/apercu-${item.image}.webp`} alt={`${item.tag} — ${isArabic ? 'صورة من النسخة التجريبية باللغة الفرنسية' : 'capture de la version de démonstration'}`} loading="lazy" decoding="async" className="block h-auto w-full rounded-xl bg-white shadow-sm" />
+                </div>
+              </article>
+            ))}
+            <p className="pt-5 text-center text-xs text-[#607a75]">{isArabic ? 'صور توضيحية من النسخة التجريبية باللغة الفرنسية، ببيانات تجريبية.' : 'Captures de la version de démonstration, avec des données fictives.'}</p>
+          </div>
+        </section>
+
+        <section id="connect" className="rawdha-reveal scroll-mt-16 bg-[#f3fafb]">
           <div className="mx-auto grid max-w-[1440px] lg:grid-cols-2">
             <div className="landing-photo min-h-[360px] bg-[#d8e7e7] lg:order-2 lg:min-h-[470px]">
               <img
                 src={visuals.team}
                 alt={
                   isArabic
-                    ? 'مربية وأطفال في نشاط داخل حضانة جزائرية'
-                    : 'Éducatrice et enfants lors d’une activité dans une crèche algérienne'
+                    ? 'صورة تعبيرية لمهنيات حضانة معاً'
+                    : 'Image illustrative de professionnelles de crèche réunies'
                 }
                 className="h-full w-full object-cover"
               />
@@ -570,15 +656,15 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
           </div>
         </section>
 
-        <section className="bg-white px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
+        <section className="rawdha-reveal bg-white px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
           <div className="mx-auto max-w-5xl text-center">
             <h2 className="text-3xl font-medium leading-tight tracking-[-0.035em] text-[#25434c] sm:text-4xl">
               {content.trustTitle}
             </h2>
             <div className="mx-auto mt-10 grid max-w-3xl gap-8 sm:grid-cols-3">
               {content.trustItems.map((item, index) => (
-                <div key={item} className="flex flex-col items-center">
-                  <span className="grid h-16 w-16 place-items-center rounded-full bg-[#fff3cd] text-[#8f5e00]" aria-hidden="true">
+                <div key={item} style={{ '--card-delay': `${index * 100}ms` } as CSSProperties} className="landing-trust-card flex flex-col items-center rounded-3xl border border-[#e6eee9] bg-[#fbfefb] px-4 py-6 shadow-[0_8px_24px_rgba(37,67,76,0.04)]">
+                  <span className="landing-trust-icon grid h-16 w-16 place-items-center rounded-full bg-[#fff3cd] text-[#8f5e00]" aria-hidden="true">
                     {index === 0 ? (
                       <Heart className="h-7 w-7" />
                     ) : index === 1 ? (
@@ -594,7 +680,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
           </div>
         </section>
 
-        <section className="bg-[#f7f2eb] px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
+        <section className="rawdha-reveal bg-[#f7f2eb] px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
           <div className="mx-auto grid max-w-6xl gap-8 rounded-2xl bg-white p-6 shadow-[0_15px_45px_rgba(37,67,76,0.08)] sm:p-10 lg:grid-cols-[1fr_0.68fr] lg:items-center">
             <div>
               <div className="inline-flex items-center gap-2 text-sm font-bold text-[#c94b30]">
@@ -612,16 +698,16 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
               </span>
               <p className="mt-4 text-sm font-black text-[#25434c]">{content.securityStatus}</p>
               <p className="mt-2 text-xs font-bold text-emerald-800">
-                {isArabic ? 'تحت مراجعة المسؤول' : 'En cours de vérification'}
+                {isArabic ? 'دخول مباشر' : 'Accès immédiat'}
               </p>
               <p className="mt-5 rounded-lg bg-white p-3 text-xs font-medium text-slate-700">
-                {isArabic ? 'يتم التفعيل بعد مراجعة الطلب.' : 'Activation après vérification de la demande.'}
+                {isArabic ? 'مراجعة الوثيقة اختيارية.' : 'Contrôle du document facultatif.'}
               </p>
             </div>
           </div>
         </section>
 
-        <section className="bg-[#25434c] px-4 py-16 text-white sm:px-6 sm:py-24 lg:px-8">
+        <section className="rawdha-reveal bg-[#25434c] px-4 py-16 text-white sm:px-6 sm:py-24 lg:px-8">
           <div className="mx-auto max-w-4xl text-center">
             <p className="text-sm font-bold text-[#fff0a9]">{content.trialTag}</p>
             <h2 className="mt-4 text-3xl font-medium leading-tight tracking-[-0.035em] sm:text-5xl">

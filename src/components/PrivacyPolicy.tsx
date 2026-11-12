@@ -318,10 +318,10 @@ export default function PrivacyPolicy() {
                   : 'Rawdha+ met à disposition des crèches et établissements préscolaires une application de gestion quotidienne couvrant les dossiers enfants, les présences, les classes, les repas, les activités, la facturation et l’espace d’échange professionnel Rawdha Connect.'}
               </LegalSection>
 
-              <LegalSection title={isAr ? '2. فتح الحساب والتحقق اليدوي' : '2. Ouverture de compte et validation préalable'}>
+              <LegalSection title={isAr ? '2. فتح الحساب ومراجعة الوثيقة' : '2. Ouverture du compte et contrôle du document'}>
                 {isAr
-                  ? 'حمايةً للمؤسسات والأسر، يخضع كل طلب فتح حساب مديرة لمراجعة يدوية قبل التفعيل. تلتزم المديرة بتقديم معلومات صحيحة حول المؤسسة والحفاظ على سرية بيانات الدخول الخاصة بها.'
-                  : 'Pour protéger les établissements et les familles, chaque demande d’accès Directrice fait l’objet d’une vérification avant activation. La Directrice s’engage à fournir des informations exactes sur son établissement et à préserver la confidentialité de ses identifiants.'}
+                  ? 'يمكن فتح الحساب دون مراجعة مسبقة. مراجعة وثيقة الهوية اختيارية، ويقارن المسؤول الاسم بالوثيقة؛ وتحذف الوثيقة من قاعدة البيانات النشطة بعد القرار، مع احتمال بقائها في النسخ الاحتياطية حسب مدة الاحتفاظ بها. على المديرة تقديم بيانات صحيحة وحماية معلومات الدخول.'
+                  : 'Le compte peut être ouvert sans validation préalable. Le contrôle du document d’identité est facultatif : un administrateur compare le nom du compte au document, supprimé de la base active après décision. Des copies peuvent subsister dans les sauvegardes selon leur durée de conservation. La Directrice fournit des informations exactes et protège ses identifiants.'}
               </LegalSection>
 
               <LegalSection title={isAr ? '3. شفافية الأسعار (صفر رسوم خفية)' : '3. Transparence tarifaire — zéro frais caché'}>

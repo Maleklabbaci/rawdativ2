@@ -1,3 +1,4 @@
+import { classifyDiagnostic } from './utils/diagnosticCategories';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // ✅ FIX: Use environment variables instead of hardcoded keys
@@ -46,12 +47,48 @@ export enum OperationType {
   WRITE = 'write',
 }
 
+function recordDataOutcome(kind: 'data_success' | 'data_failure', operationType: OperationType, error?: unknown) {
+  if (isDemo || isNodeFallback || typeof window === 'undefined') return;
+  const routes: Record<string,string> = { '/dashboard':'dashboard','/enfants':'enfants','/admissions':'admissions','/community':'community','/classes':'classes','/presences':'presences','/factures':'paiements','/achats':'achats','/personnel':'personnel','/activites':'activites','/repas':'repas','/admin':'admin','/logs':'logs','/comptes':'comptes','/notifications':'notifications','/communication':'communication','/demarrage':'demarrage','/aide':'aide','/support':'support','/reports':'rapports','/parametres':'parametres','/abonnement':'abonnement' };
+  try {
+    void Promise.resolve(supabase.rpc('rawdha_record_application_event', { p_kind:kind, p_page:routes[window.location.pathname] || 'unknown', p_operation:operationType, p_diagnostic:kind === 'data_failure' ? classifyDiagnostic(error) : null })).catch(() => undefined);
+  } catch { /* Diagnostics must never change the outcome of a business operation. */ }
+}
 function logError(error: unknown, operationType: OperationType, path: string | null) {
-  console.error('Supabase Error: ', JSON.stringify({
-    error: error instanceof Error ? error.message : String(error),
-    operationType,
-    path
-  }));
+  recordDataOutcome('data_failure', operationType, error);
+  console.error('Supabase Error: ', JSON.stringify({ error: error instanceof Error ? error.message : String(error), operationType, path }));
+}
+
+// Allowlisted operations only: never transmit RPC arguments, records or returned values.
+const observedRpcs: Record<string, OperationType> = {
+  rawdha_write_classe: OperationType.WRITE, rawdha_write_presence: OperationType.WRITE,
+  rawdha_write_attendance_day: OperationType.WRITE, rawdha_confirm_pickup_departure: OperationType.UPDATE,
+  rawdha_write_invoice: OperationType.WRITE, rawdha_review_invoice_period: OperationType.UPDATE,
+  rawdha_invoice_review_action: OperationType.UPDATE, rawdha_decide_admission: OperationType.UPDATE,
+  rawdha_add_child_health_event: OperationType.CREATE, rawdha_write_pickup_authorization: OperationType.WRITE,
+  rawdha_admin_update_director_account: OperationType.UPDATE, rawdha_admin_update_director_operations: OperationType.UPDATE,
+  rawdha_admin_create_followup: OperationType.CREATE, rawdha_admin_publish_notification: OperationType.CREATE,
+  rawdha_create_inscription_link: OperationType.CREATE,
+  rawdha_create_achat: OperationType.CREATE, rawdha_update_achat: OperationType.UPDATE, rawdha_delete_achat: OperationType.DELETE,
+  rawdha_create_community_comment: OperationType.CREATE, rawdha_update_community_comment: OperationType.UPDATE, rawdha_delete_community_comment: OperationType.DELETE,
+  rawdha_create_community_reaction: OperationType.CREATE, rawdha_delete_community_reaction: OperationType.DELETE,
+  rawdha_create_community_feature: OperationType.CREATE, rawdha_update_community_feature: OperationType.UPDATE, rawdha_delete_community_feature: OperationType.DELETE,
+};
+async function observedRpc<T extends { data?: unknown; error?: unknown }>(name: string, args: Record<string, unknown>, request: () => PromiseLike<T>): Promise<T> {
+  const fallback = observedRpcs[name];
+  if (!fallback) return await request();
+  const action = args.p_action;
+  const operation = action === 'create' ? OperationType.CREATE : action === 'update' ? OperationType.UPDATE : action === 'delete' || action === 'revoke' ? OperationType.DELETE : fallback;
+  try {
+    const result = await request();
+    if (result.error || result.data === false) recordDataOutcome('data_failure', operation, result.error);
+    else recordDataOutcome('data_success', operation);
+    return result;
+  } catch (error) { recordDataOutcome('data_failure', operation, error); throw error; }
+}
+export async function trackedBusinessRpc(name: string, args: Record<string, unknown>) {
+  if (!observedRpcs[name]) throw new Error('RPC non instrumentée');
+  return observedRpc(name, args, () => supabase.rpc(name, args));
 }
 
 // Une table indisponible ne doit jamais bloquer toute l’application.
@@ -98,7 +135,7 @@ export async function callSupabaseRpc<T = unknown>(
   functionName: string,
   args: Record<string, unknown>,
 ): Promise<{ data: T | null; error: { status?: number; code?: string; message?: string } | null }> {
-  return withAuthRetry(() => supabase.rpc(functionName, args)) as Promise<{ data: T | null; error: { status?: number; code?: string; message?: string } | null }>;
+  return observedRpc(functionName, args, () => withAuthRetry(() => supabase.rpc(functionName, args))) as Promise<{ data: T | null; error: { status?: number; code?: string; message?: string } | null }>;
 }
 
 // A blocked preflight must fail closed instead of leaving reminder controls busy forever.
@@ -120,6 +157,7 @@ function generateId(): string {
  */
 // Use where a failed read must never be mistaken for an empty collection.
 export async function getCollectionDataStrict<T>(collectionName: string): Promise<T[]> {
+  try {
   // PostgREST can cap list responses. Use the reported count rather than treating
   // a partial page as a complete financial dataset.
   const pageSize = 500;
@@ -140,6 +178,10 @@ export async function getCollectionDataStrict<T>(collectionName: string): Promis
   }
   if (rows.length !== expected || new Set(rows.map(row => row.id)).size !== rows.length) throw new Error(`Inconsistent collection: ${collectionName}`);
   return rows.map(row => ({ ...(row.data as object), id: row.id })) as T[];
+  } catch (err) {
+    logError(err, OperationType.LIST, collectionName);
+    throw err;
+  }
 }
 
 export async function getCollectionData<T>(collectionName: string): Promise<T[]> {
@@ -186,6 +228,7 @@ export async function addCollectionDocument<T extends Record<string, any>>(
       .from(collectionName)
       .insert({ id, data: cleanedData }));
     if (error) throw error;
+    recordDataOutcome('data_success', OperationType.CREATE);
     return id;
   } catch (err) {
     logError(err, OperationType.CREATE, collectionName);
@@ -204,6 +247,7 @@ export async function setCollectionDocument<T extends { id: string }>(
       .from(collectionName)
       .upsert({ id, data: cleanedData }));
     if (error) throw error;
+    recordDataOutcome('data_success', OperationType.WRITE);
   } catch (err) {
     logError(err, OperationType.WRITE, `${collectionName}/${id}`);
     throw err;
@@ -231,6 +275,7 @@ export async function updateCollectionDocument<T>(
       .eq('id', id));
     if (error) throw error;
     if (count !== 1) throw new Error(`Document introuvable ou modification non autorisée: ${collectionName}/${id}`);
+    recordDataOutcome('data_success', OperationType.UPDATE);
   } catch (err) {
     logError(err, OperationType.UPDATE, `${collectionName}/${id}`);
     throw err;
@@ -248,6 +293,7 @@ export async function deleteCollectionDocument(
       .eq('id', id));
     if (error) throw error;
     if (count !== 1) throw new Error(`Document introuvable ou suppression non autorisée: ${collectionName}/${id}`);
+    recordDataOutcome('data_success', OperationType.DELETE);
   } catch (err) {
     logError(err, OperationType.DELETE, `${collectionName}/${id}`);
     throw err;

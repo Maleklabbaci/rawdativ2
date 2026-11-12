@@ -132,6 +132,7 @@ test('7 SaaS upgrades: Netflix subprofiles, autonomous password reset, partial i
       useWorkspaceProfile,
     } = await server.ssrLoadModule('/src/contexts/WorkspaceProfileContext.tsx');
     const { default: ProfileSelectorScreen } = await server.ssrLoadModule('/src/components/ProfileSelectorScreen.tsx');
+    const { default: TeamAccessManager } = await server.ssrLoadModule('/src/components/TeamAccessManager.tsx');
     const { default: SignIn } = await server.ssrLoadModule('/src/components/SignIn.tsx');
     const { default: Paiements } = await server.ssrLoadModule('/src/components/Paiements.tsx');
     const { default: Presences } = await server.ssrLoadModule('/src/components/Presences.tsx');
@@ -316,22 +317,34 @@ test('7 SaaS upgrades: Netflix subprofiles, autonomous password reset, partial i
     assert.equal(latestProfileCtx.requiresProfileSelection, false, 'Platform admin must bypass profile selector');
     assert.ok(document.querySelector('#unlocked-probe'));
 
-    // 1b. Le compte Crèche (directeur approuvé) affiche l'écran de choix de profil au thème LandingPage/SignIn
+    // 1b. Un seul profil sans code entre directement après authentification.
     sessionStorage.clear();
     localStorage.clear();
     root.render(wrap(React.createElement(ProfileProbe), directorAuth, makeDb()));
     await flush(70);
-    assert.equal(latestProfileCtx.requiresProfileSelection, true);
-    assert.match(document.body.textContent || '', /Qui utilise l’espace crèche\s*\?/);
-    assert.match(document.body.textContent || '', /Nadia Benali/);
-    assert.match(document.body.textContent || '', /Ajouter un profil/);
-    assert.ok(document.querySelector('img[src="/rawdah-logo.png"]'), 'Profile selector must use Rawdha+ logo like LandingPage/SignIn');
-    assert.ok(!document.body.innerHTML.includes('bg-[#0f172a]'), 'Profile selector must not use dark cinema background');
+    assert.equal(latestProfileCtx.requiresProfileSelection, false);
+    assert.equal(latestProfileCtx.activeProfile?.name, 'Nadia Benali');
+    const noOwnerCode = await latestProfileCtx.saveSubProfile({ name: 'Sara', roleLabel: 'Équipe', preset: 'educatrice', color: 'emerald', password: '1111', allowedClassIds: null, hideFinancials: true });
+    assert.equal(noOwnerCode.error, 'owner_password_required');
 
     // 1c. Protection initiale du profil Direction + création d'un profil Éducatrice avec permissions fines par page
-    const setupRes = await latestProfileCtx.setupOwnerPasswordAndUnlock('1234');
-    assert.equal(setupRes.ok, true);
+    root.render(wrap(React.createElement(React.Fragment, null, React.createElement(ProfileProbe), React.createElement(TeamAccessManager)), directorAuth, makeDb()));
+    await flush();
+    const addButton = [...document.querySelectorAll('button')].find(b => /Ajouter un profil/.test(b.textContent || ''));
+    assert.ok(addButton);
+    addButton.click();
+    await flush();
+    assert.match(document.body.textContent, /Protéger le profil Direction/);
+    const setupInputs = [...document.querySelectorAll('input[type="password"]')];
+    assert.equal(setupInputs.length, 2);
+    setVal(setupInputs[0], '1234'); setVal(setupInputs[1], '1234');
+    await flush();
+    setupInputs[0].closest('form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await flush();
     assert.ok(parametresStore.has('profils_equipe_dir-test-1'), 'Profiles must persist in parametres table');
+    assert.match(document.body.textContent, /Nouveau profil d’équipe/);
+    root.render(wrap(React.createElement(ProfileProbe), directorAuth, makeDb()));
+    await flush();
 
     const saveStaffRes = await latestProfileCtx.saveSubProfile({
       name: 'Sara',

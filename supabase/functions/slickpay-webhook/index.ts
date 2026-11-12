@@ -15,7 +15,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 type SlickPayApiScope = 'users' | 'merchants';
 
 function resolveSlickPayDomain(): string {
-  const env = (Deno.env.get('SLICKPAY_ENV') || 'production').trim().toLowerCase();
+  const env = (Deno.env.get('SLICKPAY_ENV') || '').trim().toLowerCase();
   return env === 'sandbox' || env === 'dev'
     ? 'https://devapi.slick-pay.com/api/v2'
     : 'https://prodapi.slick-pay.com/api/v2';
@@ -73,14 +73,22 @@ function extractOrderIdFromPayload(url: URL, body: Record<string, unknown>): str
   return String(body.order_id || '').trim();
 }
 
-function isInvoicePaid(payload: Record<string, unknown>): boolean {
-  const inner = (payload.data && typeof payload.data === 'object' ? payload.data : payload) as Record<string, unknown>;
-  const completed = Number(inner.completed ?? payload.completed ?? 0);
-  const status = String(inner.payment_status ?? inner.status ?? payload.payment_status ?? '').toLowerCase();
-  return completed === 1 || status === 'paid' || status === 'completed';
+function invoiceMatchesPaidOrder(payload: Record<string, unknown>, order: { slickpay_invoice_id: unknown; amount_dzd: unknown }): boolean {
+  const inner = payload.data && typeof payload.data === 'object' ? payload.data as Record<string, unknown> : null;
+  if (!inner || Number(inner.completed) !== 1) return false;
+  const expectedId = String(order.slickpay_invoice_id || '').trim();
+  if (!expectedId || (inner.id != null && String(inner.id).trim() !== expectedId)) return false;
+  const transaction = inner.transaction && typeof inner.transaction === 'object' ? inner.transaction as Record<string, unknown> : null;
+  // SlickPay's official WooCommerce plugin reads data.transaction.amount.
+  // Fail closed if the API does not provide an amount or it disagrees with the order.
+  const rawAmount = transaction?.amount;
+  if ((typeof rawAmount !== 'string' && typeof rawAmount !== 'number') || String(rawAmount).trim() === '') return false;
+  const amount = Number(rawAmount);
+  if (!Number.isFinite(amount) || amount !== Number(order.amount_dzd)) return false;
+  return true;
 }
 
-Deno.serve(async (req: Request) => {
+async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { status: 200 });
   }
@@ -96,6 +104,11 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
     const slickpayPublicKey = (Deno.env.get('SLICKPAY_PUBLIC_KEY') || '').trim();
     const slickpaySecretKey = (Deno.env.get('SLICKPAY_SECRET_KEY') || '').trim();
+
+    const paymentEnv = (Deno.env.get('SLICKPAY_ENV') || '').trim().toLowerCase();
+    if (Deno.env.get('SLICKPAY_ENABLE_PAYMENTS') !== 'true' || !['sandbox','dev','production'].includes(paymentEnv)) {
+      return new Response(JSON.stringify({ok:false,error:'Payment disabled'}), {status:503,headers:{'Content-Type':'application/json'}});
+    }
 
     if (!slickpayPublicKey || !slickpaySecretKey) {
       return new Response(JSON.stringify({ ok: false, error: 'Server secrets missing' }), {
@@ -185,10 +198,10 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const invoiceId = String(order.slickpay_invoice_id || incomingInvoiceId || '').trim();
+    const invoiceId = String(order.slickpay_invoice_id || '').trim();
     if (!invoiceId) {
       return new Response(JSON.stringify({ ok: false, error: 'Missing invoice id' }), {
-        status: 400,
+        status: 503,
         headers: { 'Content-Type': 'application/json' },
       });
     }
@@ -222,7 +235,12 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    if (!verifyOk || !isInvoicePaid(verifyJson)) {
+    if (!verifyOk) {
+      return new Response(JSON.stringify({ ok: false, error: 'Invoice verification unavailable' }), { status: 503, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (!invoiceMatchesPaidOrder(verifyJson, order)) {
+      const inner = verifyJson.data && typeof verifyJson.data === 'object' ? verifyJson.data as Record<string, unknown> : {};
+      if (Number(inner.completed) === 1) return new Response(JSON.stringify({ ok: false, error: 'Invoice details require reconciliation' }), { status: 503, headers: { 'Content-Type': 'application/json' } });
       const dataObj = (verifyJson.data && typeof verifyJson.data === 'object'
         ? verifyJson.data
         : verifyJson) as Record<string, unknown>;
@@ -236,7 +254,8 @@ Deno.serve(async (req: Request) => {
             raw_slickpay_response: verifyJson,
             updated_at: new Date().toISOString(),
           })
-          .eq('id', orderId);
+          .eq('id', orderId)
+          .eq('status', 'pending');
       }
       return new Response(
         JSON.stringify({ ok: true, status: rejectionReason ? 'failed' : 'pending', orderId }),
@@ -268,4 +287,29 @@ Deno.serve(async (req: Request) => {
       headers: { 'Content-Type': 'application/json' },
     });
   }
+}
+
+// Minimal, service-only diagnostic. Never record body, URL, payment fields or error text.
+Deno.serve(async (req: Request) => {
+  const response = await handleRequest(req);
+  if (response.status < 500) return response;
+  const incidentId = crypto.randomUUID();
+  const url = Deno.env.get('SUPABASE_URL') || '';
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  if (url && serviceKey) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const abort = new AbortController();
+      timer = setTimeout(() => abort.abort(), 800);
+      await fetch(`${url}/rest/v1/rpc/rawdha_record_server_incident`, {
+        method:'POST', signal:abort.signal,
+        headers:{ 'Content-Type':'application/json', apikey:serviceKey, Authorization:`Bearer ${serviceKey}` },
+        body:JSON.stringify({p_source:'slickpay-webhook',p_incident_id:incidentId}),
+      });
+    } catch { /* logging must never change payment response */ }
+    finally { if (timer) clearTimeout(timer); }
+  }
+  const headers = new Headers(response.headers);
+  headers.set('X-Rawdha-Incident',incidentId);
+  return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
 });
