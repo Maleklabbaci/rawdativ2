@@ -7,6 +7,7 @@ import {
   parseXlsxRows,
 } from '../utils/spreadsheetParser';
 import { updatePrimaryParent } from '../utils/childProfile';
+import { loadParentLinkRequests, subscribeToParentPortalChanges } from '../utils/parentPortal';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { 
   Baby, 
@@ -207,6 +208,30 @@ export default function Enfants() {
   const { user, creche } = useAuth();
   const { hasPagePermission, isOwnerProfile } = useWorkspaceProfile();
   const canInviteParent = user?.role === 'directeur' && user.approvalStatus === 'approved' && isOwnerProfile;
+  const [parentRequestCounts, setParentRequestCounts] = useState<Record<string, number>>({});
+  const [parentRequestsUnavailable, setParentRequestsUnavailable] = useState(false);
+  useEffect(() => {
+    if (!canInviteParent || !user?.id) { setParentRequestCounts({}); setParentRequestsUnavailable(false); return; }
+    let mounted = true;
+    let inFlight = false;
+    const refresh = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const requests = await loadParentLinkRequests(user.id);
+        const counts: Record<string, number> = {};
+        for (const req of requests) if (req.status === 'pending' && req.requestedChildId) counts[req.requestedChildId] = (counts[req.requestedChildId] || 0) + 1;
+        if (mounted) { setParentRequestCounts(counts); setParentRequestsUnavailable(false); }
+      } catch { if (mounted) setParentRequestsUnavailable(true); }
+      finally { inFlight = false; }
+    };
+    void refresh();
+    const timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 8000);
+    const unsubscribe = subscribeToParentPortalChanges(() => { void refresh(); });
+    const onFocus = () => { void refresh(); };
+    window.addEventListener('focus', onFocus);
+    return () => { mounted = false; window.clearInterval(timer); window.removeEventListener('focus', onFocus); unsubscribe(); };
+  }, [canInviteParent, user?.id]);
   const canEditChildren = hasPagePermission('enfants', 'edit');
   const canManageAdmissions = hasPagePermission('admissions', 'links') || hasPagePermission('admissions', 'decide');
   const isDirecteur = user?.role === 'directeur';
@@ -926,6 +951,7 @@ export default function Enfants() {
 
   return (
     <div className="space-y-3 sm:space-y-5">
+      {parentRequestsUnavailable && <p role="alert" className="rounded-xl bg-amber-50 px-4 py-3 text-xs font-bold text-amber-900">{isArabic ? 'تعذر تحديث طلبات ربط الأولياء.' : 'Impossible d’actualiser les demandes parents. Vérifiez la connexion.'}</p>}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3">
         <div className="flex items-center justify-between gap-2 min-w-0">
           <div className="min-w-0">
@@ -1369,6 +1395,7 @@ export default function Enfants() {
                                   <span className="truncate text-[13.5px] font-bold text-slate-900">
                                     {enfant.prenom} {enfant.nom}
                                   </span>
+                                  {parentRequestCounts[enfant.id] > 0 && <span className="shrink-0 rounded-md bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-800">{isArabic ? `طلب ${parentRequestCounts[enfant.id]}` : `${parentRequestCounts[enfant.id]} demande`}</span>}
                                   {hasAllergy && (
                                     <span
                                       title={enfant.allergie}
@@ -1507,6 +1534,7 @@ export default function Enfants() {
                                   <p className="text-[10px] text-slate-400 font-semibold uppercase tabular-nums">
                                     RAW-{enfant.id.slice(-4)}
                                   </p>
+                                  {parentRequestCounts[enfant.id] > 0 && <button type="button" onClick={() => setSelectedEnfant(enfant)} className="mt-1 rounded-md bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-800">{isArabic ? `${parentRequestCounts[enfant.id]} طلب ربط` : `${parentRequestCounts[enfant.id]} demande parent`}</button>}
                                 </div>
                               </div>
                             </td>

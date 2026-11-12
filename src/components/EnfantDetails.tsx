@@ -8,6 +8,7 @@ import {
 } from '../utils/financePeriod';
 import FinanceReviewWarning from './FinanceReviewWarning';
 import ParentChildQr from './ParentChildQr';
+import ParentChildRequests from './ParentChildRequests';
 import FinanceUnavailable from './FinanceUnavailable';
 import ChildHealthJournal from './ChildHealthJournal';
 import PickupAuthorizations from './PickupAuthorizations';
@@ -351,7 +352,8 @@ export default function EnfantDetails({ enfant: initialEnfant, onClose }: { enfa
           )}
         </div>
 
-        <div className="p-6 space-y-6 overflow-y-auto flex-1">
+        <div className="p-4 sm:p-6 space-y-6 overflow-y-auto flex-1">
+          {user?.role === 'directeur' && user.approvalStatus === 'approved' && isOwnerProfile && enfant.crecheId === user.id && <ParentChildRequests childId={enfant.id} childName={`${enfant.prenom} ${enfant.nom}`} crecheId={user.id} isArabic={isArabic}/>}
           <AnimatePresence mode="wait">
             {activeTab === 'retrait' && <motion.div key="retrait-tab"><PickupAuthorizations childId={enfant.id} /></motion.div>}
             {activeTab === 'sante' && <motion.div key="sante-tab"><ChildHealthJournal childId={enfant.id} /></motion.div>}

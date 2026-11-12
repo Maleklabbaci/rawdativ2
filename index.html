@@ -6,7 +6,12 @@
     <title>Rawdha+</title>
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/favicon.png" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <link id="rawdha-app-manifest" rel="manifest" href="/manifest.webmanifest" />
+    <script>
+      if (location.pathname.replace(/\/+$/, '') === '/espace-parent') {
+        document.getElementById('rawdha-app-manifest').setAttribute('href', '/manifest-parent.webmanifest');
+      }
+    </script>
     <meta name="theme-color" content="#4f46e5" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />

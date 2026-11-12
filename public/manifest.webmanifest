@@ -23,19 +23,38 @@
       "name": "Appel du jour",
       "short_name": "Présences",
       "url": "/presences",
-      "icons": [{ "src": "/favicon.png", "sizes": "any", "type": "image/png" }]
+      "icons": [
+        {
+          "src": "/favicon.png",
+          "sizes": "any",
+          "type": "image/png"
+        }
+      ]
     },
     {
       "name": "Dossiers enfants",
       "short_name": "Enfants",
       "url": "/enfants",
-      "icons": [{ "src": "/favicon.png", "sizes": "any", "type": "image/png" }]
+      "icons": [
+        {
+          "src": "/favicon.png",
+          "sizes": "any",
+          "type": "image/png"
+        }
+      ]
     },
     {
       "name": "Factures & règlements",
       "short_name": "Factures",
       "url": "/factures",
-      "icons": [{ "src": "/favicon.png", "sizes": "any", "type": "image/png" }]
+      "icons": [
+        {
+          "src": "/favicon.png",
+          "sizes": "any",
+          "type": "image/png"
+        }
+      ]
     }
-  ]
+  ],
+  "id": "/dashboard"
 }
