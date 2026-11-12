@@ -713,6 +713,9 @@ export function WorkspaceProfileProvider({ children }: { children: React.ReactNo
 
       const currentProfiles = profilesRef.current;
       const existing = input.id ? currentProfiles.find(p => p.id === input.id) : undefined;
+      if (!existing && !currentProfiles.find(p => p.isOwner)?.passwordHash) {
+        return { ok: false, error: 'owner_password_required' };
+      }
       if (!existing && (!input.password || input.password.trim().length < 4)) {
         return { ok: false, error: 'short_password' };
       }
