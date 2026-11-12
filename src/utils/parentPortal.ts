@@ -44,6 +44,7 @@ export interface ParentLinkRequest {
   parentTelephone: string;
   parentLien: 'Mère' | 'Père' | 'Tuteur' | 'Parent';
   requestedChildren: ParentRequestedChild[];
+  requestedChildId?: string;
   linkedEnfantIds: string[];
   linkedSnapshots?: ParentChildSnapshot[];
   status: 'pending' | 'approved' | 'rejected';
@@ -488,6 +489,7 @@ export async function loadParentLinkRequests(crecheId: string): Promise<ParentLi
         parentTelephone: row.parent_telephone,
         parentLien: row.parent_lien || 'Parent',
         requestedChildren: Array.isArray(row.requested_children) ? row.requested_children : [],
+        requestedChildId: row.requested_child_id || undefined,
         linkedEnfantIds: Array.isArray(row.linked_enfant_ids) ? row.linked_enfant_ids : [],
         status: row.status,
         rejectionReason: row.rejection_reason || undefined,

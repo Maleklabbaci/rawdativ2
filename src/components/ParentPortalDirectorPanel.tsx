@@ -61,6 +61,7 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
   const [requests, setRequests] = useState<ParentLinkRequest[]>([]);
   const [announcements, setAnnouncements] = useState<ParentAnnouncement[]>([]);
   const [selectedChildIdsByReq, setSelectedChildIdsByReq] = useState<Record<string, string[]>>({});
+  const requestTargetsRef = useRef<Record<string, string>>({});
   const [pickerOpenReqId, setPickerOpenReqId] = useState<string | null>(null);
   const [childSearch, setChildSearch] = useState('');
   const [busyReqId, setBusyReqId] = useState<string | null>(null);
@@ -114,14 +115,20 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
       setRequests(reqs);
       setAnnouncements(anns);
 
+      const targets: Record<string, string> = {};
+      for (const r of reqs) targets[r.id] = `${r.status}:${r.requestedChildId || ''}:${JSON.stringify(r.requestedChildren)}`;
+      const changedTargets = new Set(reqs.filter(r => requestTargetsRef.current[r.id] !== targets[r.id]).map(r => r.id));
+      requestTargetsRef.current = targets;
       setSelectedChildIdsByReq((prev) => {
         const next = { ...prev };
         for (const r of reqs) {
-          if (!next[r.id]) {
+          if (!next[r.id] || changedTargets.has(r.id)) {
             next[r.id] =
               r.linkedEnfantIds.length > 0
                 ? r.linkedEnfantIds
-                : findMatchingChildrenForRequest(r, enfants);
+                : r.requestedChildId
+                  ? enfants.filter(child => child.id === r.requestedChildId).map(child => child.id)
+                  : findMatchingChildrenForRequest(r, enfants);
           }
         }
         return next;
@@ -612,6 +619,7 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
             {pendingRequests.map((req) => {
               const selectedIds = selectedChildIdsByReq[req.id] || [];
               const isPickerOpen = pickerOpenReqId === req.id;
+              const invitedChild = req.requestedChildId ? enfants.find(child => child.id === req.requestedChildId) : undefined;
 
               return (
                 <div key={req.id} className="p-4 space-y-3">
@@ -628,10 +636,11 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
                       <p className="text-xs text-slate-600">
                         {isFr ? 'Enfant(s) déclaré(s) : ' : 'الأطفال المصرح بهم: '}
                         <strong className="text-slate-900">
-                          {req.requestedChildren.map((c) => `${c.prenom} ${c.nom}`).join(' + ')}
+                          {req.requestedChildId ? (invitedChild ? `${invitedChild.prenom} ${invitedChild.nom}` : (isFr ? 'Enfant indisponible' : 'ملف الطفل غير متاح')) : req.requestedChildren.map((c) => `${c.prenom} ${c.nom}`).join(' + ')}
                         </strong>
                       </p>
 
+                      {req.requestedChildId && <p className="text-xs text-amber-700">{isFr ? 'Invitation personnelle : vérifiez l’identité du parent avant de valider.' : 'دعوة شخصية: تحققي من هوية الولي قبل الموافقة.'}</p>}
                       {/* Badges des dossiers enfants auto-associés */}
                       <div className="flex flex-wrap items-center gap-1.5 pt-1">
                         {selectedIds.map((cid) => {
