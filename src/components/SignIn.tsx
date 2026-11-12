@@ -317,6 +317,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
 
   const handleSubmitRequest = async (event: FormEvent) => {
     event.preventDefault();
+    if (busyRef.current) return;
     setError('');
     setSuccess('');
 
@@ -341,6 +342,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
       return;
     }
 
+    busyRef.current = true;
     setLoading(true);
     try {
       const { data: registration, error: registrationError } = await supabase.functions.invoke('register-director-request', {
@@ -369,10 +371,20 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
         throw new Error(serverError || registration.error);
       }
 
-      resetRequestForm();
-      setSuccess(registration?.status === 'active'
-        ? copy.requestSuccess
-        : (isFrench ? 'Votre demande a été envoyée et reste en attente de validation.' : 'تم إرسال طلبك وهو بانتظار الموافقة.'));
+      if (registration?.status === 'active') {
+        // Le compte existe déjà : ne jamais relancer sa création si la connexion échoue.
+        const result = await loginWithCredentials(directorEmail.trim().toLowerCase(), directorPassword)
+          .catch(() => ({ user: null, error: 'login_failed' }));
+        resetRequestForm();
+        if (result.error || !result.user) {
+          setSuccess(isFrench
+            ? 'Votre compte est créé, mais la connexion automatique a échoué. Cliquez sur « Se connecter » et utilisez vos identifiants.'
+            : 'تم إنشاء حسابك، لكن الدخول التلقائي لم ينجح. اضغطي على تسجيل الدخول واستخدمي بياناتك.');
+        }
+      } else {
+        resetRequestForm();
+        setSuccess(isFrench ? 'Votre demande a été envoyée et reste en attente de validation.' : 'تم إرسال طلبك وهو بانتظار الموافقة.');
+      }
     } catch (requestError) {
       console.error('Erreur envoi demande directeur:', requestError);
       const message = requestError instanceof Error ? requestError.message : '';
@@ -382,6 +394,7 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
         setError(message || copy.requestError);
       }
     } finally {
+      busyRef.current = false;
       setLoading(false);
     }
   };
