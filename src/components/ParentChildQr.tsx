@@ -4,6 +4,7 @@ import * as QRCode from 'qrcode';
 import { supabase } from '../supabase';
 
 export default function ParentChildQr({ childId, childName, crecheId, crecheName, isArabic, compact = false }: { childId: string; childName: string; crecheId: string; crecheName: string; isArabic: boolean; compact?: boolean }) {
+  const isDemo = Boolean(import.meta.env.DEV && import.meta.env.VITE_ARENA_DEMO === 'true');
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [qr, setQr] = useState('');
@@ -13,7 +14,7 @@ export default function ParentChildQr({ childId, childName, crecheId, crecheName
     if (busy) return;
     setBusy(true); setMessage(''); setQr(''); setInviteUrl('');
     try {
-      const { data, error } = await supabase.rpc('rawdha_create_child_parent_invite', { p_enfant_id: childId });
+      const { data, error } = isDemo ? { data: { token: '0'.repeat(64) }, error: null } : await supabase.rpc('rawdha_create_child_parent_invite', { p_enfant_id: childId });
       if (error || typeof data?.token !== 'string' || !/^[0-9a-f]{64}$/.test(data.token)) throw new Error('unavailable');
       const url = new URL('/espace-parent', window.location.origin);
       url.searchParams.set('creche', crecheId);
@@ -40,6 +41,7 @@ export default function ParentChildQr({ childId, childName, crecheId, crecheName
       <div role="dialog" aria-modal="true" aria-label={isArabic ? 'ربط الولي' : 'Relier le parent'} className="max-h-[90dvh] w-full max-w-sm overflow-y-auto rounded-3xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between gap-3"><div><h3 className="text-lg font-black text-slate-900">{isArabic ? 'ربط هاتف الولي' : 'Relier le parent'}</h3><p className="text-sm text-slate-500">{childName}</p></div><button type="button" onClick={close} aria-label={isArabic ? 'إغلاق' : 'Fermer'} className="rounded-xl p-2 text-slate-500"><X size={18}/></button></div>
         {busy ? <p role="status" className="py-12 text-center text-sm text-slate-500">{isArabic ? 'جاري إنشاء الرمز...' : 'Création du QR...'}</p> : qr ? <img src={qr} alt={isArabic ? 'رمز ربط الولي' : 'QR de liaison parent'} className="mx-auto my-4 h-52 w-52 max-w-full rounded-xl border border-slate-100"/> : null}
+        {isDemo && <p role="status" className="my-3 rounded-xl bg-amber-50 p-3 text-xs font-bold text-amber-800">{isArabic ? 'عرض تجريبي فقط: الرمز والرابط غير فعالين.' : 'Aperçu fictif : ce QR et ce lien ne sont pas actifs.'}</p>}
         <p className="text-xs leading-relaxed text-slate-600">{isArabic ? 'الرابط والرمز شخصيان وصالحان 48 ساعة ولمرة واحدة. لا ترسليهما إلا للولي المعني. تصادق المديرة قبل عرض بيانات الطفل.' : 'QR et lien personnels, valables 48 h et une seule fois. Partagez-les uniquement avec le parent concerné. Vous validez sa demande avant l’accès aux données.'}</p>
         {inviteUrl && <div className="mt-4"><label htmlFor="parent-invite-url" className="text-xs font-bold text-slate-600">{isArabic ? 'الرابط الشخصي' : 'Lien personnel'}</label><input id="parent-invite-url" readOnly value={inviteUrl} onFocus={e => e.currentTarget.select()} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700"/><div className="mt-2 flex gap-2"><button type="button" onClick={() => void copy()} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2.5 text-xs font-bold text-slate-700"><Copy size={14}/>{isArabic ? 'نسخ' : 'Copier'}</button><button type="button" onClick={() => void share()} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-50 px-3 py-2.5 text-xs font-bold text-indigo-700"><Share2 size={14}/>{isArabic ? 'مشاركة' : 'Partager'}</button></div></div>}
         {message && <p role="status" className="mt-3 text-xs text-slate-600">{message}</p>}
