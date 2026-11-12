@@ -17,6 +17,22 @@ type ParentPushPayload = {
   announcementId?: string;
 };
 
+// Never send a server-side request to an arbitrary subscriber-supplied host.
+function isSupportedPushSubscription(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const subscription = value as { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } };
+  if (typeof subscription.endpoint !== 'string' || subscription.endpoint.length > 2048 ||
+      typeof subscription.keys?.p256dh !== 'string' || typeof subscription.keys?.auth !== 'string' ||
+      !/^[A-Za-z0-9_-]{80,120}$/.test(subscription.keys.p256dh) || !/^[A-Za-z0-9_-]{20,40}$/.test(subscription.keys.auth)) return false;
+  try {
+    const url = new URL(subscription.endpoint);
+    if (url.protocol !== 'https:' || url.username || url.password || url.port || url.hash) return false;
+    const host = url.hostname.toLowerCase();
+    return host === 'fcm.googleapis.com' || host === 'updates.push.services.mozilla.com' ||
+      host === 'web.push.apple.com' || host.endsWith('.push.apple.com') || host.endsWith('.notify.windows.com');
+  } catch { return false; }
+}
+
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -53,10 +69,22 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Session directrice requise.' }, 401);
   }
 
+  const { data: account, error: accountError } = await adminClient.from('comptes').select('data').eq('id', userData.user.id).maybeSingle();
+  if (accountError) return jsonResponse({ error: 'Vérification du compte indisponible.' }, 503);
+  if (account?.data?.role !== 'directeur' || account?.data?.approvalStatus !== 'approved') {
+    return jsonResponse({ error: 'Compte directrice actif requis.' }, 403);
+  }
+
   const body = (await req.json().catch(() => ({}))) as ParentPushPayload;
   const crecheId = (body.crecheId || userData.user.id).trim();
   if (crecheId !== userData.user.id) {
     return jsonResponse({ error: 'Accès refusé pour cette crèche.' }, 403);
+  }
+
+  if (!['all', 'group', 'child'].includes(body.targetScope || '') ||
+      (body.targetScope === 'child' && (typeof body.targetEnfantId !== 'string' || !body.targetEnfantId.trim())) ||
+      (body.targetScope === 'group' && (typeof body.targetGroup !== 'string' || !body.targetGroup.trim()))) {
+    return jsonResponse({ error: 'Destinataire invalide.' }, 400);
   }
 
   const title = (body.title || '').trim().slice(0, 120);
@@ -90,11 +118,12 @@ Deno.serve(async (req) => {
   if (body.targetScope === 'child' && body.targetEnfantId) {
     allowedChildIds = new Set([body.targetEnfantId]);
   } else if (body.targetScope === 'group' && body.targetGroup) {
-    const { data: childRows } = await adminClient
+    const { data: childRows, error: childError } = await adminClient
       .from('enfants')
       .select('id, data')
       .eq('data->>crecheId', crecheId)
       .eq('data->>groupeAge', body.targetGroup);
+    if (childError) return jsonResponse({ error: 'Destinataires indisponibles.' }, 503);
     allowedChildIds = new Set((childRows || []).map((r: { id: string }) => r.id));
   }
 
@@ -102,11 +131,11 @@ Deno.serve(async (req) => {
   let failed = 0;
 
   for (const row of links || []) {
-    if (!row.push_subscription) continue;
     const childIds: string[] = Array.isArray(row.linked_enfant_ids) ? row.linked_enfant_ids : [];
     if (allowedChildIds && !childIds.some((id) => allowedChildIds!.has(id))) {
       continue;
     }
+    if (!isSupportedPushSubscription(row.push_subscription)) { failed += 1; continue; }
 
     try {
       await webpush.sendNotification(

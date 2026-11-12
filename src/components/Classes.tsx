@@ -1,5 +1,6 @@
+import { takeSetupTask } from '../utils/onboardingTask';
 import type React from 'react';
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -54,6 +55,7 @@ export default function Classes() {
 
   // State
   const [showModal, setShowModal] = useState(false);
+  useEffect(() => { if (takeSetupTask(user?.id, 'classes')) setShowModal(true); }, [user?.id]);
   const [savingClass, setSavingClass] = useState(false);
   const [classSaveUncertain, setClassSaveUncertain] = useState(false);
   const savingClassRef = useRef(false);
@@ -517,7 +519,7 @@ export default function Classes() {
       {/* ADD / EDIT CLASS MODAL */}
       <AnimatePresence>
         {showModal && (
-          <motion.div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/50 p-3 sm:items-center sm:p-4">
+          <motion.div role="dialog" aria-modal="true" aria-label={editingClasseId ? (isArabic ? 'تعديل بيانات الفصل' : 'Modifier la classe') : (isArabic ? 'إضافة فصل جديد' : 'Ajouter une nouvelle classe')} className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto overscroll-contain bg-black/50 p-3 sm:items-center sm:p-4">
             <motion.div className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl border border-slate-100 sm:p-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-bold">
@@ -526,7 +528,8 @@ export default function Classes() {
                     : (isArabic ? 'إضافة فصل جديد' : 'Ajouter une nouvelle classe')
                   }
                 </h2>
-                <button 
+                <button
+                  aria-label={isArabic ? 'إغلاق' : 'Fermer'}
                   onClick={() => {
                     if (savingClassRef.current) return;
                     setShowModal(false);
@@ -653,7 +656,7 @@ export default function Classes() {
       {/* ADD CHILDREN TO CLASS MODAL */}
       <AnimatePresence>
         {showAddChildrenModal && selectedClasse && (
-          <motion.div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/50 p-3 sm:items-center sm:p-4">
+          <motion.div role="dialog" aria-modal="true" aria-label={editingClasseId ? (isArabic ? 'تعديل بيانات الفصل' : 'Modifier la classe') : (isArabic ? 'إضافة فصل جديد' : 'Ajouter une nouvelle classe')} className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto overscroll-contain bg-black/50 p-3 sm:items-center sm:p-4">
             <motion.div className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl sm:max-h-[80vh] sm:p-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-bold">

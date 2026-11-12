@@ -1,3 +1,4 @@
+import { takeSetupTask } from '../utils/onboardingTask';
 import { importBatches } from '../utils/importBatches';
 import {
   buildChildrenImportTemplateCsv,
@@ -256,6 +257,7 @@ export default function Enfants() {
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [showImportWizard, setShowImportWizard] = useState(false);
+  useEffect(() => { if (!isReadOnly && takeSetupTask(user?.id, 'enfants')) setShowImportWizard(true); }, [user?.id, isReadOnly]);
   const [pasteImportText, setPasteImportText] = useState('');
 
   const [formData, setFormData] = useState({

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import {
   BarChart3,
+  Activity,
   Bell,
   BookOpen,
   ChevronRight,
@@ -99,6 +100,7 @@ export default function MobileAppHubSheet({
 
   const modules = isAdmin
     ? [
+        { key: 'logs', label: isArabic ? 'السجل والأحداث' : 'Historique & logs', icon: Activity, badge: 0 },
         { key: 'community', label: 'Rawdha Connect', icon: Network, badge: unreadSocial },
         { key: 'parametres', label: isArabic ? 'الإعدادات' : 'Paramètres', icon: Settings, badge: 0 },
       ]

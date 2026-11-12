@@ -263,7 +263,7 @@ test('performance & modern UI: PageSkeleton FR/AR, route prefetching, Dashboard 
     const dashRoot = dashScope.firstElementChild;
     assert.equal(dashRoot.className.includes('font-sans'), false);
     assert.match(dashScope.textContent, /Présents/);
-    assert.match(dashScope.textContent, /Programme du jour/);
+    assert.match(dashScope.textContent, /Repas & Activités du jour/);
     assert.match(dashScope.textContent, /Aucun repas saisi pour aujourd’hui/);
     assert.doesNotMatch(dashScope.textContent, /Rawdha Command Center|Radar Rawdha|Sécurité infirmerie OK/);
 

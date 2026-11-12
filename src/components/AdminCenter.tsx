@@ -1,5 +1,5 @@
 /** Style Rawdha+ Admin Center: surfaces blanches denses, accents indigo/ambre, priorités lisibles et actions sensibles confirmées. */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { spreadsheetCsvCell } from '../utils/csv';
 import {
   AlertTriangle,
@@ -12,11 +12,8 @@ import {
   CirclePause,
   ClipboardCheck,
   Clock3,
-  CreditCard,
   Download,
-  Eye,
   Headset,
-  History,
   MessageSquareText,
   Network,
   PlayCircle,
@@ -35,15 +32,8 @@ import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { useToast } from '../contexts/ToastContext';
 import type { DemandeDirecteur, UserAccount } from '../types';
 import AdminCrecheDetail from './AdminCrecheDetail';
-import InAppPdfViewerModal from './InAppPdfViewerModal';
-import {
-  computeExtendedSubscriptionDate,
-  loadSubscriptionRenewals,
-  updateSubscriptionRenewalStatus,
-  type SubscriptionRenewalRequest,
-} from '../utils/subscriptionRenewal';
 
-type AdminView = 'pilotage' | 'creches' | 'validations' | 'qualite' | 'historique';
+type AdminView = 'pilotage' | 'creches' | 'validations' | 'qualite';
 
 type AdminCenterProps = {
   onNavigate: (page: string) => void;
@@ -85,7 +75,6 @@ export default function AdminCenter({ onNavigate }: AdminCenterProps) {
     communityPosts,
     communityFeatures,
     notifications,
-    adminAuditLogs,
     adminFollowups,
     approveDemandeDirecteur,
     deleteDemandeDirecteur,
@@ -99,31 +88,6 @@ export default function AdminCenter({ onNavigate }: AdminCenterProps) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const busyRef = useRef(false);
   const [selectedDirectorId, setSelectedDirectorId] = useState<string | null>(null);
-  const [historySearch, setHistorySearch] = useState('');
-  const [historyAction, setHistoryAction] = useState('all');
-  const [renewalRequests, setRenewalRequests] = useState<SubscriptionRenewalRequest[]>([]);
-  const [previewProofReq, setPreviewProofReq] = useState<SubscriptionRenewalRequest | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    const sync = () => {
-      void loadSubscriptionRenewals().then(items => {
-        if (active) setRenewalRequests(items);
-      });
-    };
-    sync();
-    window.addEventListener('rawdha-subscription-renewals-updated', sync);
-    return () => {
-      active = false;
-      window.removeEventListener('rawdha-subscription-renewals-updated', sync);
-    };
-  }, []);
-
-  const pendingRenewals = useMemo(
-    () => renewalRequests.filter(item => item.status === 'pending'),
-    [renewalRequests],
-  );
-
   const directors = useMemo(
     () => comptes.filter(account => account.role === 'directeur').sort((a, b) => `${a.nomCreche || ''}${a.nom}`.localeCompare(`${b.nomCreche || ''}${b.nom}`)),
     [comptes],
@@ -190,9 +154,9 @@ export default function AdminCenter({ onNavigate }: AdminCenterProps) {
     if (!accepted) return;
     await run(`approve:${request.id}`, async () => {
       const accountId = await approveDemandeDirecteur(request.id);
-      await logAdminAction('director_approved', 'director_request', request.id, request.nomCreche, { accountId }).catch(() => undefined);
+      const journaled = await logAdminAction('director_approved', 'director_request', request.id, request.nomCreche, { accountId }).then(() => true, () => false);
       await refreshAll().catch(() => undefined);
-      showToast(text('Directrice activée.', 'تم تفعيل المديرة.'), 'success');
+      showToast(journaled ? text('Directrice activée.', 'تم تفعيل المديرة.') : text('Compte activé, mais enregistrement du journal non confirmé.', 'تم تفعيل الحساب، لكن لم يتأكد تسجيل العملية.'), journaled ? 'success' : 'error');
     });
   };
 
@@ -210,9 +174,9 @@ export default function AdminCenter({ onNavigate }: AdminCenterProps) {
     if (!accepted) return;
     await run(`reject:${request.id}`, async () => {
       await deleteDemandeDirecteur(request.id);
-      await logAdminAction('director_request_rejected', 'director_request', request.id, request.nomCreche).catch(() => undefined);
+      const journaled = await logAdminAction('director_request_rejected', 'director_request', request.id, request.nomCreche).then(() => true, () => false);
       await refreshAll().catch(() => undefined);
-      showToast(text('Demande refusée.', 'تم رفض الطلب.'), 'success');
+      showToast(journaled ? text('Demande refusée.', 'تم رفض الطلب.') : text('Demande refusée, mais enregistrement du journal non confirmé.', 'تم رفض الطلب، لكن لم يتأكد تسجيل العملية.'), journaled ? 'success' : 'error');
     });
   };
 
@@ -250,57 +214,13 @@ export default function AdminCenter({ onNavigate }: AdminCenterProps) {
     });
   };
 
-  const approveRenewal = async (req: SubscriptionRenewalRequest) => {
-    const targetAccount = directors.find(acc => acc.id === req.directorId);
-    const nextEndDate = computeExtendedSubscriptionDate(targetAccount?.dateFinAbonnement, req.planMonths);
-    const accepted = await confirm({
-      title: text('Valider ce paiement BaridiMob / CCP ?', 'تأكيد وصل بريدي موب / CCP؟'),
-      message: text(
-        `Prolonger ${req.crecheName} de ${req.planMonths} mois (jusqu’au ${nextEndDate}) pour ${req.amountDzd.toLocaleString('fr-FR')} DA ?`,
-        `تمديد اشتراك ${req.crecheName} لمدة ${req.planMonths} أشهر (إلى غاية ${nextEndDate}) بمبلغ ${req.amountDzd} د.ج؟`,
-      ),
-      confirmText: text('Valider & activer', 'اعتماد وتفعيل'),
-    });
-    if (!accepted) return;
-    await run(`ren_approve:${req.id}`, async () => {
-      if (targetAccount) {
-        await updateDirectorSubscription(
-          targetAccount.id,
-          { abonnementActif: true, dateFinAbonnement: nextEndDate },
-          'subscription_end_date_updated',
-        );
-      }
-      await updateSubscriptionRenewalStatus(req.id, 'approved', user?.email || 'admin');
-      const updated = await loadSubscriptionRenewals();
-      setRenewalRequests(updated);
-      showToast(text('Abonnement prolongé et activé.', 'تم تمديد وتفعيل الاشتراك.'), 'success');
-    });
-  };
-
-  const rejectRenewal = async (req: SubscriptionRenewalRequest) => {
-    const accepted = await confirm({
-      title: text('Refuser ce reçu ?', 'رفض هذا الوصل؟'),
-      message: text(`Écarter le reçu ${req.transactionRef} de ${req.crecheName} ?`, `رفض الوصل ${req.transactionRef} الخاص بـ ${req.crecheName}؟`),
-      confirmText: text('Refuser', 'رفض'),
-      variant: 'danger',
-    });
-    if (!accepted) return;
-    await run(`ren_reject:${req.id}`, async () => {
-      await updateSubscriptionRenewalStatus(req.id, 'rejected', user?.email || 'admin');
-      const updated = await loadSubscriptionRenewals();
-      setRenewalRequests(updated);
-      showToast(text('Reçu refusé.', 'تم رفض الوصل.'), 'info');
-    });
-  };
-
   if (user?.role !== 'admin') return null;
 
   const tabs: Array<{ id: AdminView; label: string; icon: typeof Sparkles; badge?: number }> = [
     { id: 'pilotage', label: text('Pilotage', 'القيادة'), icon: Sparkles },
     { id: 'creches', label: text('Crèches', 'الروضات'), icon: Building2, badge: directors.length },
-    { id: 'validations', label: text('Validations', 'الموافقات'), icon: UserCheck, badge: pendingRequests.length + pendingRenewals.length },
+    { id: 'validations', label: text('Validations', 'الموافقات'), icon: UserCheck, badge: pendingRequests.length },
     { id: 'qualite', label: text('Qualité', 'الجودة'), icon: ClipboardCheck, badge: incompleteDirectors.length + inactiveDirectors.length },
-    { id: 'historique', label: text('Historique', 'السجل'), icon: History },
   ];
 
   const metricCards = [
@@ -330,11 +250,6 @@ export default function AdminCenter({ onNavigate }: AdminCenterProps) {
   });
   const selectedDirector = selectedDirectorId ? directors.find(account => account.id === selectedDirectorId) || null : null;
   const activeRate = directors.length ? Math.round((directors.filter(account => account.abonnementActif).length / directors.length) * 100) : 0;
-  const filteredAuditLogs = adminAuditLogs.filter(entry => {
-    const term = historySearch.trim().toLocaleLowerCase();
-    const matchesTerm = !term || [entry.targetLabel, entry.targetId, entry.action].filter(Boolean).join(' ').toLocaleLowerCase().includes(term);
-    return matchesTerm && (historyAction === 'all' || entry.action === historyAction);
-  });
   const downloadCsv = (fileName: string, header: string[], rows: unknown[][]) => {
     const csv = [header.map(spreadsheetCsvCell).join(';'), ...rows.map(row => row.map(spreadsheetCsvCell).join(';'))].join('\n');
     const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
@@ -346,7 +261,7 @@ export default function AdminCenter({ onNavigate }: AdminCenterProps) {
     URL.revokeObjectURL(url);
   };
   const exportCrèches = () => downloadCsv('rawdha-plus-creches.csv', [text('Crèche', 'الروضة'), text('Directrice', 'المديرة'), 'Email', text('Ville', 'المدينة'), text('Abonnement', 'الاشتراك'), text('Étape commerciale', 'المرحلة التجارية'), text('Échéance', 'الانتهاء'), text('Prochaine relance', 'المتابعة القادمة'), text('Dernière activité', 'آخر نشاط')], filteredDirectors.map(account => [accountLabel(account), `${account.prenom} ${account.nom}`, account.email, account.ville, account.abonnementActif ? text('Actif', 'نشط') : text('Suspendu', 'معلق'), account.commercialStage || (account.abonnementActif ? text('Abonné', 'مشترك') : text('Nouveau', 'جديد')), account.dateFinAbonnement, account.nextFollowUpAt, account.lastActivityAt]));
-  const exportHistorique = () => downloadCsv('rawdha-plus-historique-admin.csv', [text('Date', 'التاريخ'), text('Action', 'الإجراء'), text('Cible', 'الهدف'), text('Type', 'النوع')], filteredAuditLogs.map(entry => [entry.createdAt, entry.action, entry.targetLabel || entry.targetId, entry.targetType]));
+
 
   return (
     <div className="min-w-0 space-y-5 sm:space-y-7" dir={isArabic ? 'rtl' : 'ltr'}>
@@ -387,7 +302,6 @@ export default function AdminCenter({ onNavigate }: AdminCenterProps) {
         <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.18fr)_minmax(20rem,.82fr)]">
           <div className="min-w-0 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><h2 className="text-lg font-black text-slate-950">{text('Priorités du jour', 'أولويات اليوم')}</h2><p className="mt-1 text-xs text-slate-500">{text('Ouvrez chaque file pour agir directement.', 'افتحوا كل قائمة للتصرف مباشرة.')}</p></div><AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" /></div><div className="mt-4 space-y-2.5">
             {renderPriority(<UserRoundPlus className="h-5 w-5" />, text('Demandes Directeur', 'طلبات المديرات'), text('Comptes en attente de validation', 'حسابات بانتظار الموافقة'), pendingRequests.length, text('Examiner', 'مراجعة'), () => setView('validations'), 'amber')}
-            {renderPriority(<CreditCard className="h-5 w-5" />, text('Reçus BaridiMob / CCP', 'وصولات بريدي موب / CCP'), text('Renouvellements à valider (1 900 DA/mois)', 'تجديدات بانتظار التفعيل (1900 د.ج/شهر)'), pendingRenewals.length, text('Valider', 'اعتماد'), () => setView('validations'), 'indigo')}
             {renderPriority(<CalendarClock className="h-5 w-5" />, text('Abonnements proches', 'اشتراكات قريبة الانتهاء'), text('Échéance dans les 7 prochains jours', 'تنتهي خلال الأيام السبعة القادمة'), expiringDirectors.length, text('Gérer', 'إدارة'), () => setView('creches'), 'rose')}
             {renderPriority(<Headset className="h-5 w-5" />, text('Support et retours', 'الدعم والملاحظات'), text('Messages non lus et tickets nouveaux', 'رسائل غير مقروءة وطلبات جديدة'), unreadSupport + newTickets, text('Ouvrir', 'فتح'), () => onNavigate('communication'), 'emerald')}
             {renderPriority(<Clock3 className="h-5 w-5" />, text('Relances à effectuer', 'متابعات يجب تنفيذها'), text('Relances planifiées arrivées à échéance', 'متابعات مخططة وصلت إلى موعدها'), overdueFollowups.length, text('Voir les crèches', 'عرض الروضات'), () => setView('creches'), 'indigo')}
@@ -399,83 +313,10 @@ export default function AdminCenter({ onNavigate }: AdminCenterProps) {
         <section className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.16em] text-indigo-600">{text('Équipe interne', 'الفريق الداخلي')}</p><h2 className="mt-1 text-lg font-black text-slate-950">{text('Délégation préparée, accès inchangés', 'تفويض مُجهز، صلاحيات دون تغيير')}</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">{text('Les profils Support et Commercial sont prêts dans le modèle d’organisation. Ils ne reçoivent aucun accès à la plateforme tant qu’une délégation de sécurité dédiée n’est pas créée.', 'تم تجهيز ملفات الدعم والتجاري في نموذج التنظيم. لا يحصلون على أي صلاحية في المنصة قبل إنشاء تفويض أمني خاص.')}</p></div><ShieldCheck className="h-6 w-6 shrink-0 text-indigo-500" /></div><div className="mt-4 grid gap-3 md:grid-cols-3"><div className="rounded-2xl bg-slate-950 p-3 text-white"><p className="text-[10px] font-black uppercase tracking-wide text-indigo-200">Super Admin</p><p className="mt-2 text-lg font-black">{platformAdmins.length}</p><p className="mt-1 text-[11px] text-slate-300">{text('Accès complet actuel', 'صلاحية كاملة حالياً')}</p></div><div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3"><p className="text-[10px] font-black uppercase tracking-wide text-emerald-700">Support</p><p className="mt-2 text-sm font-black text-emerald-900">{text('Prêt à déléguer', 'جاهز للتفويض')}</p><p className="mt-1 text-[11px] text-emerald-800">{text('Tickets et réponses, sans abonnements', 'طلبات وردود، دون اشتراكات')}</p></div><div className="rounded-2xl border border-amber-100 bg-amber-50 p-3"><p className="text-[10px] font-black uppercase tracking-wide text-amber-700">Commercial</p><p className="mt-2 text-sm font-black text-amber-900">{text('Prêt à déléguer', 'جاهز للتفويض')}</p><p className="mt-1 text-[11px] text-amber-800">{text('Pipeline et relances, sans données sensibles', 'متابعة ومكالمات، دون بيانات حساسة')}</p></div></div></section>
       </>}
 
-      {view === 'creches' && <section className="space-y-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-xl font-black text-slate-950">{text('Toutes les crèches', 'كل الروضات')}</h2><p className="mt-1 text-sm text-slate-500">{text('Suivez les abonnements, l’activité et les prolongations depuis une seule liste.', 'تابعوا الاشتراكات والنشاط والتمديدات من قائمة واحدة.')}</p></div><div className="flex w-full gap-2 sm:w-auto"><label className="relative block min-w-0 flex-1 sm:w-80"><Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder={text('Rechercher une crèche...', 'البحث عن روضة...')} className="w-full rounded-xl border border-slate-200 bg-white py-2.5 ps-9 pe-3 text-xs font-semibold outline-none transition focus:border-indigo-500" /></label><button type="button" onClick={exportCrèches} title={text('Exporter la liste filtrée', 'تصدير القائمة المفلترة')} className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs font-black text-indigo-700 transition hover:bg-indigo-50"><Download className="h-4 w-4" /><span className="hidden sm:inline">CSV</span></button></div></div><div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm"><p className="px-5 pt-3 text-xs text-slate-500 xl:hidden">{text('Faites défiler le tableau horizontalement pour voir toutes les colonnes.', 'مرر الجدول أفقياً لرؤية كل الأعمدة.')}</p><div className="mobile-scroll-x focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500" role="region" tabIndex={0} aria-label={text('Tableau des crèches', 'جدول الروضات')}><table className="min-w-[920px] w-full text-start"><thead><tr className="border-b border-slate-100 bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-400"><th className="px-5 py-4">{text('Crèche / Directrice', 'الروضة / المديرة')}</th><th className="px-5 py-4">{text('Statut', 'الحالة')}</th><th className="px-5 py-4">{text('Échéance', 'تاريخ الانتهاء')}</th><th className="px-5 py-4">{text('Activité', 'النشاط')}</th><th className="px-5 py-4 text-center">{text('Actions', 'إجراءات')}</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredDirectors.map(account => { const remaining = daysUntil(account.dateFinAbonnement); const isExpiring = account.abonnementActif && (remaining ?? 999) <= 7; const busy = busyId?.endsWith(account.id); return <tr key={account.id} className="hover:bg-slate-50/70"><td className="px-5 py-4"><button type="button" onClick={() => setSelectedDirectorId(account.id)} className="text-start"><p className="font-black text-slate-900 hover:text-indigo-700">{accountLabel(account)}</p><p className="mt-1 text-xs font-semibold text-slate-500">{account.prenom} {account.nom} · {account.email}</p></button></td><td className="px-5 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${account.abonnementActif ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{account.abonnementActif ? text('Actif', 'نشط') : text('Suspendu', 'معلق')}</span>{account.approvalStatus === 'pending' && <span className="ms-1 inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-700">{text('À valider', 'بانتظار الموافقة')}</span>}</td><td className="px-5 py-4"><p className={`text-xs font-black ${isExpiring ? 'text-rose-600' : 'text-slate-700'}`}>{formatDate(account.dateFinAbonnement)}</p><p className="mt-1 text-[10px] font-semibold text-slate-400">{remaining === null ? text('Non renseignée', 'غير محدد') : remaining < 0 ? text('Expiré', 'منتهي') : `${remaining} ${text('jour(s)', 'يوم')}`}</p></td><td className="px-5 py-4"><span className={`text-xs font-bold ${isStale(account.lastActivityAt) ? 'text-amber-700' : 'text-emerald-700'}`}>{isStale(account.lastActivityAt) ? text('À relancer', 'تحتاج متابعة') : text('Récente', 'حديثة')}</span><p className="mt-1 text-[10px] text-slate-400">{formatDateTime(account.lastActivityAt)}</p></td><td className="px-5 py-4"><div className="flex justify-center gap-1.5"><button type="button" onClick={() => setSelectedDirectorId(account.id)} aria-label={text('Ouvrir la fiche', 'فتح الملف')} title={text('Ouvrir la fiche', 'فتح الملف')} className="rounded-xl border border-slate-200 p-2 text-slate-600 transition hover:bg-slate-50"><ChevronRight className="h-4 w-4 rtl:rotate-180" /></button><button type="button" disabled={Boolean(busy)} onClick={() => void extendTrial(account)} aria-label={text('Prolonger l’essai de 15 jours', 'تمديد التجربة 15 يوماً')} title={text('Prolonger l’essai de 15 jours', 'تمديد التجربة 15 يوماً')} className="rounded-xl border border-indigo-200 p-2 text-indigo-600 transition hover:bg-indigo-50 disabled:opacity-50"><CalendarClock className="h-4 w-4" /></button><button type="button" disabled={Boolean(busy)} onClick={() => void toggleSubscription(account)} aria-label={account.abonnementActif ? text('Suspendre', 'تعليق') : text('Réactiver', 'إعادة تفعيل')} title={account.abonnementActif ? text('Suspendre', 'تعليق') : text('Réactiver', 'إعادة تفعيل')} className={`rounded-xl border p-2 transition disabled:opacity-50 ${account.abonnementActif ? 'border-rose-200 text-rose-600 hover:bg-rose-50' : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'}`} >{account.abonnementActif ? <CirclePause className="h-4 w-4" /> : <PlayCircle className="h-4 w-4" />}</button></div></td></tr>; })}{filteredDirectors.length === 0 && <tr><td colSpan={5} className="px-5 py-14 text-center text-sm font-bold text-slate-400">{text('Aucune crèche trouvée.', 'لم يتم العثور على روضة.')}</td></tr>}</tbody></table></div></div>{selectedDirector && <AdminCrecheDetail account={selectedDirector} onClose={() => setSelectedDirectorId(null)} onNavigate={onNavigate} />}</section>}
+      {view === 'creches' && <section className="space-y-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-xl font-black text-slate-950">{text('Toutes les crèches', 'كل الروضات')}</h2><p className="mt-1 text-sm text-slate-500">{text('Suivez les abonnements, l’activité et les prolongations depuis une seule liste.', 'تابعوا الاشتراكات والنشاط والتمديدات من قائمة واحدة.')}</p></div><div className="flex w-full gap-2 sm:w-auto"><label className="relative block min-w-0 flex-1 sm:w-80"><Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder={text('Rechercher une crèche...', 'البحث عن روضة...')} className="w-full rounded-xl border border-slate-200 bg-white py-2.5 ps-9 pe-3 text-xs font-semibold outline-none transition focus:border-indigo-500" /></label><button type="button" onClick={exportCrèches} title={text('Exporter la liste filtrée', 'تصدير القائمة المفلترة')} className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs font-black text-indigo-700 transition hover:bg-indigo-50"><Download className="h-4 w-4" /><span className="hidden sm:inline">CSV</span></button></div></div><div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm"><div className="grid gap-3 p-3 lg:hidden">{filteredDirectors.map(account => { const remaining = daysUntil(account.dateFinAbonnement); const busy = busyId?.endsWith(account.id); return <article key={account.id} className="min-w-0 rounded-2xl border border-slate-100 bg-slate-50/70 p-4"><div className="flex items-start justify-between gap-3"><button type="button" onClick={() => setSelectedDirectorId(account.id)} className="min-w-0 text-start"><p className="break-words text-sm font-black text-slate-900">{accountLabel(account)}</p><p className="mt-1 break-all text-xs text-slate-500">{account.prenom} {account.nom} · {account.email}</p></button><span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black ${account.abonnementActif ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'}`}>{account.abonnementActif ? text('Actif', 'نشط') : text('Suspendu', 'معلق')}</span></div><div className="mt-4 grid grid-cols-2 gap-2 text-xs"><div><p className="text-slate-500">{text('Échéance', 'تاريخ الانتهاء')}</p><p className="mt-1 font-bold text-slate-800">{formatDate(account.dateFinAbonnement)} {remaining !== null && remaining < 0 ? text('· Expiré', '· منتهي') : ''}</p></div><div><p className="text-slate-500">{text('Activité', 'النشاط')}</p><p className="mt-1 font-bold text-slate-800">{isStale(account.lastActivityAt) ? text('À relancer', 'تحتاج متابعة') : text('Récente', 'حديثة')}</p></div></div><div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => setSelectedDirectorId(account.id)} className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-indigo-700 ring-1 ring-indigo-100">{text('Fiche', 'الملف')}</button><button type="button" disabled={Boolean(busy)} onClick={() => void extendTrial(account)} className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-indigo-700 ring-1 ring-indigo-100 disabled:opacity-50">{text('+ 15 jours', '+ 15 يوماً')}</button><button type="button" disabled={Boolean(busy)} onClick={() => void toggleSubscription(account)} className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-700 ring-1 ring-slate-200 disabled:opacity-50">{account.abonnementActif ? text('Suspendre', 'تعليق') : text('Réactiver', 'إعادة تفعيل')}</button></div></article>})}{filteredDirectors.length === 0 && <p className="p-8 text-center text-sm text-slate-500">{text('Aucune crèche trouvée.', 'لم يتم العثور على روضة.')}</p>}</div><div className="hidden lg:block overflow-x-auto" role="region" tabIndex={0} aria-label={text('Tableau des crèches', 'جدول الروضات')}><table className="min-w-[920px] w-full text-start"><thead><tr className="border-b border-slate-100 bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-400"><th className="px-5 py-4">{text('Crèche / Directrice', 'الروضة / المديرة')}</th><th className="px-5 py-4">{text('Statut', 'الحالة')}</th><th className="px-5 py-4">{text('Échéance', 'تاريخ الانتهاء')}</th><th className="px-5 py-4">{text('Activité', 'النشاط')}</th><th className="px-5 py-4 text-center">{text('Actions', 'إجراءات')}</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredDirectors.map(account => { const remaining = daysUntil(account.dateFinAbonnement); const isExpiring = account.abonnementActif && (remaining ?? 999) <= 7; const busy = busyId?.endsWith(account.id); return <tr key={account.id} className="hover:bg-slate-50/70"><td className="px-5 py-4"><button type="button" onClick={() => setSelectedDirectorId(account.id)} className="text-start"><p className="font-black text-slate-900 hover:text-indigo-700">{accountLabel(account)}</p><p className="mt-1 text-xs font-semibold text-slate-500">{account.prenom} {account.nom} · {account.email}</p></button></td><td className="px-5 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${account.abonnementActif ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{account.abonnementActif ? text('Actif', 'نشط') : text('Suspendu', 'معلق')}</span>{account.approvalStatus === 'pending' && <span className="ms-1 inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-700">{text('À valider', 'بانتظار الموافقة')}</span>}</td><td className="px-5 py-4"><p className={`text-xs font-black ${isExpiring ? 'text-rose-600' : 'text-slate-700'}`}>{formatDate(account.dateFinAbonnement)}</p><p className="mt-1 text-[10px] font-semibold text-slate-400">{remaining === null ? text('Non renseignée', 'غير محدد') : remaining < 0 ? text('Expiré', 'منتهي') : `${remaining} ${text('jour(s)', 'يوم')}`}</p></td><td className="px-5 py-4"><span className={`text-xs font-bold ${isStale(account.lastActivityAt) ? 'text-amber-700' : 'text-emerald-700'}`}>{isStale(account.lastActivityAt) ? text('À relancer', 'تحتاج متابعة') : text('Récente', 'حديثة')}</span><p className="mt-1 text-[10px] text-slate-400">{formatDateTime(account.lastActivityAt)}</p></td><td className="px-5 py-4"><div className="flex justify-center gap-1.5"><button type="button" onClick={() => setSelectedDirectorId(account.id)} aria-label={text('Ouvrir la fiche', 'فتح الملف')} title={text('Ouvrir la fiche', 'فتح الملف')} className="rounded-xl border border-slate-200 p-2 text-slate-600 transition hover:bg-slate-50"><ChevronRight className="h-4 w-4 rtl:rotate-180" /></button><button type="button" disabled={Boolean(busy)} onClick={() => void extendTrial(account)} aria-label={text('Prolonger l’essai de 15 jours', 'تمديد التجربة 15 يوماً')} title={text('Prolonger l’essai de 15 jours', 'تمديد التجربة 15 يوماً')} className="rounded-xl border border-indigo-200 p-2 text-indigo-600 transition hover:bg-indigo-50 disabled:opacity-50"><CalendarClock className="h-4 w-4" /></button><button type="button" disabled={Boolean(busy)} onClick={() => void toggleSubscription(account)} aria-label={account.abonnementActif ? text('Suspendre', 'تعليق') : text('Réactiver', 'إعادة تفعيل')} title={account.abonnementActif ? text('Suspendre', 'تعليق') : text('Réactiver', 'إعادة تفعيل')} className={`rounded-xl border p-2 transition disabled:opacity-50 ${account.abonnementActif ? 'border-rose-200 text-rose-600 hover:bg-rose-50' : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'}`} >{account.abonnementActif ? <CirclePause className="h-4 w-4" /> : <PlayCircle className="h-4 w-4" />}</button></div></td></tr>; })}{filteredDirectors.length === 0 && <tr><td colSpan={5} className="px-5 py-14 text-center text-sm font-bold text-slate-400">{text('Aucune crèche trouvée.', 'لم يتم العثور على روضة.')}</td></tr>}</tbody></table></div></div>{selectedDirector && <AdminCrecheDetail account={selectedDirector} onClose={() => setSelectedDirectorId(null)} onNavigate={onNavigate} />}</section>}
 
       {view === 'validations' && (
         <section className="space-y-6">
-          {/* 1. Reçus BaridiMob / CCP */}
-          <div className="space-y-3">
-            <div>
-              <h2 className="text-lg sm:text-xl font-black text-slate-950">
-                {text('Reçus d’abonnement BaridiMob / CCP', 'وصولات الاشتراك (بريدي موب / CCP)')}
-              </h2>
-              <p className="mt-0.5 text-xs text-slate-500">
-                {text('Vérifiez la référence ou le reçu joint, puis prolongez l’abonnement en 1 clic.', 'تحقق من رقم العملية أو الوصل المرفق ثم مدّد الاشتراك بنقرة واحدة.')}
-              </p>
-            </div>
-            {pendingRenewals.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-200 bg-white px-5 py-8 text-center">
-                <CreditCard className="mx-auto h-7 w-7 text-slate-400" />
-                <p className="mt-2 text-xs font-bold text-slate-500">
-                  {text('Aucun reçu BaridiMob / CCP en attente.', 'لا توجد وصولات بريدي موب / CCP بانتظار المراجعة.')}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {pendingRenewals.map(req => (
-                  <article key={req.id} className="min-w-0 rounded-3xl border border-indigo-100 bg-white p-4 sm:p-5 shadow-sm">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="min-w-0 space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="truncate text-base font-black text-slate-900">{req.crecheName}</h3>
-                          <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10.5px] font-black text-indigo-700">
-                            {req.paymentChannel} · +{req.planMonths} {text('mois', 'أشهر')} · {req.amountDzd.toLocaleString('fr-FR')} {text('DA', 'د.ج')}
-                          </span>
-                        </div>
-                        <p className="truncate text-xs font-bold text-slate-700">
-                          {req.directorName} · {req.email}
-                        </p>
-                        <p className="truncate text-xs text-slate-500">
-                          {text('Réf :', 'رقم العملية:')} <span className="font-mono font-bold text-slate-800">{req.transactionRef}</span> · {formatDateTime(req.createdAt)}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 flex-wrap items-center gap-2">
-                        {req.proofDocument && (
-                          <button
-                            type="button"
-                            onClick={() => setPreviewProofReq(req)}
-                            className="min-h-9! inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 whitespace-nowrap cursor-pointer"
-                          >
-                            <Eye className="h-3.5 w-3.5 shrink-0" />
-                            <span>{text('Voir reçu', 'عرض الوصل')}</span>
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          disabled={busyId === `ren_reject:${req.id}`}
-                          onClick={() => void rejectRenewal(req)}
-                          className="min-h-9! inline-flex items-center justify-center gap-1.5 rounded-xl border border-rose-200 px-3 py-2 text-xs font-black text-rose-700 hover:bg-rose-50 whitespace-nowrap disabled:opacity-50 cursor-pointer"
-                        >
-                          <XCircle className="h-3.5 w-3.5 shrink-0" />
-                          <span>{text('Refuser', 'رفض')}</span>
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busyId === `ren_approve:${req.id}`}
-                          onClick={() => void approveRenewal(req)}
-                          className="min-h-9! inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-3.5 py-2 text-xs font-black text-white whitespace-nowrap disabled:opacity-50 cursor-pointer"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                          <span>{text(`Valider (+${req.planMonths}m)`, `اعتماد (+${req.planMonths}ش)`)}</span>
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </div>
-
           {/* 2. Nouvelles demandes Directrices */}
           <div className="space-y-3">
             <div>
@@ -485,25 +326,11 @@ export default function AdminCenter({ onNavigate }: AdminCenterProps) {
             <div className="space-y-3">{pendingRequests.length === 0 ? <div className="rounded-3xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-emerald-500" /><p className="mt-2 text-xs font-black text-slate-700">{text('Aucune demande en attente.', 'لا توجد طلبات معلقة.')}</p></div> : pendingRequests.map(request => <article key={request.id} className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="text-lg font-black text-slate-900">{request.nomCreche}</h3><span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-700">{text('À examiner', 'قيد المراجعة')}</span></div><p className="mt-2 text-sm font-bold text-slate-700">{request.prenom} {request.nom} · {request.email}</p><p className="mt-1 text-xs text-slate-500">{request.telephone} · {request.adresse} · {formatDateTime(request.dateDemande)}</p>{request.message && <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs italic leading-5 text-slate-600">“{request.message}”</p>}</div><div className="flex shrink-0 flex-col gap-2 sm:flex-row"><button type="button" disabled={busyId === `reject:${request.id}`} onClick={() => void rejectRequest(request)} className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 px-3.5 py-2.5 text-xs font-black text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"><XCircle className="h-4 w-4" />{text('Refuser', 'رفض')}</button><button type="button" disabled={busyId === `approve:${request.id}`} onClick={() => void approveRequest(request)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3.5 py-2.5 text-xs font-black text-white transition hover:bg-indigo-700 disabled:opacity-50"><UserCheck className="h-4 w-4" />{text('Accepter et activer', 'قبول وتفعيل')}</button></div></div></article>)}</div>
           </div>
 
-          {previewProofReq?.proofDocument && (
-            <InAppPdfViewerModal
-              documentSource={{
-                title: `${previewProofReq.crecheName} · ${previewProofReq.paymentChannel}`,
-                fileName: previewProofReq.proofDocument.nom,
-                mimeType: previewProofReq.proofDocument.type,
-                dataUrl: previewProofReq.proofDocument.contenu,
-                pageCount: previewProofReq.proofDocument.pages,
-              }}
-              isArabic={isArabic}
-              onClose={() => setPreviewProofReq(null)}
-            />
-          )}
         </section>
       )}
 
       {view === 'qualite' && <section className="grid min-w-0 gap-5 xl:grid-cols-2"><article className="min-w-0 rounded-3xl border border-amber-100 bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-black text-slate-950">{text('Profils à compléter', 'ملفات تحتاج إكمالاً')}</h2><p className="mt-1 text-xs leading-5 text-slate-500">{text('Nom de crèche, téléphone, échéance ou validation manquante.', 'اسم الروضة أو الهاتف أو تاريخ الانتهاء أو الموافقة غير مكتملة.')}</p></div><span className="grid h-10 w-10 place-items-center rounded-xl bg-amber-50 text-amber-600"><ClipboardCheck className="h-5 w-5" /></span></div><div className="mt-4 space-y-2">{incompleteDirectors.slice(0, 8).map(account => <div key={account.id} className="flex items-center justify-between gap-3 rounded-2xl bg-amber-50/70 px-3 py-3"><div className="min-w-0"><p className="truncate text-sm font-black text-slate-900">{accountLabel(account)}</p><p className="mt-0.5 text-[10px] font-semibold text-amber-800">{[!account.nomCreche && text('nom', 'الاسم'), !account.telephone && text('téléphone', 'الهاتف'), !account.dateFinAbonnement && text('échéance', 'الانتهاء'), account.approvalStatus === 'pending' && text('validation', 'الموافقة')].filter(Boolean).join(' · ')}</p></div><button type="button" aria-label={text('Ouvrir la gestion des comptes', 'فتح إدارة الحسابات')} title={text('Ouvrir la gestion des comptes', 'فتح إدارة الحسابات')} onClick={() => onNavigate('comptes')} className="rounded-lg bg-white p-2 text-amber-700 shadow-sm"><ChevronRight className="h-4 w-4 rtl:rotate-180" /></button></div>)}{incompleteDirectors.length === 0 && <p className="rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-800">{text('Tous les profils sont prêts.', 'كل الملفات مكتملة.')}</p>}</div></article><article className="min-w-0 rounded-3xl border border-slate-100 bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-black text-slate-950">{text('Crèches à relancer', 'روضات تحتاج متابعة')}</h2><p className="mt-1 text-xs leading-5 text-slate-500">{text('Aucune activité enregistrée depuis au moins 14 jours.', 'لا يوجد نشاط مسجل منذ 14 يوماً على الأقل.')}</p></div><span className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-50 text-indigo-600"><Clock3 className="h-5 w-5" /></span></div><div className="mt-4 space-y-2">{inactiveDirectors.slice(0, 8).map(account => <div key={account.id} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-3"><div className="min-w-0"><p className="truncate text-sm font-black text-slate-900">{accountLabel(account)}</p><p className="mt-0.5 text-[10px] font-semibold text-slate-500">{text('Dernière activité :', 'آخر نشاط:')} {formatDateTime(account.lastActivityAt)}</p></div><button type="button" onClick={() => onNavigate('notifications')} className="rounded-lg bg-white p-2 text-indigo-700 shadow-sm" aria-label={text('Envoyer une annonce', 'إرسال إعلان')} title={text('Envoyer une annonce', 'إرسال إعلان')}><MessageSquareText className="h-4 w-4" /></button></div>)}{inactiveDirectors.length === 0 && <p className="rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-800">{text('Aucune relance prioritaire.', 'لا توجد متابعة أولوية.')}</p>}</div></article></section>}
 
-      {view === 'historique' && <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm"><div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-xl font-black text-slate-950">{text('Historique Administrateur', 'سجل الإدارة')}</h2><p className="mt-1 text-sm text-slate-500">{text('Les actions sensibles de ce centre sont conservées pour le suivi interne.', 'يتم حفظ الإجراءات الحساسة في هذا المركز للمتابعة الداخلية.')}</p></div><div className="flex items-center gap-2"><span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-600">{filteredAuditLogs.length} {text('action(s)', 'إجراء')}</span><button type="button" onClick={exportHistorique} title={text('Exporter l’historique filtré', 'تصدير السجل المفلتر')} className="rounded-xl border border-indigo-200 p-2 text-indigo-700 transition hover:bg-indigo-50"><Download className="h-4 w-4" /></button></div></div><div className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_13rem]"><label className="relative block"><Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={historySearch} onChange={event => setHistorySearch(event.target.value)} placeholder={text('Rechercher une cible ou une action...', 'البحث عن هدف أو إجراء...')} className="w-full rounded-xl border border-slate-200 bg-white py-2.5 ps-9 pe-3 text-xs font-semibold outline-none focus:border-indigo-500" /></label><select value={historyAction} onChange={event => setHistoryAction(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold outline-none focus:border-indigo-500"><option value="all">{text('Toutes les actions', 'كل الإجراءات')}</option>{Array.from(new Set<string>(adminAuditLogs.map(entry => String(entry.action)))).sort().map(action => <option key={action} value={action}>{action.replaceAll('_', ' ')}</option>)}</select></div><div className="mt-5 space-y-2">{filteredAuditLogs.slice(0, 50).map(entry => <article key={entry.id} className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 p-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-indigo-600 shadow-xs"><History className="h-4 w-4" /></span><div className="min-w-0 flex-1"><p className="text-sm font-black text-slate-800">{entry.targetLabel || entry.targetId}</p><p className="mt-0.5 text-xs font-semibold text-slate-500">{entry.action.replaceAll('_', ' ')} · {formatDateTime(entry.createdAt)}</p></div></article>)}{filteredAuditLogs.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 px-5 py-14 text-center text-sm font-bold text-slate-400">{text('Aucune action ne correspond aux filtres.', 'لا توجد إجراءات مطابقة للفلاتر.')}</div>}</div></section>}
     </div>
   );
 }

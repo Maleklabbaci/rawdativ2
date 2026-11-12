@@ -14,6 +14,7 @@ import {
 import type { ComponentType } from 'react';
 import {
   LayoutDashboard,
+  Activity,
   Loader2,
   Baby,
   ClipboardList,
@@ -141,6 +142,7 @@ export default function Sidebar({
       ? [
           { key: 'admin', label: 'admin', icon: Crown },
           { key: 'comptes', label: 'comptes', icon: User },
+          { key: 'logs', label: 'logs', icon: Activity },
           { key: 'communication', label: 'communication', icon: MessageCircle },
         ]
       : user?.role === 'directeur'
@@ -161,6 +163,7 @@ export default function Sidebar({
         : [];
 
   const getTabLabel = (key: string, originalLabel: string) => {
+    if (key === 'logs') return isArabic ? 'السجل والأحداث' : 'Historique & logs';
     if (key === 'admin') return isArabic ? 'مركز الإدارة' : 'Pilotage';
     if (key === 'comptes' && user?.role === 'admin') return isArabic ? 'مدراء الروضات' : 'Comptes crèches';
     if (key === 'admissions') return isArabic ? 'طلبات التسجيل' : 'Admissions';

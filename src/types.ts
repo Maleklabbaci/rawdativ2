@@ -397,6 +397,8 @@ export type AdminAuditAction =
   | 'subscription_reactivated'
   | 'subscription_end_date_updated'
   | 'trial_extended'
+  | 'identity_document_reviewed'
+  | 'identity_document_refused'
   | 'ticket_status_updated'
   | 'ticket_response_saved'
   | 'ticket_assigned'

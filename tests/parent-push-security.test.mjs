@@ -1,0 +1,14 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';import {transform} from 'esbuild';
+async function setup({account={role:'directeur',approvalStatus:'approved'},links=[],childError=null}={}){
+ let handler;const sends=[];
+ const service={from:(table)=>({select(){return this},eq(){return this},maybeSingle:async()=>({data:{data:account},error:null}),then(resolve){resolve(table==='parent_link_requests'?{data:links,error:null}:{data:[],error:childError})},update(){return this}})};
+ const createClient=(_url,key)=>key==='service'?service:{auth:{getUser:async()=>({data:{user:{id:'director'}},error:null})}};
+ let source=fs.readFileSync(new URL('../supabase/functions/send-parent-web-push/index.ts',import.meta.url),'utf8').replace(/^import .*?;\s*/gm,'');
+ const webpush={setVapidDetails(){},sendNotification:async(sub)=>{sends.push(sub.endpoint)}};
+ vm.runInNewContext((await transform(source,{loader:'ts',format:'iife'})).code,{createClient,webpush,Deno:{env:{get:k=>({SUPABASE_URL:'https://test.invalid',SUPABASE_SERVICE_ROLE_KEY:'service',SUPABASE_ANON_KEY:'anon',VAPID_PUBLIC_KEY:'pub',VAPID_PRIVATE_KEY:'priv'})[k]},serve:fn=>{handler=fn}},Request,Response,URL,Date,Set,JSON,console});
+ const send=body=>handler(new Request('https://test.invalid',{method:'POST',headers:{Authorization:'Bearer x','content-type':'application/json'},body:JSON.stringify({title:'T',message:'M',...body})}));return {send,sends};
+}
+const subscription=endpoint=>({endpoint,keys:{p256dh:'A'.repeat(87),auth:'B'.repeat(22)}});
+test('invalid recipients fail closed and pending users cannot push',async()=>{const c=await setup();for(const body of [{},{targetScope:'child'},{targetScope:'group'},{targetScope:'oops'}])assert.equal((await c.send(body)).status,400);const other=await setup({account:{role:'directeur',approvalStatus:'pending'}});assert.equal((await other.send({targetScope:'all'})).status,403);});
+test('only known HTTPS push endpoints receive messages, and child targeting is enforced',async()=>{const c=await setup({links:[{linked_enfant_ids:['a'],push_subscription:subscription('https://fcm.googleapis.com/fcm/send/abc')},{linked_enfant_ids:['a'],push_subscription:subscription('https://127.0.0.1/internal')},{linked_enfant_ids:['a'],push_subscription:subscription('https://push.apple.com.attacker.example/foo')},{linked_enfant_ids:['b'],push_subscription:subscription('https://web.push.apple.com/foo')}]});const r=await c.send({targetScope:'child',targetEnfantId:'a'});assert.equal(r.status,200);assert.deepEqual(c.sends,['https://fcm.googleapis.com/fcm/send/abc']);assert.equal((await r.json()).sent,1)});
+test('group lookup failure is not silently broadened to all recipients',async()=>{const c=await setup({childError:{message:'database unavailable'}});assert.equal((await c.send({targetScope:'group',targetGroup:'Bébés'})).status,503);assert.equal(c.sends.length,0)});

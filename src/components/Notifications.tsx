@@ -37,7 +37,7 @@ export default function Notifications() {
   const { language } = useLanguage();
   const { confirm } = useConfirmDialog();
   const { showToast } = useToast();
-  const { notifications, comptes, publishAdminNotification, deleteNotification, logAdminAction } = useDb();
+  const { notifications, comptes, publishAdminNotification, deleteNotification } = useDb();
   const isFrench = language !== 'ar';
   const t = (fr: string, ar: string) => isFrench ? fr : ar;
 
@@ -158,12 +158,7 @@ export default function Notifications() {
     if (!accepted) return;
     try {
       await deleteNotification(notification.id);
-      try {
-        await logAdminAction('notification_deleted' as never, 'notification', notification.id, notification.title);
-        showToast(t('Communication retirée.', 'تم حذف التواصل.'), 'success');
-      } catch {
-        showToast(t('Communication retirée, mais journalisation non confirmée.', 'تم حذف التواصل، لكن لم يتأكد تسجيل العملية.'), 'error');
-      }
+      showToast(t('Communication retirée.', 'تم حذف التواصل.'), 'success');
     } catch (error) {
       showToast(t('Suppression non confirmée. Vérifiez l’historique avant de réessayer.', 'لم يتأكد الحذف. تحققوا من السجل قبل المحاولة مجدداً.'), 'error');
     }

@@ -40,7 +40,7 @@ function formatAuthError(message: string | null, fallback: string, isFrench: boo
     return isFrench ? 'Identifiants incorrects. Vérifiez votre adresse e-mail et votre mot de passe.' : 'بيانات الدخول غير صحيحة. تحققي من البريد الإلكتروني وكلمة المرور.';
   }
   if (normalized.includes('email not confirmed')) {
-    return isFrench ? 'Votre accès n’est pas encore activé par l’administrateur.' : 'لم يتم تفعيل حسابك من طرف المسؤول بعد.';
+    return isFrench ? 'Votre adresse e-mail n’est pas confirmée.' : 'لم يتم تأكيد بريدك الإلكتروني.';
   }
   if (normalized.includes('too many') || normalized.includes('rate limit')) {
     return isFrench ? 'Trop de demandes. Patientez quelques instants avant de réessayer.' : 'عدد المحاولات كبير جداً. انتظري قليلاً ثم حاولي من جديد.';
@@ -66,22 +66,22 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
     badge: 'Gestion de crèche de nouvelle génération',
     heroTitle: 'L’excellence dans la gestion de votre crèche.',
     heroDescription: 'Présences, enfants, équipe, activités, repas et facturation réunis dans un espace clair et sécurisé.',
-    security: 'Accès validé par l’équipe Rawdha+',
-    activation: 'Activation rapide après examen de la demande',
-    whatsapp: 'Confirmation directe par WhatsApp',
+    security: 'Votre espace de gestion personnel',
+    activation: 'Accès immédiat après inscription',
+    whatsapp: 'Accompagnement disponible',
     footer: '© 2026 RAWDHA+. Tous droits réservés.',
     space: 'ESPACE DIRECTEUR ET GESTION',
     signinTitle: 'Connectez-vous',
     signinDescription: 'Utilisez l’adresse e-mail et le mot de passe choisis lors de votre inscription.',
-    requestTitle: 'Demander un accès Rawdha+',
-    requestDescription: 'Créez vos identifiants dès maintenant. L’administrateur ne fera ensuite que valider ou refuser votre demande.',
+    requestTitle: 'Créer mon compte Rawdha+',
+    requestDescription: 'Créez votre compte et accédez directement à votre essai gratuit.',
     noAccount: 'Pas encore de compte ?',
     hasAccount: 'Vous avez déjà un compte ?',
-    requestLink: 'Demander un accès',
+    requestLink: 'Créer un compte',
     loginLink: 'Se connecter',
     email: 'Adresse e-mail',
     password: 'Mot de passe',
-    loginNote: 'Après validation par l’administrateur, votre compte sera activé directement avec le mot de passe choisi à l’inscription.',
+    loginNote: 'Connectez-vous avec les identifiants choisis à l’inscription.',
     loginButton: 'Se connecter à RAWDHA+',
     firstName: 'Prénom *',
     lastName: 'Nom *',
@@ -98,14 +98,14 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
     needPlaceholder: 'Votre besoin',
     requestNote: 'Essai gratuit de 15 jours sans engagement, puis 1 900 DA / mois sans frais cachés. Votre mot de passe est chiffré par Supabase et n’est jamais transmis à l’administrateur.',
     consentError: 'Veuillez accepter les Conditions d’utilisation et la Politique de confidentialité pour envoyer votre demande.',
-    requestButton: 'Envoyer ma demande',
+    requestButton: 'Créer mon compte',
     parentNote: 'L’espace parent sera ajouté séparément dans une prochaine version de Rawdha+.',
     storesHeading: 'L’application mobile arrive bientôt',
     storesDescription: 'Les versions Google Play et App Store seront disponibles prochainement.',
     availableSoon: 'Prochainement',
     googlePlay: 'Google Play',
     appStore: 'App Store',
-    requestSuccess: 'Votre demande a bien été envoyée. Après acceptation, ouvrez /login/ pour vous connecter avec le mot de passe que vous venez de définir.',
+    requestSuccess: 'Votre compte est créé. Vous pouvez maintenant vous connecter avec votre adresse e-mail et votre mot de passe.',
     requiredError: 'Veuillez remplir tous les champs obligatoires, y compris le mot de passe.',
     passwordLengthError: 'Le mot de passe doit contenir au moins 8 caractères.',
     passwordMismatchError: 'Les deux mots de passe ne correspondent pas.',
@@ -116,22 +116,22 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
     badge: 'تسيير عصري للحضانة',
     heroTitle: 'كل ما تحتاجه لتسيير حضانتك بسهولة.',
     heroDescription: 'الحضور، الأطفال، الفريق، الأنشطة، الوجبات والفواتير في فضاء واضح وآمن.',
-    security: 'دخول مصادق عليه من فريق روضة+',
-    activation: 'تفعيل سريع بعد دراسة الطلب',
-    whatsapp: 'تأكيد مباشر عبر واتساب',
+    security: 'فضاء تسيير خاص بكِ',
+    activation: 'دخول مباشر بعد التسجيل',
+    whatsapp: 'مساعدة متاحة',
     footer: '© 2026 روضة+. جميع الحقوق محفوظة.',
     space: 'فضاء المديرة والتسيير',
     signinTitle: 'تسجيل الدخول',
     signinDescription: 'استعملي البريد الإلكتروني وكلمة المرور اللذين اخترتهما عند التسجيل.',
-    requestTitle: 'طلب الوصول إلى روضة+',
-    requestDescription: 'أنشئي معلومات الدخول الآن، وبعدها يقوم المسؤول بقبول طلبك أو رفضه.',
+    requestTitle: 'إنشاء حساب روضة+',
+    requestDescription: 'أنشئي حسابك وابدئي تجربتك المجانية مباشرة.',
     noAccount: 'ما عندكش حساب؟',
     hasAccount: 'عندك حساب من قبل؟',
-    requestLink: 'اطلبي الوصول',
+    requestLink: 'إنشاء حساب',
     loginLink: 'تسجيل الدخول',
     email: 'البريد الإلكتروني',
     password: 'كلمة المرور',
-    loginNote: 'بعد موافقة المسؤول، يتم تفعيل حسابك وتستعملي نفس كلمة المرور التي اخترتها عند التسجيل.',
+    loginNote: 'سجلي الدخول بالبيانات التي اخترتها عند التسجيل.',
     loginButton: 'الدخول إلى روضة+',
     firstName: 'الاسم *',
     lastName: 'اللقب *',
@@ -147,15 +147,15 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
     addressPlaceholder: 'العنوان الكامل',
     needPlaceholder: 'احتياجك',
     requestNote: 'تجربة مجانية لمدة 15 يوماً دون التزام، ثم 1900 د.ج / شهر دون رسوم خفية. كلمة المرور محمية ومشفرة عبر Supabase ولا تُرسل للمسؤول.',
-    consentError: 'يرجى الموافقة على شروط الاستخدام وسياسة الخصوصية قبل إرسال الطلب.',
-    requestButton: 'إرسال الطلب',
+    consentError: 'يرجى الموافقة على شروط الاستخدام وسياسة الخصوصية قبل إنشاء حساب.',
+    requestButton: 'إنشاء حساب',
     parentNote: 'فضاء الأولياء راح نضيفوه بشكل منفصل في نسخة جاية من روضة+.',
     storesHeading: 'تطبيق الهاتف قريباً',
     storesDescription: 'نسخ Google Play وApp Store ستكون متوفرة قريباً.',
     availableSoon: 'قريباً',
     googlePlay: 'Google Play',
     appStore: 'App Store',
-    requestSuccess: 'تم إرسال طلبك بنجاح. بعد القبول، افتحي /login/ وسجلي الدخول بكلمة المرور التي اخترتها.',
+    requestSuccess: 'تم إنشاء حسابك. يمكنك الآن تسجيل الدخول ببريدك وكلمة المرور.',
     requiredError: 'يرجى ملء جميع الخانات الإلزامية، بما فيها كلمة المرور.',
     passwordLengthError: 'لازم كلمة المرور تكون فيها 8 أحرف على الأقل.',
     passwordMismatchError: 'كلمتا المرور غير متطابقتين.',
@@ -370,7 +370,9 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
       }
 
       resetRequestForm();
-      setSuccess(copy.requestSuccess);
+      setSuccess(registration?.status === 'active'
+        ? copy.requestSuccess
+        : (isFrench ? 'Votre demande a été envoyée et reste en attente de validation.' : 'تم إرسال طلبك وهو بانتظار الموافقة.'));
     } catch (requestError) {
       console.error('Erreur envoi demande directeur:', requestError);
       const message = requestError instanceof Error ? requestError.message : '';

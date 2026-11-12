@@ -25,8 +25,40 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return jsonResponse({ error: 'Méthode non autorisée.' }, 405);
 
+  let createdId: string | undefined;
+  let adminClient: ReturnType<typeof createClient> | undefined;
+  const cleanup = async () => {
+    if (!adminClient || !createdId) return;
+    const id = createdId;
+    // The Auth hook may have inserted pending rows before the RPC ran.
+    // Best effort only: Auth and Postgres do not share a transaction.
+    let failed = false;
+    const attempt = async (operation: () => PromiseLike<{error: unknown}>) => {
+      try { if ((await operation()).error) failed = true; } catch { failed = true; }
+    };
+    const client = adminClient;
+    await attempt(() => client.from('parametres').delete().eq('id', `creche_${id}`));
+    await attempt(() => client.from('comptes').delete().eq('id', id));
+    await attempt(() => client.auth.admin.deleteUser(id));
+    if (failed) console.error('Signup cleanup incomplete');
+  };
   try {
-    const body = await req.json() as {
+    if (Number(req.headers.get('content-length') || 0) > 16384) return jsonResponse({ error: 'Demande trop volumineuse.' }, 413);
+    const reader = req.body?.getReader();
+    if (!reader) return jsonResponse({ error: 'Demande invalide.' }, 400);
+    const chunks: Uint8Array[] = []; let length = 0;
+    while (true) {
+      const {done,value}=await reader.read(); if (done) break;
+      length += value.length;
+      if (length > 16384) { await reader.cancel(); return jsonResponse({ error: 'Demande trop volumineuse.' }, 413); }
+      chunks.push(value);
+    }
+    const buffer = new Uint8Array(length); let offset=0;
+    for (const chunk of chunks) {buffer.set(chunk,offset);offset+=chunk.length;}
+    let body;
+    try { body = JSON.parse(new TextDecoder().decode(buffer)); } catch { return jsonResponse({ error: 'Demande invalide.' }, 400); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return jsonResponse({ error: 'Demande invalide.' }, 400);
+    body = body as {
       nom?: string;
       prenom?: string;
       email?: string;
@@ -45,35 +77,27 @@ Deno.serve(async (req: Request) => {
     const telephone = String(body.telephone || '').trim();
     const nomCreche = String(body.nomCreche || '').trim();
     const adresse = String(body.adresse || '').trim();
+    const siteWeb = String(body.siteWeb || '').trim();
 
     if (!nom || !prenom || !email || !password || !telephone || !nomCreche || !adresse) {
       return jsonResponse({ error: 'Tous les champs obligatoires doivent être remplis.' }, 400);
     }
+    if (nom.length>120 || prenom.length>120 || email.length>254 || password.length>128 || telephone.length>40 || nomCreche.length>160 || adresse.length>500 || siteWeb.length>2048) return jsonResponse({ error: 'Un champ est trop long.' }, 400);
     if (password.length < 8) return jsonResponse({ error: 'Le mot de passe doit contenir au moins 8 caractères.' }, 400);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return jsonResponse({ error: 'Adresse e-mail invalide.' }, 400);
     if (!isValidAlgerianPhone(telephone)) return jsonResponse({ error: 'Numéro de téléphone algérien invalide.' }, 400);
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const adminClient = createClient(supabaseUrl, serviceRoleKey);
-
-    // Évite les doubles demandes en attente pour la même adresse.
-    const { data: existingRequests, error: existingRequestError } = await adminClient
-      .from('demandes_directeur')
-      .select('id, data')
-      .limit(500);
-    if (existingRequestError) return jsonResponse({ error: existingRequestError.message }, 500);
-    const duplicate = (existingRequests || []).find((row) => {
-      const rowData = (row.data || {}) as Record<string, unknown>;
-      return String(rowData.email || '').trim().toLowerCase() === email && rowData.statut === 'en_attente';
-    });
-    if (duplicate) return jsonResponse({ error: 'Une demande est déjà en attente pour cette adresse e-mail.' }, 409);
+    adminClient = createClient(supabaseUrl, serviceRoleKey);
+    const {data:slot, error:slotError} = await adminClient.rpc('rawdha_signup_take_slot');
+    if (slotError) return jsonResponse({ error: 'Inscription temporairement indisponible.' }, 503);
+    if (slot !== true) return jsonResponse({ error: 'Trop de demandes. Réessayez dans quelques instants.' }, 429);
 
     const { data: created, error: createError } = await adminClient.auth.admin.createUser({
       email,
       password,
-      // La connexion doit être possible en mode lecture seule ; l’accès métier reste
-      // verrouillé par pendingDirector jusqu’à l’approbation admin.
+      // Inscription ouverte : l’adresse n’a pas été vérifiée par son propriétaire.
       email_confirm: true,
       user_metadata: {
         full_name: `${prenom} ${nom}`,
@@ -81,61 +105,26 @@ Deno.serve(async (req: Request) => {
         prenom,
         nomCreche,
         role: 'directeur',
-        pendingDirector: true,
+        pendingDirector: false,
       },
     });
     if (createError || !created.user) {
-      return jsonResponse({ error: createError?.message || 'Impossible de créer le compte Auth.' }, 400);
+      return jsonResponse({ error: 'Impossible de créer le compte. Vérifiez les informations ou connectez-vous si le compte existe déjà.' }, 400);
     }
 
-    const { error: profileError } = await adminClient
-      .from('comptes')
-      .upsert({
-        id: created.user.id,
-        data: {
-          nom,
-          prenom,
-          email,
-          role: 'directeur',
-          approvalStatus: 'pending',
-          abonnementActif: false,
-          nomCreche,
-          dateFinAbonnement: null,
-        },
-      }, { onConflict: 'id' });
-    if (profileError) {
-      await adminClient.from('parametres').delete().eq('id', `creche_${created.user.id}`);
-      await adminClient.from('comptes').delete().eq('id', created.user.id);
-      await adminClient.auth.admin.deleteUser(created.user.id);
-      return jsonResponse({ error: profileError.message }, 500);
+    createdId = created.user.id;
+    const { error: initError } = await adminClient.rpc('rawdha_initialize_director_signup', {
+      p_account_id: createdId, p_email: email, p_first: prenom, p_last: nom,
+      p_phone: telephone, p_nursery: nomCreche, p_address: adresse, p_website: siteWeb,
+    });
+    if (initError) {
+      await cleanup();
+      return jsonResponse({ error: 'Impossible de finaliser le compte.' }, 500);
     }
-
-    const requestId = crypto.randomUUID();
-    const requestData = {
-      nom,
-      prenom,
-      email,
-      authUserId: created.user.id,
-      telephone,
-      nomCreche,
-      adresse,
-      siteWeb: String(body.siteWeb || '').trim(),
-      message: String(body.message || '').trim(),
-      dateDemande: new Date().toISOString(),
-      statut: 'en_attente',
-    };
-    const { error: insertError } = await adminClient
-      .from('demandes_directeur')
-      .insert({ id: requestId, data: requestData });
-    if (insertError) {
-      await adminClient.from('parametres').delete().eq('id', `creche_${created.user.id}`);
-      await adminClient.from('comptes').delete().eq('id', created.user.id);
-      await adminClient.auth.admin.deleteUser(created.user.id);
-      return jsonResponse({ error: insertError.message }, 500);
-    }
-
-    return jsonResponse({ id: requestId, authUserId: created.user.id, status: 'pending' }, 201);
-  } catch (error) {
-    return jsonResponse({ error: error instanceof Error ? error.message : 'Erreur inconnue.' }, 500);
+    createdId = undefined;
+    return jsonResponse({ authUserId: created.user.id, status: 'active' }, 201);
+  } catch {
+    await cleanup();
+    return jsonResponse({ error: 'Impossible de finaliser le compte.' }, 500);
   }
 });

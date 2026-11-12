@@ -40,7 +40,6 @@ export default function CommunicationAdmin() {
     deleteAvis,
     updateSignalement,
     deleteSignalement,
-    logAdminAction,
   } = useDb();
   const isFrench = language === 'fr';
   const [section, setSection] = useState<'messages' | 'avis' | 'retours'>('messages');
@@ -164,8 +163,6 @@ export default function CommunicationAdmin() {
   const handleStatusChange = async (id: string, statut: SignalementStatut) => {
     try {
       await updateSignalement(id, { statut });
-      const item = signalements.find(signalement => signalement.id === id);
-      await logAdminAction('ticket_status_updated', 'ticket', id, item?.titre, { statut }).catch(() => undefined);
     } catch (error) {
       showToast(error instanceof Error ? error.message : (isFrench ? 'Impossible de mettre à jour le statut.' : 'تعذر تحديث الحالة.'), 'error');
     }
@@ -178,7 +175,6 @@ export default function CommunicationAdmin() {
   ) => {
     try {
       await updateSignalement(item.id, patch);
-      await logAdminAction(action, 'ticket', item.id, item.titre, patch).catch(() => undefined);
       showToast(isFrench ? 'Ticket mis à jour.' : 'تم تحديث الطلب.', 'success');
     } catch (error) {
       showToast(error instanceof Error ? error.message : (isFrench ? 'Impossible de mettre à jour le ticket.' : 'تعذر تحديث الطلب.'), 'error');
@@ -192,7 +188,6 @@ export default function CommunicationAdmin() {
     setSavingResponseId(item.id);
     try {
       await updateSignalement(item.id, { reponseAdmin: response, statut: item.statut === 'nouveau' ? 'en_cours' : item.statut });
-      await logAdminAction('ticket_response_saved', 'ticket', item.id, item.titre, { statut: item.statut === 'nouveau' ? 'en_cours' : item.statut }).catch(() => undefined);
     } catch (error) {
       showToast(error instanceof Error ? error.message : (isFrench ? 'Impossible d’enregistrer la réponse.' : 'تعذر حفظ الرد.'), 'error');
     } finally {

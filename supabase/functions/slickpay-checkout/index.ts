@@ -29,7 +29,7 @@ const OFFICIAL_PROMO_DISCOUNTS_DZD: Record<string, number> = {
 type SlickPayApiScope = 'users' | 'merchants';
 
 function resolveSlickPayDomain(): string {
-  const env = (Deno.env.get('SLICKPAY_ENV') || 'production').trim().toLowerCase();
+  const env = (Deno.env.get('SLICKPAY_ENV') || '').trim().toLowerCase();
   return env === 'sandbox' || env === 'dev'
     ? 'https://devapi.slick-pay.com/api/v2'
     : 'https://prodapi.slick-pay.com/api/v2';
@@ -66,11 +66,24 @@ async function computeHmacSha256Hex(secret: string, message: string): Promise<st
     .join('');
 }
 
-function isInvoicePaid(payload: Record<string, unknown>): boolean {
-  const inner = (payload.data && typeof payload.data === 'object' ? payload.data : payload) as Record<string, unknown>;
-  const completed = Number(inner.completed ?? payload.completed ?? 0);
-  const status = String(inner.payment_status ?? inner.status ?? payload.payment_status ?? '').toLowerCase();
-  return completed === 1 || status === 'paid' || status === 'completed';
+function invoiceMatchesPaidOrder(payload: Record<string, unknown>, order: { slickpay_invoice_id: unknown; amount_dzd: unknown }): boolean {
+  const inner = payload.data && typeof payload.data === 'object' ? payload.data as Record<string, unknown> : null;
+  if (!inner || Number(inner.completed) !== 1) return false;
+  const expectedId = String(order.slickpay_invoice_id || '').trim();
+  if (!expectedId || (inner.id != null && String(inner.id).trim() !== expectedId)) return false;
+  const transaction = inner.transaction && typeof inner.transaction === 'object' ? inner.transaction as Record<string, unknown> : null;
+  // SlickPay's official WooCommerce plugin reads data.transaction.amount.
+  // Fail closed if the API does not provide an amount or it disagrees with the order.
+  const rawAmount = transaction?.amount;
+  if ((typeof rawAmount !== 'string' && typeof rawAmount !== 'number') || String(rawAmount).trim() === '') return false;
+  const amount = Number(rawAmount);
+  if (!Number.isFinite(amount) || amount !== Number(order.amount_dzd)) return false;
+  return true;
+}
+
+function safePaymentUrl(value: string): boolean {
+  try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password; }
+  catch { return false; }
 }
 
 async function resolveDefaultUserAccountUuid(
@@ -102,7 +115,7 @@ async function resolveDefaultUserAccountUuid(
   return undefined;
 }
 
-Deno.serve(async (req: Request) => {
+async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -120,6 +133,11 @@ Deno.serve(async (req: Request) => {
     const slickpayPublicKey = (Deno.env.get('SLICKPAY_PUBLIC_KEY') || '').trim();
     const slickpaySecretKey = (Deno.env.get('SLICKPAY_SECRET_KEY') || '').trim();
     const configuredAccountUuid = (Deno.env.get('SLICKPAY_ACCOUNT_UUID') || '').trim();
+
+    const paymentEnv = (Deno.env.get('SLICKPAY_ENV') || '').trim().toLowerCase();
+    if (Deno.env.get('SLICKPAY_ENABLE_PAYMENTS') !== 'true' || !['sandbox','dev','production'].includes(paymentEnv)) {
+      return new Response(JSON.stringify({ ok: false, error: 'Paiement indisponible : activation et environnement requis.' }), {status:503, headers:{...corsHeaders,'Content-Type':'application/json'}});
+    }
 
     if (!slickpayPublicKey || !slickpaySecretKey) {
       return new Response(
@@ -227,7 +245,7 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      if (verifyOk && isInvoicePaid(verifyJson)) {
+      if (verifyOk && invoiceMatchesPaidOrder(verifyJson, order)) {
         const { data: confirmData, error: confirmErr } = await adminClient.rpc(
           'confirm_slickpay_subscription_order',
           {
@@ -266,7 +284,8 @@ Deno.serve(async (req: Request) => {
             raw_slickpay_response: verifyJson,
             updated_at: new Date().toISOString(),
           })
-          .eq('id', order.id);
+          .eq('id', order.id)
+          .eq('status', 'pending');
       }
 
       return new Response(
@@ -360,6 +379,7 @@ Deno.serve(async (req: Request) => {
     let invoiceId = '';
     let usedScope: SlickPayApiScope = scopes[0];
     let lastStatus = 500;
+    let invoiceCreated = false;
 
     for (const scope of scopes) {
       const payload: Record<string, unknown> = {
@@ -416,13 +436,19 @@ Deno.serve(async (req: Request) => {
       paymentUrl = String(slickJson.url || '').trim();
       invoiceId = slickJson.id !== undefined && slickJson.id !== null ? String(slickJson.id) : '';
 
-      if (slickRes.ok && paymentUrl) {
+      if (slickRes.ok) {
+        // A successful but incomplete response may already have created an invoice;
+        // do not create another one or redirect without a durable reference.
         usedScope = scope;
+        invoiceCreated = true;
         break;
       }
+      // A timeout, 429 or server error may have created an invoice remotely.
+      // Do not try another account type after an ambiguous failure.
+      if (slickRes.status === 429 || slickRes.status >= 500) break;
     }
 
-    if (!paymentUrl) {
+    if (!invoiceCreated || !paymentUrl || !invoiceId || !safePaymentUrl(paymentUrl) || slickJson.success === false) {
       const apiMsg = String(slickJson.message || slickJson.error || `Erreur passerelle SlickPay (HTTP ${lastStatus})`);
       await adminClient
         .from('slickpay_subscription_orders')
@@ -443,7 +469,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    await adminClient
+    const { data: savedOrder, error: saveError } = await adminClient
       .from('slickpay_subscription_orders')
       .update({
         slickpay_invoice_id: invoiceId,
@@ -451,7 +477,13 @@ Deno.serve(async (req: Request) => {
         raw_slickpay_response: { ...slickJson, _api_scope: usedScope },
         updated_at: new Date().toISOString(),
       })
-      .eq('id', orderId);
+      .eq('id', orderId)
+      .eq('status', 'pending')
+      .select('id')
+      .maybeSingle();
+    if (saveError || !savedOrder) {
+      return new Response(JSON.stringify({ ok: false, error: 'Impossible d’enregistrer la facture. Aucun lien de paiement ne sera ouvert ; contactez le support.' }), { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     return new Response(
       JSON.stringify({
@@ -471,4 +503,29 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
+}
+
+// Minimal, service-only diagnostic. Never record body, URL, payment fields or error text.
+Deno.serve(async (req: Request) => {
+  const response = await handleRequest(req);
+  if (response.status < 500) return response;
+  const incidentId = crypto.randomUUID();
+  const url = Deno.env.get('SUPABASE_URL') || '';
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  if (url && serviceKey) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const abort = new AbortController();
+      timer = setTimeout(() => abort.abort(), 800);
+      await fetch(`${url}/rest/v1/rpc/rawdha_record_server_incident`, {
+        method:'POST', signal:abort.signal,
+        headers:{ 'Content-Type':'application/json', apikey:serviceKey, Authorization:`Bearer ${serviceKey}` },
+        body:JSON.stringify({p_source:'slickpay-checkout',p_incident_id:incidentId}),
+      });
+    } catch { /* logging must never change payment response */ }
+    finally { if (timer) clearTimeout(timer); }
+  }
+  const headers = new Headers(response.headers);
+  headers.set('X-Rawdha-Incident',incidentId);
+  return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
 });

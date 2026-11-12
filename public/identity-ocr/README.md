@@ -1,0 +1,4 @@
+Local experimental OCR assets, used by the development demo and the advisory reviewer-side OCR in `src/utils/localIdentityAssistance.ts`.
+- Tesseract.js worker and Tesseract.js-core 6.0.0 (Apache-2.0): https://github.com/naptha/tesseract.js and https://github.com/naptha/tesseract.js-core
+- French and Arabic models from tessdata_fast (Apache-2.0): https://github.com/tesseract-ocr/tessdata_fast
+The reviewer-side OCR processes the already retrieved document in the reviewer's browser and sends no image to an OCR provider. Models and WASM load from the app's own origin; names and results are not saved or transmitted by the local OCR. OCR is not proof of identity or document authenticity and cannot approve or refuse a request. The review document itself is transmitted through the app's own Supabase function. Production deployment and testing are still required.

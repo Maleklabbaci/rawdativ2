@@ -1,3 +1,4 @@
+import { IdentityDocumentAdmin } from './IdentityDocumentReview';
 import React, { useRef, useState } from 'react';
 import { useDb } from '../contexts/DbContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -256,7 +257,7 @@ export default function Comptes() {
       decisionRef.current = true;
       setDecisionLoading(true);
       const accountId = await approveDemandeDirecteur(demande.id);
-      await logAdminAction('director_approved', 'director_request', demande.id, demande.nomCreche, { accountId }).catch(() => undefined);
+      await logAdminAction('director_approved', 'director_request', demande.id, demande.nomCreche, { accountId }).catch(() => showToast(isFrench ? 'Compte activé, mais journalisation non confirmée.' : 'تم تفعيل الحساب لكن لم يتأكد تسجيل العملية.', 'error'));
       setSelectedDemande(null);
       await refreshAll().catch(() => undefined);
     } catch (err) {
@@ -285,7 +286,7 @@ export default function Comptes() {
       decisionRef.current = true;
       setDecisionLoading(true);
       await deleteDemandeDirecteur(demande.id);
-      await logAdminAction('director_request_rejected', 'director_request', demande.id, demande.nomCreche).catch(() => undefined);
+      await logAdminAction('director_request_rejected', 'director_request', demande.id, demande.nomCreche).catch(() => showToast(isFrench ? 'Demande refusée, mais journalisation non confirmée.' : 'تم رفض الطلب لكن لم يتأكد تسجيل العملية.', 'error'));
       setSelectedDemande(null);
       await refreshAll().catch(() => undefined);
     } catch (err) {
@@ -388,6 +389,7 @@ export default function Comptes() {
 
   return (
     <div className="space-y-6 font-sans" dir={isFrench ? 'ltr' : 'rtl'}>
+      <IdentityDocumentAdmin isFrench={isFrench} />
       {/* Upper header section */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
