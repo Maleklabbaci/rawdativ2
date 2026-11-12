@@ -47,6 +47,7 @@ import { useDb } from '../contexts/DbContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Enfant, InscriptionLink } from '../types';
 import EnfantDetails from './EnfantDetails';
+import ParentChildQr from './ParentChildQr';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
@@ -203,8 +204,9 @@ export default function Enfants() {
     demandesAdmission,
     decideAdmission,
   } = useDb();
-  const { user } = useAuth();
-  const { hasPagePermission } = useWorkspaceProfile();
+  const { user, creche } = useAuth();
+  const { hasPagePermission, isOwnerProfile } = useWorkspaceProfile();
+  const canInviteParent = user?.role === 'directeur' && user.approvalStatus === 'approved' && isOwnerProfile;
   const canEditChildren = hasPagePermission('enfants', 'edit');
   const canManageAdmissions = hasPagePermission('admissions', 'links') || hasPagePermission('admissions', 'decide');
   const isDirecteur = user?.role === 'directeur';
@@ -1413,6 +1415,7 @@ export default function Enfants() {
                             </button>
 
                             <div className="flex shrink-0 items-center gap-1">
+                              {canInviteParent && enfant.crecheId === user?.id && <ParentChildQr compact childId={enfant.id} childName={`${enfant.prenom} ${enfant.nom}`} crecheId={user.id} crecheName={creche?.nom || user.nomCreche || ''} isArabic={isArabic}/>}
                               {telHref && (
                                 <a
                                   href={telHref}
@@ -1560,6 +1563,7 @@ export default function Enfants() {
                             </td>
                             <td className="py-3 px-4 text-center">
                               <div className="flex items-center justify-center gap-1.5">
+                                {canInviteParent && enfant.crecheId === user?.id && <ParentChildQr compact childId={enfant.id} childName={`${enfant.prenom} ${enfant.nom}`} crecheId={user.id} crecheName={creche?.nom || user.nomCreche || ''} isArabic={isArabic}/>}
                                 <button
                                   type="button"
                                   onClick={() => setSelectedEnfant(enfant)}
@@ -1794,6 +1798,7 @@ export default function Enfants() {
                     </div>
 
                     <div className="mt-4 pt-3 border-t border-slate-100 flex gap-2">
+                      {canInviteParent && enfant.crecheId === user?.id && <ParentChildQr compact childId={enfant.id} childName={`${enfant.prenom} ${enfant.nom}`} crecheId={user.id} crecheName={creche?.nom || user.nomCreche || ''} isArabic={isArabic}/>}
                       <button
                         type="button"
                         aria-label={isArabic ? 'عرض ملف الطفل' : 'Ouvrir le dossier de l’enfant'}

@@ -3,7 +3,7 @@ import { Copy, Download, QrCode, Share2, X } from 'lucide-react';
 import * as QRCode from 'qrcode';
 import { supabase } from '../supabase';
 
-export default function ParentChildQr({ childId, childName, crecheId, crecheName, isArabic }: { childId: string; childName: string; crecheId: string; crecheName: string; isArabic: boolean }) {
+export default function ParentChildQr({ childId, childName, crecheId, crecheName, isArabic, compact = false }: { childId: string; childName: string; crecheId: string; crecheName: string; isArabic: boolean; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [qr, setQr] = useState('');
@@ -35,7 +35,7 @@ export default function ParentChildQr({ childId, childName, crecheId, crecheName
   };
   const close = () => { setOpen(false); setQr(''); setInviteUrl(''); setMessage(''); };
   return <>
-    <button type="button" onClick={() => { setOpen(true); void createInvite(); }} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-bold text-indigo-700"><QrCode size={16}/>{isArabic ? 'رمز ورابط الولي' : 'QR et lien parent'}</button>
+    <button type="button" onClick={() => { setOpen(true); void createInvite(); }} aria-label={isArabic ? `رمز الولي للطفل ${childName}` : `QR parent de ${childName}`} title={isArabic ? 'رمز ورابط الولي' : 'QR et lien parent'} className={compact ? 'inline-flex min-h-8! h-8 items-center justify-center gap-1.5 rounded-lg bg-indigo-50 px-2 text-xs font-bold text-indigo-700 hover:bg-indigo-100' : 'inline-flex min-h-10 items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-bold text-indigo-700'}><QrCode size={16}/>{compact ? <span className="hidden lg:inline">QR</span> : (isArabic ? 'رمز ورابط الولي' : 'QR et lien parent')}</button>
     {open && <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-950/65 p-4" onClick={close}>
       <div role="dialog" aria-modal="true" aria-label={isArabic ? 'ربط الولي' : 'Relier le parent'} className="max-h-[90dvh] w-full max-w-sm overflow-y-auto rounded-3xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between gap-3"><div><h3 className="text-lg font-black text-slate-900">{isArabic ? 'ربط هاتف الولي' : 'Relier le parent'}</h3><p className="text-sm text-slate-500">{childName}</p></div><button type="button" onClick={close} aria-label={isArabic ? 'إغلاق' : 'Fermer'} className="rounded-xl p-2 text-slate-500"><X size={18}/></button></div>
