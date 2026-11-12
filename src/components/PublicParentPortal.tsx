@@ -23,7 +23,7 @@ import {
   getOrCreateParentDeviceToken,
   getRememberedParentCreche,
   isRunningStandalonePwa,
-  loadParentAnnouncements,
+  loadParentAnnouncementsForDevice,
   markParentHomeScreenInstalled,
   rememberParentCreche,
   subscribeParentWebPush,
@@ -48,7 +48,7 @@ export default function PublicParentPortal() {
   const db = useDb();
   const [lang, setLang] = useState<'fr' | 'ar'>(() => {
     if (typeof window === 'undefined') return 'fr';
-    return localStorage.getItem('rawdha_lang') === 'ar' ? 'ar' : 'fr';
+    try { return localStorage.getItem('rawdha_lang') === 'ar' ? 'ar' : 'fr'; } catch { return 'fr'; }
   });
   const isAr = lang === 'ar';
 
@@ -146,10 +146,16 @@ export default function PublicParentPortal() {
     let mounted = true;
 
     const refresh = async (detail?: Record<string, unknown>) => {
-      const [req, anns] = await Promise.all([
-        getCurrentDeviceParentRequest(crecheContext.crecheId, deviceToken),
-        loadParentAnnouncements(crecheContext.crecheId),
-      ]);
+      let req: ParentLinkRequest | null;
+      let anns: ParentAnnouncement[];
+      try {
+        [req, anns] = await Promise.all([
+          getCurrentDeviceParentRequest(crecheContext.crecheId, deviceToken),
+          loadParentAnnouncementsForDevice(crecheContext.crecheId, deviceToken),
+        ]);
+      } catch {
+        return;
+      }
       if (!mounted) return;
       setRequest(req);
       setAnnouncements(anns);
@@ -301,17 +307,19 @@ export default function PublicParentPortal() {
       if (res.ok) {
         const refreshed = await getCurrentDeviceParentRequest(crecheContext.crecheId, deviceToken);
         setRequest(refreshed);
-        setPushStatusMsg(
-          isAr
-            ? 'تم تفعيل الإشعارات الفورية على هاتفكم بنجاح!'
-            : 'Notifications Push activées avec succès sur votre téléphone !',
-        );
+        setPushStatusMsg(res.reason === 'demo'
+          ? (isAr ? 'إشعار تجريبي محلي فقط.' : 'Notification locale de démonstration uniquement.')
+          : (isAr ? 'تم تسجيل الإشعارات على هذا الجهاز. يلزم اختبار الاستلام.' : 'Notifications enregistrées sur cet appareil. Un test de réception reste nécessaire.'));
       } else if (res.reason === 'denied') {
         setPushStatusMsg(
           isAr
             ? 'الإشعارات محظورة في إعدادات المتصفح. يرجى السماح بها من إعدادات الهاتف.'
             : 'Notifications refusées dans le navigateur. Autorisez-les dans les réglages du site.',
         );
+      } else if (res.reason === 'registration_failed') {
+        setPushStatusMsg(isAr
+          ? 'تعذر تسجيل الإشعارات. تحققي من إعدادات الجهاز والاتصال ثم حاولي مجدداً.'
+          : 'Impossible d’enregistrer les notifications. Vérifiez les réglages et la connexion, puis réessayez.');
       } else {
         setPushStatusMsg(
           isAr
@@ -319,6 +327,8 @@ export default function PublicParentPortal() {
             : 'Ajoutez d’abord l’application sur l’écran d’accueil pour activer les notifications sur cet appareil.',
         );
       }
+    } catch {
+      setPushStatusMsg(isAr ? 'تعذر تسجيل الإشعارات. حاولي مجدداً.' : 'Impossible d’enregistrer les notifications. Réessayez.');
     } finally {
       setPushBusy(false);
     }
@@ -329,6 +339,10 @@ export default function PublicParentPortal() {
   const isRejected = request?.status === 'rejected';
   const pushAlreadyActive = Boolean(request?.pushEnabled);
   const needsOnboarding = isApprovedWithChildren && (!homeInstalled || !pushAlreadyActive);
+
+  if (!deviceToken) {
+    return <div role="alert" dir={isAr ? 'rtl' : 'ltr'} className="flex min-h-screen items-center justify-center bg-slate-50 p-6 text-center"><div className="max-w-md rounded-2xl border border-amber-200 bg-white p-6 text-sm text-slate-800"><p className="font-bold">{isAr ? 'تعذر فتح فضاء الأولياء بأمان.' : 'Impossible d’ouvrir l’espace parent en sécurité.'}</p><p className="mt-2">{isAr ? 'تحققي من إعدادات التخزين في المتصفح أو تواصلي مع الروضة لاستعادة الوصول.' : 'Vérifiez les réglages de stockage du navigateur ou contactez la crèche pour rétablir votre accès.'}</p></div></div>;
+  }
 
   return (
     <div

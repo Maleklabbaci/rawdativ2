@@ -191,6 +191,8 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
     try {
       await rejectParentLinkRequest(req.id, isFr ? 'Dossier non trouvé' : 'الملف غير مطابق');
       toast.info(isFr ? 'Demande refusée.' : 'تم رفض الطلب.');
+    } catch {
+      toast.error(isFr ? 'Refus non confirmé. Actualisez avant de réessayer.' : 'لم يتم تأكيد الرفض. حدّثي الصفحة قبل إعادة المحاولة.');
     } finally {
       setBusyReqId(null);
     }
@@ -253,11 +255,15 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
       });
       setAnnTitle('');
       setAnnMessage('');
-      toast.success(
-        isFr
-          ? `Annonce publiée & Push envoyé (${res.sentPushCount} appareil(s) notifié(s))`
-          : `تم نشر الإعلان وإرسال الإشعار الفوري (${res.sentPushCount} جهاز)`,
-      );
+      if (res.pushStatus === 'demo') {
+        toast.info(isFr ? 'Annonce de démonstration uniquement.' : 'إعلان تجريبي فقط.');
+      } else if (res.pushStatus === 'unknown') {
+        toast.info(isFr ? 'Annonce publiée. Résultat du Push inconnu : vérifiez avant de renvoyer.' : 'تم نشر الإعلان. نتيجة الإشعارات غير معروفة؛ تحققي قبل الإرسال مجدداً.');
+      } else if (res.pushStatus === 'incomplete') {
+        toast.info(isFr ? `Annonce publiée. Push incomplet ou indisponible (${res.sentPushCount} accepté(s)).` : 'تم نشر الإعلان، لكن إرسال الإشعارات غير مكتمل أو غير متاح.');
+      } else {
+        toast.success(isFr ? `Annonce publiée. Push accepté pour ${res.sentPushCount} appareil(s) ; réception non garantie.` : `تم نشر الإعلان وقبول الإشعارات لـ ${res.sentPushCount} جهاز؛ الاستلام غير مضمون.`);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erreur d’envoi.');
     } finally {
