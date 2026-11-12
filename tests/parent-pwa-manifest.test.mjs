@@ -10,6 +10,8 @@ test('server sends the parent manifest in the initial HTML before any script run
  assert.equal(parent.start_url, '/espace-parent');
  assert.ok(parent.start_url.startsWith(parent.scope));
  assert.notEqual(parent.id, director.id);
+ for (const size of [192, 512]) assert.ok(parent.icons.some(icon => icon.sizes === `${size}x${size}` && fs.existsSync('public'+icon.src)));
+ assert.match(fs.readFileSync('parent.html','utf8'), /beforeinstallprompt/);
  for (const [filename, expected] of [['parent.html','/manifest-parent.webmanifest'], ['index.html','/manifest.webmanifest']]) {
   const html = fs.readFileSync(filename,'utf8');
   const dom = new JSDOM(html, {url:'https://example.invalid/espace-parent'});
