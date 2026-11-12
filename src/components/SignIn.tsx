@@ -493,6 +493,8 @@ export default function SignIn({ mode = 'signin' }: { mode?: 'signin' | 'request
             </p>
           </div>
 
+          <a href="/espace-parent" className="block rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm font-bold text-orange-800">{isFrench ? 'Vous êtes parent ? Ouvrir l’Espace Parent →' : 'هل أنت ولي؟ افتح فضاء الأولياء ←'}</a>
+
           {error && (
             <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 flex items-start gap-2.5 text-sm">
               <AlertCircle className="w-5 h-5 text-rose-500 flex-shrink-0 mt-0.5" />

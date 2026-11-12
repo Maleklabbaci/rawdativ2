@@ -38,11 +38,23 @@ import { playNotificationChime } from '../utils/notificationSound';
 import { useDb } from '../contexts/DbContext';
 import { supabase } from '../supabase';
 import { formatCurrency } from '../utils/format';
+import { parseParentInviteLink } from '../utils/parentInviteLink';
 import './parentPortal.css';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
+function ParentInviteEntry({ isAr }: { isAr: boolean }) {
+  const [input, setInput] = useState('');
+  const [error, setError] = useState('');
+  const open = () => {
+    const path = parseParentInviteLink(input, window.location.origin);
+    if (!path) { setError(isAr ? 'الرابط غير صالح. استعملي الرابط الشخصي من الروضة على نفس الموقع.' : 'Lien invalide. Utilisez le lien personnel de la crèche pour ce même site.'); return; }
+    window.location.assign(path);
+  };
+  return <div className="rounded-2xl border border-orange-100 bg-orange-50 p-4"><p className="text-sm font-bold text-slate-900">{isAr ? 'لديك رابط شخصي؟' : 'Vous avez un lien personnel ?'}</p><p className="mt-2 text-xs text-slate-600">{isAr ? 'الصقي الرابط الذي أرسلته الروضة. إذا استُخدم الرابط من قبل، اطلبي رابطاً جديداً.' : 'Collez le lien envoyé par la crèche. S’il a déjà été utilisé, demandez un nouveau lien à la directrice.'}</p><div className="mt-3 space-y-3"><label htmlFor="invite-link" className="text-sm font-bold text-slate-700">{isAr ? 'الرابط الشخصي' : 'Lien personnel'}</label><input id="invite-link" type="url" autoComplete="off" value={input} onChange={e => setInput(e.target.value)} className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm" required/><button type="button" onClick={open} className="w-full rounded-xl bg-indigo-600 p-3 text-sm font-bold text-white">{isAr ? 'فتح الرابط' : 'Ouvrir mon lien'}</button>{error && <p role="alert" className="text-sm text-rose-700">{error}</p>}</div><p className="mt-3 text-xs text-slate-500">{isAr ? 'لا ترسلي الرابط لأي شخص آخر.' : 'Gardez ce lien privé : ne le partagez avec personne d’autre.'}</p></div>;
 }
 
 export default function PublicParentPortal() {
@@ -71,12 +83,10 @@ export default function PublicParentPortal() {
         crecheNom: remembered.crecheNom || 'Crèche Rawdha+',
       };
     }
-    const fallbackAccount = db.comptes?.find((c) => c.role === 'directeur');
-    return {
-      crecheId: fallbackAccount?.id || 'preview-director',
-      crecheNom: fallbackAccount?.nomCreche || 'Crèche Les Petits Soleils',
-    };
-  }, [db.comptes]);
+    return demoParentPreview
+      ? { crecheId: 'preview-director', crecheNom: 'Crèche Les Petits Soleils' }
+      : { crecheId: '', crecheNom: '' };
+  }, [demoParentPreview]);
 
   const deviceToken = useMemo(() => getOrCreateParentDeviceToken(), []);
   const platform = useMemo(() => detectMobilePlatform(), []);
@@ -109,6 +119,7 @@ export default function PublicParentPortal() {
   ]);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const [copyMessage, setCopyMessage] = useState('');
   const [siblingSubmittedBanner, setSiblingSubmittedBanner] = useState(false);
 
   // Installation écran d'accueil + Push Notifications
@@ -164,6 +175,7 @@ export default function PublicParentPortal() {
     let mounted = true;
 
     const refresh = async (detail?: Record<string, unknown>) => {
+      if (!crecheContext.crecheId || !deviceToken) return;
       let req: ParentLinkRequest | null;
       let anns: ParentAnnouncement[];
       try {
@@ -420,6 +432,11 @@ export default function PublicParentPortal() {
     return <div role="alert" dir={isAr ? 'rtl' : 'ltr'} className="flex min-h-screen items-center justify-center bg-slate-50 p-6 text-center"><div className="max-w-md rounded-2xl border border-amber-200 bg-white p-6 text-sm text-slate-800"><p className="font-bold">{isAr ? 'تعذر فتح فضاء الأولياء بأمان.' : 'Impossible d’ouvrir l’espace parent en sécurité.'}</p><p className="mt-2">{isAr ? 'تحققي من إعدادات التخزين في المتصفح أو تواصلي مع الروضة لاستعادة الوصول.' : 'Vérifiez les réglages de stockage du navigateur ou contactez la crèche pour rétablir votre accès.'}</p></div></div>;
   }
 
+
+  if (!crecheContext.crecheId) {
+    return <div dir={isAr ? 'rtl' : 'ltr'} className="min-h-screen bg-[#fffaf8] p-5"><div className="mx-auto max-w-md rounded-3xl bg-white p-6 shadow-sm border border-orange-100"><img src="/rawdah-logo.png" alt="Rawdha+" className="h-14 w-14 rounded-xl"/><div className="my-4 flex items-center justify-between"><h1 className="text-xl font-black text-slate-900">{isAr ? 'فضاء الأولياء' : 'Espace Parent'}</h1><button type="button" onClick={() => setLang(isAr ? 'fr' : 'ar')} className="rounded-lg border px-3 py-2 text-sm font-bold">{isAr ? 'FR' : 'ع'}</button></div><ParentInviteEntry isAr={isAr}/></div></div>;
+  }
+
   return (
     <div
       dir={isAr ? 'rtl' : 'ltr'}
@@ -636,6 +653,7 @@ export default function PublicParentPortal() {
               </div>
             </div>
 
+            {!childInvite && !request && <ParentInviteEntry isAr={isAr}/>}
             {isRejected && (
               <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-800">
                 {isAr
@@ -644,6 +662,7 @@ export default function PublicParentPortal() {
               </div>
             )}
 
+            {platform === 'ios' && !homeInstalled && childInvite && !request && <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-slate-800 space-y-2"><p className="font-bold">{isAr ? 'على iPhone، ثبّتي فضاء الأولياء أولاً' : 'Sur iPhone, installez d’abord l’Espace Parent'}</p><p>{isAr ? 'انسخي رابط الدعوة، ثم في Safari اضغطي مشاركة ← على الشاشة الرئيسية. افتحي الأيقونة والصقي الرابط قبل إرسال الطلب.' : 'Copiez votre lien personnel. Dans Safari, touchez Partager puis « Sur l’écran d’accueil ». Ouvrez l’icône et collez le lien avant d’envoyer la demande.'}</p><button type="button" onClick={async () => { try { await navigator.clipboard.writeText(window.location.href); setCopyMessage(isAr ? 'تم نسخ الرابط.' : 'Lien copié.'); } catch { setCopyMessage(isAr ? 'انسخي الرابط من شريط العنوان.' : 'Copiez le lien dans la barre d’adresse de Safari.'); } }} className="rounded-lg bg-white border border-orange-200 px-3 py-2 font-bold text-orange-800">{isAr ? 'نسخ الرابط' : 'Copier mon lien'}</button>{copyMessage && <p role="status">{copyMessage}</p>}<p className="text-xs">{isAr ? 'الرابط سري ويستخدم مرة واحدة.' : 'Ce lien est privé et utilisable une seule fois.'}</p></div>}
             {childInvite && <div className="rounded-2xl bg-[#fff5eb] p-4 text-sm text-slate-700"><p className="text-[10px] font-bold uppercase tracking-wide text-orange-700">{isAr ? 'دعوة شخصية من' : 'Invitation personnelle de'}</p><p className="mt-1 font-bold">{crecheContext.crecheNom}</p><p className="mt-1 text-xs leading-relaxed">{isAr ? 'بعد مصادقة المديرة، ستظهر معلومات طفلك هنا.' : 'Après validation par la directrice, le nom et les informations de votre enfant apparaîtront ici.'}</p></div>}
             <form onSubmit={handleSubmitLinkRequest} className="space-y-4">
               {/* Parent Info */}

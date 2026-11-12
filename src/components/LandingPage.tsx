@@ -391,6 +391,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
                 ع
               </button>
             </div>
+            <a href="/espace-parent" className="text-sm font-bold text-[#c94b30]">{isArabic ? 'فضاء الأولياء' : 'Espace Parent'}</a>
             <button
               type="button"
               onClick={() => onNavigate('login')}
@@ -461,6 +462,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
                   {label}
                 </button>
               ))}
+              <a href="/espace-parent" className="block rounded-xl bg-orange-50 px-3 py-3 text-sm font-bold text-orange-800">{isArabic ? 'فضاء الأولياء' : 'Espace Parent'}</a>
               <div className="grid grid-cols-2 gap-2 pt-2">
                 <button
                   type="button"
