@@ -21,6 +21,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useDb } from '../contexts/DbContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import {
   approveParentLinkRequest,
   buildParentQrUrl,
@@ -42,9 +43,10 @@ interface Props {
 
 export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator }: Props) {
   const { user, creche } = useAuth();
-  const { enfants: allEnfants, presences, repas, activites, paiements } = useDb();
+  const { enfants: allEnfants, presences, repas, activites, paiements, refreshAll } = useDb();
   const { language } = useLanguage();
   const toast = useToast();
+  const { confirm } = useConfirmDialog();
   const isFr = language !== 'ar';
 
   const crecheId = user?.id || 'preview-director';
@@ -189,10 +191,19 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
       setPickerOpenReqId(req.id);
       return;
     }
+    if (req.requestedChildId && (chosenIds.length !== 1 || chosenIds[0] !== req.requestedChildId)) {
+      toast.error(isFr ? 'Cette invitation personnelle concerne uniquement l’enfant indiqué.' : 'تخص هذه الدعوة الطفل المحدد فقط.');
+      return;
+    }
+    if (req.requestedChildId) {
+      const child = enfants.find(e => e.id === req.requestedChildId);
+      if (!child || !await confirm({ title: isFr ? 'Vérifier l’identité' : 'التحقق من الهوية', message: isFr ? `Avez-vous vérifié l’identité de ${req.parentPrenom} ${req.parentNom} et son lien avec ${child.prenom} ${child.nom} ?` : `هل تحققتِ من هوية ${req.parentPrenom} ${req.parentNom} وعلاقته بالطفل ${child.prenom} ${child.nom}؟`, confirmLabel: isFr ? 'Confirmer la liaison' : 'تأكيد الربط' })) return;
+    }
     setBusyReqId(req.id);
     try {
       await approveParentLinkRequest({
         requestId: req.id,
+        expectedRequestedChildId: req.requestedChildId,
         enfantIds: chosenIds,
         enfants,
         presences,
@@ -200,6 +211,7 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
         activites,
         paiements,
       });
+      if (req.requestedChildId) await refreshAll();
       setPickerOpenReqId(null);
       toast.success(
         isFr
@@ -660,6 +672,7 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
                         </strong>
                       </p>
 
+                      <p className="text-xs text-slate-500">{isFr ? 'Envoyée le ' : 'أُرسلت في '}{Number.isNaN(new Date(req.createdAt).getTime()) ? req.createdAt : new Intl.DateTimeFormat(isFr ? 'fr-DZ' : 'ar-DZ', { dateStyle: 'full', timeStyle: 'medium' }).format(new Date(req.createdAt))}</p>
                       {req.requestedChildId && <p className="text-xs text-amber-700">{isFr ? 'Invitation personnelle : vérifiez l’identité du parent avant de valider.' : 'دعوة شخصية: تحققي من هوية الولي قبل الموافقة.'}</p>}
                       {/* Badges des dossiers enfants auto-associés */}
                       <div className="flex flex-wrap items-center gap-1.5 pt-1">
