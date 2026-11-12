@@ -7,6 +7,14 @@
     <link rel="icon" type="image/png" href="/rawdah-logo.png" />
     <link rel="apple-touch-icon" href="/rawdah-logo.png" />
     <link id="rawdha-app-manifest" rel="manifest" href="/manifest-parent.webmanifest" />
+    <script>
+      // Capture Android's install event even if React has not finished loading yet.
+      window.addEventListener('beforeinstallprompt', function (event) {
+        event.preventDefault();
+        window.__rawdhaParentInstallPrompt = event;
+      });
+      window.addEventListener('appinstalled', function () { window.__rawdhaParentInstallPrompt = null; });
+    </script>
     <meta name="theme-color" content="#f26b4d" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
