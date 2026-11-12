@@ -281,21 +281,21 @@ test('automatic QR parent portal links 1 or multiple children, shows Home Screen
     click(approveBtns[0]);
     await wait(200);
 
-    // 3. Parent view AUTOMATICALLY transitions to Multi-Child Pass + Home Screen + Push Onboarding!
-    assert.match(parentScope.textContent, /Finalisez votre Pass Parent en 2 gestes/);
-    assert.match(parentScope.textContent, /1\. Mettre sur l’écran d’accueil/);
-    assert.match(parentScope.textContent, /2\. Autoriser les notifications Push/);
-    assert.match(parentScope.textContent, /Mes enfants rattachés \(2\)/);
-    assert.match(parentScope.textContent, /Pass Parent Vérifié/);
+    // 3. Approval reveals the redesigned parent app and device setup.
+    assert.match(parentScope.textContent, /Toujours à vos côtés/);
+    assert.match(parentScope.textContent, /Sur l’écran d’accueil/);
+    assert.match(parentScope.textContent, /Notifications/);
+    assert.match(parentScope.textContent, /Mon enfant/);
+    assert.match(parentScope.textContent, /Actualités/);
 
-    // 4. Parent authorizes Push Notifications
+    // 4. Local demo notification is explicitly identified as such, not a real Push.
     const allowPushBtn = [...parentScope.querySelectorAll('button')].find((b) =>
-      b.textContent.trim() === 'Autoriser',
+      b.textContent.trim() === 'Activer',
     );
     click(allowPushBtn);
     await wait(180);
-    assert.match(parentScope.textContent, /Push ON/);
-    assert.ok(shownNotifications.length >= 1, 'Welcome push notification should trigger');
+    assert.match(parentScope.textContent, /Notification locale de démonstration uniquement/);
+    assert.ok(shownNotifications.length >= 1, 'Welcome local demo notification should trigger');
 
     // 5. Director switches to Notifs Push tab and broadcasts a holiday announcement -> Parent receives it live!
     const pushTabBtn = [...directorScope.querySelectorAll('button')].find((b) =>

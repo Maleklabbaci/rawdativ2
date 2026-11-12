@@ -1,20 +1,19 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import {
-  Baby,
-  Bell,
   BellRing,
   CheckCircle2,
   Clock,
-  CreditCard,
   Home,
-  Palette,
+  Bell,
+  ChevronDown,
+  ExternalLink,
+  CalendarDays,
+  Newspaper,
+  Settings2,
+  ArrowUpRight,
   Plus,
-  Share,
-  ShieldCheck,
   Smartphone,
-  Sparkles,
   Trash2,
-  Utensils,
 } from 'lucide-react';
 import {
   buildChildSnapshots,
@@ -37,7 +36,9 @@ import {
 } from '../utils/parentPortal';
 import { playNotificationChime } from '../utils/notificationSound';
 import { useDb } from '../contexts/DbContext';
+import { supabase } from '../supabase';
 import { formatCurrency } from '../utils/format';
+import './parentPortal.css';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -51,6 +52,7 @@ export default function PublicParentPortal() {
     try { return localStorage.getItem('rawdha_lang') === 'ar' ? 'ar' : 'fr'; } catch { return 'fr'; }
   });
   const isAr = lang === 'ar';
+  const demoParentPreview = Boolean(import.meta.env.DEV && import.meta.env.VITE_ARENA_DEMO === 'true' && (new URLSearchParams(window.location.search).get('demo_parent') === '1' || (import.meta.env.VITE_DEMO_PARENT === 'true' && window.location.pathname === '/')));
 
   // Résolution automatique de la crèche depuis l’URL QR ou depuis la mémoire de l’écran d’accueil
   const crecheContext = useMemo(() => {
@@ -79,10 +81,23 @@ export default function PublicParentPortal() {
   const deviceToken = useMemo(() => getOrCreateParentDeviceToken(), []);
   const platform = useMemo(() => detectMobilePlatform(), []);
 
+  const [childInvite, setChildInvite] = useState(() => typeof window === 'undefined' ? '' : new URLSearchParams(window.location.hash.slice(1)).get('enfant') || '');
   const [request, setRequest] = useState<ParentLinkRequest | null>(null);
   const [announcements, setAnnouncements] = useState<ParentAnnouncement[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<string>('');
+  const [parentTab, setParentTab] = useState<'home' | 'suivi' | 'news' | 'settings'>('home');
+  const [parentTheme, setParentTheme] = useState<'prune' | 'terracotta' | 'sauge' | 'lavande'>(() => {
+    try {
+      const saved = localStorage.getItem('rawdha_parent_theme');
+      return saved === 'terracotta' || saved === 'sauge' || saved === 'lavande' ? saved : 'prune';
+    } catch { return 'prune'; }
+  });
+  const chooseParentTheme = (theme: 'prune' | 'terracotta' | 'sauge' | 'lavande') => {
+    setParentTheme(theme);
+    try { localStorage.setItem('rawdha_parent_theme', theme); } catch { /* Session-only choice. */ }
+  };
   const [showAddSiblingForm, setShowAddSiblingForm] = useState(false);
+  const [siblingHelp, setSiblingHelp] = useState(false);
 
   // Formulaire de liaison (1 ou plusieurs enfants)
   const [parentPrenom, setParentPrenom] = useState('');
@@ -102,6 +117,9 @@ export default function PublicParentPortal() {
   const [showIosGuide, setShowIosGuide] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
   const [pushStatusMsg, setPushStatusMsg] = useState('');
+  const [pushDeviceReady, setPushDeviceReady] = useState(false);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | 'unsupported'>(() => typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
+  const [installStatusMsg, setInstallStatusMsg] = useState('');
   const [livePushBanner, setLivePushBanner] = useState<{ title: string; body: string } | null>(null);
 
   // Basculer dynamiquement le manifeste PWA vers /manifest-parent.webmanifest
@@ -157,9 +175,21 @@ export default function PublicParentPortal() {
         return;
       }
       if (!mounted) return;
+      if (demoParentPreview && db.enfants?.length) {
+        const child = db.enfants[0];
+        req = {
+          id: 'demo-parent-preview', crecheId: crecheContext.crecheId, crecheNom: crecheContext.crecheNom,
+          parentPrenom: 'Nadia', parentNom: 'Exemple', parentTelephone: '0555000000', parentLien: 'Mère',
+          requestedChildren: [{ prenom: child.prenom, nom: child.nom, groupeAge: child.groupeAge }],
+          linkedEnfantIds: [child.id], status: 'approved', pushEnabled: false, homeScreenInstalled: false,
+          createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+        };
+        anns = [{ id: 'demo-news', crecheId: crecheContext.crecheId, title: 'Atelier créatif cette semaine',
+          message: 'Les enfants découvrent la peinture et les couleurs. Pensez à prévoir une tenue confortable.',
+          category: 'evenement', targetScope: 'all', senderName: 'La direction', sentPushCount: 0, createdAt: new Date().toISOString() }];
+      }
       setRequest(req);
       setAnnouncements(anns);
-      if (req?.homeScreenInstalled) setHomeInstalled(true);
 
       if (detail?.action === 'announcement_published' && req?.status === 'approved') {
         const ann = detail.announcement as ParentAnnouncement | undefined;
@@ -199,7 +229,7 @@ export default function PublicParentPortal() {
       unsub();
       window.clearInterval(pollId);
     };
-  }, [crecheContext.crecheId, crecheContext.crecheNom, deviceToken]);
+  }, [crecheContext.crecheId, crecheContext.crecheNom, deviceToken, demoParentPreview, db.enfants]);
 
   // Snapshots enfants en temps réel (combine les données live du contexte ou le snapshot validé)
   const linkedChildren: ParentChildSnapshot[] = useMemo(() => {
@@ -236,8 +266,7 @@ export default function PublicParentPortal() {
         if (a.targetScope === 'group') return a.targetGroup === activeChild.groupeAge;
         if (a.targetScope === 'child') return a.targetEnfantId === activeChild.id;
         return true;
-      })
-      .slice(0, 8);
+      });
   }, [announcements, activeChild]);
 
   const handleAddChildRow = () => {
@@ -253,6 +282,21 @@ export default function PublicParentPortal() {
     setFormError('');
     setSubmitting(true);
     try {
+      if (childInvite) {
+        if (!deviceToken) throw new Error('Accès parent indisponible sur cet appareil. Contactez la crèche.');
+        const { data, error } = await supabase.rpc('rawdha_submit_child_parent_invite', {
+          p_token: childInvite, p_device_token: deviceToken,
+          p_parent_prenom: parentPrenom.trim(), p_parent_nom: parentNom.trim(),
+          p_parent_telephone: parentTelephone.trim(), p_parent_lien: parentLien, p_platform_hint: platform,
+        });
+        if (error || data?.ok !== true) throw new Error(isAr ? 'تعذر إرسال الطلب. تحققي من الحالة أو اطلبي رمزاً جديداً.' : 'Envoi non confirmé. Vérifiez votre demande ou demandez un nouveau QR à la crèche.');
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        setChildInvite('');
+        const saved = await getCurrentDeviceParentRequest(crecheContext.crecheId, deviceToken);
+        if (!saved) throw new Error('Demande envoyée, mais statut indisponible. Actualisez la page.');
+        setRequest(saved);
+        return;
+      }
       const saved = await submitParentLinkRequest({
         crecheId: crecheContext.crecheId,
         crecheNom: crecheContext.crecheNom,
@@ -276,28 +320,57 @@ export default function PublicParentPortal() {
   };
 
   const handleInstallHomeScreen = async () => {
+    setInstallStatusMsg('');
     if (deferredInstallPrompt) {
-      await deferredInstallPrompt.prompt();
-      const choice = await deferredInstallPrompt.userChoice;
-      if (choice.outcome === 'accepted') {
-        setHomeInstalled(true);
-        await markParentHomeScreenInstalled(crecheContext.crecheId, deviceToken);
+      try {
+        await deferredInstallPrompt.prompt();
+        const choice = await deferredInstallPrompt.userChoice;
+        setInstallStatusMsg(choice.outcome === 'accepted'
+          ? (isAr ? 'افتحي التطبيق من الشاشة الرئيسية لإكمال الإعداد.' : 'Si l’installation est terminée, ouvrez l’espace depuis votre écran d’accueil.')
+          : (isAr ? 'يمكنك المحاولة لاحقاً.' : 'Vous pourrez réessayer plus tard.'));
+      } catch {
+        setShowIosGuide(true);
       }
       setDeferredInstallPrompt(null);
       return;
     }
-    setShowIosGuide(true);
+    setShowIosGuide(previous => !previous);
   };
 
-  const handleConfirmManualInstall = async () => {
-    setHomeInstalled(true);
-    setShowIosGuide(false);
-    await markParentHomeScreenInstalled(crecheContext.crecheId, deviceToken);
-  };
+  useEffect(() => {
+    let cancelled = false;
+    const checkDevice = async () => {
+      const permission = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission;
+      if (!cancelled) setPushPermission(permission);
+      let subscription: PushSubscription | null = null;
+      try {
+        if ('serviceWorker' in navigator) {
+          const registration = await navigator.serviceWorker.getRegistration('/');
+          subscription = await registration?.pushManager?.getSubscription() || null;
+        }
+      } catch { /* The status remains unconfirmed. */ }
+      if (!cancelled) setPushDeviceReady(Boolean(permission === 'granted' && subscription && request?.pushEnabled));
+    };
+    void checkDevice();
+    window.addEventListener('focus', checkDevice);
+    document.addEventListener('visibilitychange', checkDevice);
+    return () => { cancelled = true; window.removeEventListener('focus', checkDevice); document.removeEventListener('visibilitychange', checkDevice); };
+  }, [request?.pushEnabled]);
 
   const handleEnablePush = async () => {
     setPushBusy(true);
     setPushStatusMsg('');
+    if (demoParentPreview) {
+      setPushStatusMsg(isAr ? 'عرض فقط: لا يتم تفعيل الإشعارات في النسخة التجريبية.' : 'Aperçu seulement : aucune notification réelle n’est activée ici.');
+      setPushBusy(false);
+      return;
+    }
+    if (platform === 'ios' && !isRunningStandalonePwa()) {
+      setPushStatusMsg(isAr ? 'افتحي التطبيق من الشاشة الرئيسية أولاً.' : 'Ouvrez d’abord cet espace depuis l’écran d’accueil.');
+      setShowIosGuide(true);
+      setPushBusy(false);
+      return;
+    }
     try {
       const res = await subscribeParentWebPush({
         crecheId: crecheContext.crecheId,
@@ -307,10 +380,13 @@ export default function PublicParentPortal() {
       if (res.ok) {
         const refreshed = await getCurrentDeviceParentRequest(crecheContext.crecheId, deviceToken);
         setRequest(refreshed);
+        setPushPermission(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
+        setPushDeviceReady(res.reason !== 'demo');
         setPushStatusMsg(res.reason === 'demo'
           ? (isAr ? 'إشعار تجريبي محلي فقط.' : 'Notification locale de démonstration uniquement.')
           : (isAr ? 'تم تسجيل الإشعارات على هذا الجهاز. يلزم اختبار الاستلام.' : 'Notifications enregistrées sur cet appareil. Un test de réception reste nécessaire.'));
       } else if (res.reason === 'denied') {
+        setPushPermission(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
         setPushStatusMsg(
           isAr
             ? 'الإشعارات محظورة في إعدادات المتصفح. يرجى السماح بها من إعدادات الهاتف.'
@@ -337,8 +413,8 @@ export default function PublicParentPortal() {
   const isApprovedWithChildren = request?.status === 'approved' && linkedChildren.length > 0;
   const isPendingApproval = request?.status === 'pending';
   const isRejected = request?.status === 'rejected';
-  const pushAlreadyActive = Boolean(request?.pushEnabled);
-  const needsOnboarding = isApprovedWithChildren && (!homeInstalled || !pushAlreadyActive);
+  const pushAlreadyActive = pushDeviceReady;
+  const insideFrame = (() => { try { return window.self !== window.top; } catch { return true; } })();
 
   if (!deviceToken) {
     return <div role="alert" dir={isAr ? 'rtl' : 'ltr'} className="flex min-h-screen items-center justify-center bg-slate-50 p-6 text-center"><div className="max-w-md rounded-2xl border border-amber-200 bg-white p-6 text-sm text-slate-800"><p className="font-bold">{isAr ? 'تعذر فتح فضاء الأولياء بأمان.' : 'Impossible d’ouvrir l’espace parent en sécurité.'}</p><p className="mt-2">{isAr ? 'تحققي من إعدادات التخزين في المتصفح أو تواصلي مع الروضة لاستعادة الوصول.' : 'Vérifiez les réglages de stockage du navigateur ou contactez la crèche pour rétablir votre accès.'}</p></div></div>;
@@ -347,36 +423,18 @@ export default function PublicParentPortal() {
   return (
     <div
       dir={isAr ? 'rtl' : 'ltr'}
-      className="min-h-screen bg-slate-50 text-slate-900 pb-12"
+      data-parent-theme={parentTheme}
+      className="parent-app min-h-screen pb-12"
     >
-      {/* Top Bar */}
-      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-xl items-center justify-between gap-2 px-4 py-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-indigo-600 text-white font-black text-sm shadow-2xs">
-              R+
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-black text-slate-900">
-                {crecheContext.crecheNom}
-              </p>
-              <p className="truncate text-[11px] font-semibold text-indigo-600">
-                {isAr ? 'فضاء الأولياء والبطاقة الذكية' : 'Pass Parent & Notifications'}
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setLang((prev) => (prev === 'fr' ? 'ar' : 'fr'))}
-            className="min-h-8! shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-100 cursor-pointer"
-          >
-            {isAr ? 'Français' : 'العربية'}
-          </button>
+      <header className="parent-app-header">
+        <div className="parent-header-inner">
+          <div className="parent-brand"><img src="/rawdah-logo.png" alt="Rawdha+"/><div><strong>Rawdha<span>+</span></strong><small>{isAr ? 'فضاء الأولياء' : 'Espace parents'}</small></div></div>
+          <div className="parent-header-actions"><button type="button" className="parent-language" onClick={() => setLang((prev) => (prev === 'fr' ? 'ar' : 'fr'))}>{isAr ? 'FR' : 'ع'}</button>{request?.status === 'approved' && <span className="parent-account" aria-label={isAr ? 'حساب الولي' : 'Compte parent'}>{request.parentPrenom.charAt(0).toUpperCase()}</span>}</div>
         </div>
       </header>
 
       <main className="mx-auto max-w-xl px-4 pt-4 space-y-4">
+        {demoParentPreview && <div role="status" className="rounded-xl bg-[#fff5db] px-3 py-2 text-[11px] font-semibold text-[#806329]">{isAr ? 'عرض تجريبي ببيانات وهمية — لا توجد إشعارات فعلية.' : 'Aperçu parent · Données fictives, aucune notification réelle.'}</div>}
         {/* Notification Push reçue en direct (style bannière mobile haut d'écran) */}
         {livePushBanner && (
           <div
@@ -400,367 +458,100 @@ export default function PublicParentPortal() {
             ÉTAT 3 : PARENT VALIDÉ AVEC 1 OU PLUSIEURS ENFANTS
            ================================================================ */}
         {isApprovedWithChildren && !showAddSiblingForm ? (
-          <>
-            {/* ONBOARDING AUTOMATIQUE : ÉCRAN D'ACCUEIL + NOTIFICATIONS PUSH */}
-            {needsOnboarding && (
-              <section
-                id="parent-onboarding-card"
-                className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-600 via-indigo-600 to-violet-700 p-4 text-white shadow-md space-y-3"
-              >
-                <div className="flex items-center gap-2.5">
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/15">
-                    <Sparkles className="h-4 w-4 shrink-0" />
-                  </span>
-                  <div className="min-w-0">
-                    <h2 className="text-sm font-black truncate">
-                      {isAr ? 'فعّلوا تطبيق الأولياء في خطوتين' : 'Finalisez votre Pass Parent en 2 gestes'}
-                    </h2>
-                    <p className="text-[11px] text-indigo-100 truncate">
-                      {isAr
-                        ? 'للوصول السريع وتلقي إشعارات الروضة مباشرة على هاتفكم'
-                        : 'Accès direct sur votre téléphone et alertes en temps réel'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Étape 1 : Écran d'accueil */}
-                <div className="rounded-xl bg-white/12 border border-white/15 p-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Home className="h-4 w-4 shrink-0 text-amber-300" />
-                      <span className="text-xs font-bold truncate">
-                        {isAr ? '1. التثبيت على الشاشة الرئيسية' : '1. Mettre sur l’écran d’accueil'}
-                      </span>
-                    </div>
-                    {homeInstalled ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/20 px-2.5 py-0.5 text-[11px] font-bold text-emerald-200 shrink-0">
-                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                        {isAr ? 'مُثبّت' : 'Installé'}
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => void handleInstallHomeScreen()}
-                        className="min-h-8! shrink-0 whitespace-nowrap rounded-xl bg-white px-3 py-1.5 text-xs font-black text-indigo-700 hover:bg-indigo-50 transition cursor-pointer"
-                      >
-                        {isAr ? 'تثبيت الآن' : 'Ajouter à l’écran'}
-                      </button>
-                    )}
-                  </div>
-
-                  {!homeInstalled && (showIosGuide || platform === 'ios') && (
-                    <div className="rounded-lg bg-slate-950/35 p-2.5 text-[11px] text-indigo-50 space-y-2">
-                      <p className="flex items-center gap-1.5 font-semibold">
-                        <Share className="h-3.5 w-3.5 shrink-0 text-amber-300" />
-                        <span>
-                          {platform === 'ios'
-                            ? isAr
-                              ? 'على iPhone: اضغط على زر المشاركة (↑) أسفل الشاشة ثم «إضافة إلى الشاشة الرئيسية».'
-                              : 'Sur iPhone : appuyez sur Partager (↑) en bas puis « Sur l’écran d’accueil ».'
-                            : isAr
-                            ? 'افتح قائمة المتصفح (⋮) في الأعلى واختر «الإضافة إلى الشاشة الرئيسية».'
-                            : 'Ouvrez le menu du navigateur (⋮) puis choisissez « Ajouter à l’écran d’accueil ».'}
-                        </span>
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => void handleConfirmManualInstall()}
-                        className="min-h-8! w-full rounded-lg bg-white/20 hover:bg-white/30 px-3 py-1.5 text-xs font-bold text-white transition cursor-pointer"
-                      >
-                        {isAr ? 'تمت الإضافة للشاشة الرئيسية' : 'C’est fait, je l’ai ajouté'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Étape 2 : Autoriser les notifications Push */}
-                <div className="rounded-xl bg-white/12 border border-white/15 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <BellRing className="h-4 w-4 shrink-0 text-emerald-300" />
-                      <span className="text-xs font-bold truncate">
-                        {isAr ? '2. السماح بالإشعارات الفورية' : '2. Autoriser les notifications Push'}
-                      </span>
-                    </div>
-                    {pushAlreadyActive ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/20 px-2.5 py-0.5 text-[11px] font-bold text-emerald-200 shrink-0">
-                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                        {isAr ? 'مفعّلة' : 'Activées'}
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={pushBusy}
-                        onClick={() => void handleEnablePush()}
-                        className="min-h-8! shrink-0 whitespace-nowrap rounded-xl bg-emerald-400 hover:bg-emerald-300 px-3 py-1.5 text-xs font-black text-slate-950 transition cursor-pointer disabled:opacity-60"
-                      >
-                        {pushBusy
-                          ? isAr
-                            ? 'جارٍ التفعيل...'
-                            : 'Activation...'
-                          : isAr
-                          ? 'تفعيل الإشعارات'
-                          : 'Autoriser'}
-                      </button>
-                    )}
-                  </div>
-                  {pushStatusMsg && (
-                    <p className="mt-2 text-[11px] font-semibold text-amber-200">{pushStatusMsg}</p>
-                  )}
-                </div>
-              </section>
-            )}
-
-            {siblingSubmittedBanner && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs font-bold text-amber-900">
-                {isAr
-                  ? 'تم إرسال طلب إضافة الطفل للإدارة. سيظهر تلقائياً فور المصادقة عليه.'
-                  : 'Demande d’ajout envoyée à la directrice : le nouvel enfant s’affichera automatiquement dès validation.'}
+          <div className="parent-home">
+            <section className="parent-settings" hidden={parentTab !== 'settings' && (parentTab !== 'home' || (homeInstalled && pushAlreadyActive))} aria-labelledby="parent-settings-title">
+              <div className="parent-settings-heading"><div><p className="parent-eyebrow">{isAr ? 'الإعدادات' : 'VOTRE ESPACE'}</p><h2 id="parent-settings-title">{isAr ? 'ابقوا على اطلاع' : 'Toujours à vos côtés'}</h2><p>{isAr ? 'خطوتان بسيطتان لمتابعة أخبار طفلكم.' : 'Deux petits gestes pour ne rien manquer de sa journée.'}</p></div><span className="parent-settings-heart" aria-hidden="true">♥</span></div>
+              <div className="parent-setting-row">
+                <span className="parent-setting-icon parent-setting-icon-home"><Home size={20} strokeWidth={1.8}/></span>
+                <div className="parent-setting-copy"><h3>{isAr ? 'على الشاشة الرئيسية' : 'Sur l’écran d’accueil'}</h3><p>{homeInstalled ? (isAr ? 'مفتوح من الشاشة الرئيسية' : 'Ouvert depuis l’écran d’accueil') : (isAr ? 'افتحي فضاء الأولياء بسهولة' : 'Votre espace à portée de main')}</p></div>
+                <button type="button" className="parent-setting-button" aria-expanded={showIosGuide} onClick={() => void handleInstallHomeScreen()}>{homeInstalled ? (isAr ? 'التعليمات' : 'Aide') : (isAr ? 'إضافة' : 'Ajouter')} <ChevronDown size={13}/></button>
               </div>
-            )}
-
-            {/* SÉLECTEUR MULTI-ENFANTS (1 OU PLUSIEURS ENFANTS + AJOUT FRATRIE) */}
-            <section className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-2xs space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  {isAr
-                    ? `أطفالي المسجلون (${linkedChildren.length})`
-                    : `Mes enfants rattachés (${linkedChildren.length})`}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setParentPrenom(request?.parentPrenom || '');
-                    setParentNom(request?.parentNom || '');
-                    setParentTelephone(request?.parentTelephone || '');
-                    setChildrenInputs([{ prenom: '', nom: request?.parentNom || '', groupeAge: 'Bébés' }]);
-                    setShowAddSiblingForm(true);
-                  }}
-                  className="min-h-8! inline-flex items-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100 cursor-pointer shrink-0"
-                >
-                  <Plus className="h-3.5 w-3.5 shrink-0" />
-                  <span>{isAr ? 'إضافة أخ/أخت' : '+ Ajouter un enfant'}</span>
-                </button>
+              {installStatusMsg && <p className="parent-setting-message" role="status">{installStatusMsg}</p>}
+              {showIosGuide && <div className="parent-install-guide">
+                <strong>{platform === 'ios' ? (isAr ? 'على iPhone أو iPad' : 'Sur iPhone ou iPad') : platform === 'android' ? (isAr ? 'على Android' : 'Sur Android') : (isAr ? 'على هاتفك' : 'Sur votre téléphone')}</strong>
+                <ol>{platform === 'ios' ? <><li>{isAr ? 'افتحي الصفحة في Safari واضغطي على زر المشاركة.' : 'Ouvrez cette page dans Safari, puis touchez le bouton Partager.'}</li><li>{isAr ? 'اختاري «إضافة إلى الشاشة الرئيسية» ثم «إضافة».' : 'Choisissez « Sur l’écran d’accueil », puis « Ajouter ».'}</li></> : <><li>{isAr ? 'افتحي قائمة المتصفح ⋮.' : 'Ouvrez le menu du navigateur ⋮.'}</li><li>{isAr ? 'اختاري «إضافة إلى الشاشة الرئيسية» أو «تثبيت التطبيق».' : 'Choisissez « Ajouter à l’écran d’accueil » ou « Installer l’application ».'}</li></>}</ol>
+                <p>{isAr ? 'ثم افتحي الأيقونة من الشاشة الرئيسية. قد تحتاجين إلى طلب الربط مجدداً إذا لم تظهر بياناتك.' : 'Ouvrez ensuite l’icône depuis l’écran d’accueil. Si votre accès n’apparaît pas, demandez une nouvelle liaison à la crèche.'}</p>
+              </div>}
+              <div className="parent-setting-row">
+                <span className="parent-setting-icon parent-setting-icon-bell"><Bell size={20} strokeWidth={1.8}/></span>
+                <div className="parent-setting-copy"><h3>{isAr ? 'الإشعارات' : 'Notifications'}</h3><p>{pushAlreadyActive ? (isAr ? 'مسجلة على هذا الجهاز' : 'Enregistrées sur cet appareil') : pushPermission === 'denied' ? (isAr ? 'محظورة في المتصفح' : 'Bloquées par le navigateur') : (isAr ? 'أخبار الروضة على هاتفك' : 'Les nouvelles de la crèche sur votre téléphone')}</p></div>
+                <button type="button" className="parent-setting-button parent-setting-button-accent" disabled={pushBusy || pushAlreadyActive} onClick={() => void handleEnablePush()}>{pushAlreadyActive ? (isAr ? 'مفعّلة' : 'Activées') : pushBusy ? (isAr ? 'جارٍ التفعيل' : 'Activation…') : (isAr ? 'تفعيل' : 'Activer')}</button>
               </div>
-
-              <div className="grid grid-cols-2 gap-1.5">
-                {linkedChildren.map((child) => {
-                  const selected = child.id === activeChild?.id;
-                  return (
-                    <button
-                      key={child.id}
-                      type="button"
-                      onClick={() => setSelectedChildId(child.id)}
-                      className={`min-h-10! flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-start transition cursor-pointer ${
-                        selected
-                          ? 'border-indigo-600 bg-indigo-600 text-white shadow-2xs'
-                          : 'border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100'
-                      }`}
-                    >
-                      <span className="truncate text-xs font-black">
-                        {child.prenom} {child.nom}
-                      </span>
-                      <span
-                        className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
-                          selected ? 'bg-white/20 text-white' : 'bg-white text-slate-600'
-                        }`}
-                      >
-                        {child.groupeAge}
-                      </span>
-                    </button>
-                  );
-                })}
+              {pushPermission === 'denied' && <p className="parent-setting-message">{isAr ? 'اسمحي بالإشعارات من إعدادات الموقع في المتصفح، ثم عودي إلى هنا.' : 'Autorisez les notifications dans les réglages de ce site, puis revenez ici.'}</p>}
+              {platform === 'ios' && !isRunningStandalonePwa() && <p className="parent-setting-message">{isAr ? 'على iPhone، أضيفي التطبيق للشاشة الرئيسية وافتحيه منها قبل تفعيل الإشعارات.' : 'Sur iPhone, ajoutez d’abord cet espace à l’écran d’accueil et ouvrez-le depuis son icône pour activer les notifications.'}</p>}
+              {insideFrame && !demoParentPreview && <a className="parent-open-browser" href={window.location.href} target="_blank" rel="noreferrer">{isAr ? 'فتح في المتصفح' : 'Ouvrir dans le navigateur'} <ExternalLink size={13}/></a>}
+              {pushStatusMsg && <p role="status" className="parent-setting-message">{pushStatusMsg}</p>}
+              {pushAlreadyActive && <p className="parent-setting-footnote">{isAr ? 'يعتمد الاستلام على إعدادات هاتفك والاتصال.' : 'La réception dépend des réglages de votre téléphone et de la connexion.'}</p>}
+            </section>
+            {parentTab === 'settings' && <section className="parent-theme-card" aria-labelledby="parent-theme-heading">
+              <div className="parent-theme-head"><div><p className="parent-eyebrow">{isAr ? 'على ذوقك' : 'À VOTRE IMAGE'}</p><h2 id="parent-theme-heading">{isAr ? 'ألواني' : 'Mes couleurs'}</h2><p>{isAr ? 'اختاري الألوان التي تحبينها لهذا الجهاز.' : 'Choisissez les couleurs qui vous ressemblent.'}</p></div><span aria-hidden="true">✳</span></div>
+              <div className="parent-theme-options" role="group" aria-label={isAr ? 'اختيار الألوان' : 'Choisir les couleurs'}>
+                {([
+                  ['prune', isAr ? 'برقوقي' : 'Prune'], ['terracotta', isAr ? 'مرجاني' : 'Corail'],
+                  ['sauge', isAr ? 'أخضر' : 'Sauge'], ['lavande', isAr ? 'لافندر' : 'Lavande'],
+                ] as const).map(([key, label]) => <button type="button" key={key} className="parent-theme-option" data-swatch={key} aria-pressed={parentTheme === key} onClick={() => chooseParentTheme(key)}><span className="parent-theme-swatch">{parentTheme === key && <CheckCircle2 size={18}/>}</span><small>{label}</small></button>)}
               </div>
+              <p className="parent-theme-hint">{isAr ? 'يُحفظ الاختيار على هذا الجهاز فقط.' : 'Votre choix est enregistré sur cet appareil.'}</p>
+            </section>}
+            {parentTab === 'home' && <div className="parent-welcome">
+              <p className="parent-kicker">{isAr ? 'معكم كل يوم' : 'À VOS CÔTÉS, CHAQUE JOUR'}</p>
+              <h1>{isAr ? `مرحباً ${request?.parentPrenom}` : `Bonjour ${request?.parentPrenom},`}</h1>
+              <p>{isAr ? 'لحظات صغيرة، أخبار كبيرة.' : 'Les petites nouvelles qui comptent.'}</p>
+            </div>}
+            {parentTab !== 'home' && <div className="parent-page-heading"><p>{isAr ? 'فضاء الأولياء' : 'ESPACE PARENTS'}</p><h1>{parentTab === 'suivi' ? (isAr ? 'متابعة طفلي' : 'Le suivi de mon enfant') : parentTab === 'news' ? (isAr ? 'أخبار الروضة' : 'Les nouvelles') : (isAr ? 'إعداداتي' : 'Mon espace')}</h1><span>{parentTab === 'suivi' ? (isAr ? 'كل المعلومات المهمة عن يوم طفلكم.' : 'Les informations partagées par la crèche.') : parentTab === 'news' ? (isAr ? 'كل أخبار الروضة في مكان واحد.' : 'Toute l’actualité de votre crèche au même endroit.') : (isAr ? 'ضبط الوصول والإشعارات.' : 'Gérez votre accès et vos notifications.')}</span></div>}
+
+            {siblingSubmittedBanner && <p className="parent-note" role="status">{isAr ? 'تم إرسال طلب إضافة الطفل للمديرة.' : 'Votre demande d’ajout a été envoyée à la directrice.'}</p>}
+
+            <section className="parent-child-section" hidden={parentTab !== 'home' && parentTab !== 'suivi'}>
+              <div className="parent-section-top">
+                <div><p className="parent-eyebrow">{isAr ? 'متابعة اليوم' : 'SON PETIT QUOTIDIEN'}</p><h2>{isAr ? 'طفلي' : 'Mon enfant'}</h2></div>
+                <button type="button" className="parent-text-action" aria-expanded={siblingHelp} onClick={() => setSiblingHelp(value => !value)}>{isAr ? '+ إضافة طفل' : '+ Ajouter un enfant'}</button>
+              </div>
+              {siblingHelp && <p role="status" className="parent-note">{isAr ? 'لإضافة طفل آخر، تواصلي مع المديرة. لا يتم منح الوصول دون موافقتها.' : 'Pour ajouter un autre enfant, contactez la directrice. Aucun accès ne sera ajouté sans sa validation.'}</p>}
+              {linkedChildren.length > 1 && <div className="parent-child-picker" aria-label={isAr ? 'اختيار الطفل' : 'Choisir un enfant'}>
+                {linkedChildren.map(child => <button key={child.id} type="button" aria-pressed={child.id === activeChild?.id} onClick={() => setSelectedChildId(child.id)}>{child.prenom}</button>)}
+              </div>}
+              {activeChild && <div className="parent-child-line">
+                <div className="parent-avatar" aria-hidden="true">{activeChild.prenom.charAt(0)}</div>
+                <div className="parent-child-name"><strong>{activeChild.prenom} {activeChild.nom}</strong><span>{isAr ? 'القسم' : 'Section'} {activeChild.groupeAge}</span></div>
+                <div className="parent-presence"><span>{isAr ? 'اليوم' : 'Aujourd’hui'}</span><strong>{activeChild.presenceToday?.statut || (isAr ? 'لم يسجل بعد' : 'Non renseigné')}</strong>{activeChild.presenceToday?.heureArrivee && <small>{isAr ? 'الوصول' : 'Arrivée'} {activeChild.presenceToday.heureArrivee}</small>}</div>
+              </div>}
             </section>
 
-            {/* CARTE WALLET PASS DE L'ENFANT SÉLECTIONNÉ */}
-            {activeChild && (
-              <>
-                <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white shadow-lg">
-                  <div className="p-5 space-y-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/15 border border-emerald-400/30 px-2.5 py-0.5 text-[10px] font-bold text-emerald-300">
-                          <ShieldCheck className="h-3 w-3 shrink-0" />
-                          {isAr ? 'بطاقة ولي أمر مصادق عليها' : 'Pass Parent Vérifié'}
-                        </span>
-                        <h1 className="mt-2 text-xl font-black tracking-tight truncate">
-                          {activeChild.prenom} {activeChild.nom}
-                        </h1>
-                        <p className="text-xs text-slate-300 font-semibold">
-                          {isAr ? `القسم: ${activeChild.groupeAge}` : `Section ${activeChild.groupeAge}`} · {crecheContext.crecheNom}
-                        </p>
-                      </div>
-                      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/10 border border-white/15">
-                        <Baby className="h-5 w-5 shrink-0 text-indigo-200" />
-                      </div>
-                    </div>
+            <div className="parent-creche-label" hidden={parentTab !== 'home'}>{isAr ? 'روضة' : 'Votre crèche'} <strong>{crecheContext.crecheNom}</strong></div>
 
-                    {/* Pointage du jour */}
-                    <div className="rounded-2xl bg-white/10 border border-white/10 p-3.5 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-200">
-                          {isAr ? 'حضور اليوم' : 'Pointage aujourd’hui'}
-                        </p>
-                        {activeChild.presenceToday ? (
-                          <p className="mt-0.5 text-xs font-bold text-white truncate">
-                            {activeChild.presenceToday.statut}
-                            {activeChild.presenceToday.heureArrivee
-                              ? ` · ${isAr ? 'الوصول' : 'Arrivée'} ${activeChild.presenceToday.heureArrivee}`
-                              : ''}
-                            {activeChild.presenceToday.humeur ? ` · ${activeChild.presenceToday.humeur}` : ''}
-                          </p>
-                        ) : (
-                          <p className="mt-0.5 text-xs font-semibold text-slate-300 truncate">
-                            {isAr ? 'لم يتم تسجيل الوصول بعد هذا الصباح' : 'Pointage du matin non encore saisi'}
-                          </p>
-                        )}
-                      </div>
-                      {pushAlreadyActive && (
-                        <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-400/20 px-2 py-1 text-[10px] font-bold text-emerald-200 shrink-0">
-                          <Bell className="h-3 w-3 shrink-0" />
-                          Push ON
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </section>
+            <section className="parent-news" hidden={parentTab !== 'home' && parentTab !== 'news'}>
+              <div className="parent-section-top"><div><p className="parent-eyebrow">{isAr ? 'من الروضة' : 'LE FIL DE LA CRÈCHE'}</p><h2>{isAr ? 'أخبار الروضة' : 'Les nouvelles'}</h2></div><span className="parent-section-symbol" aria-hidden="true">✳</span></div>
+              {visibleAnnouncements.length ? <div className="parent-news-list">{(parentTab === 'home' ? visibleAnnouncements.slice(0, 2) : visibleAnnouncements).map(ann => <article key={ann.id} className="parent-news-item">
+                <div className="parent-news-date">{new Date(ann.createdAt).toLocaleDateString(isAr ? 'ar-DZ' : 'fr-FR', {day:'numeric', month:'short'})}</div>
+                <div><h3>{ann.title}</h3><p>{ann.message}</p><small>{ann.senderName || (isAr ? 'الإدارة' : 'La direction')}</small></div>
+              </article>)}</div> : <p className="parent-empty">{isAr ? 'لا توجد أخبار جديدة حالياً.' : 'Pas de nouvelles pour le moment.'}</p>}
+              {parentTab === 'home' && visibleAnnouncements.length > 2 && <button className="parent-see-all" type="button" onClick={() => { setParentTab('news'); window.scrollTo(0, 0); }}>{isAr ? 'كل الأخبار' : 'Voir toutes les nouvelles'} <ArrowUpRight size={15}/></button>}
+            </section>
 
-                {/* ANNONCES PUSH DE LA CRÈCHE */}
-                <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-indigo-50 text-indigo-600">
-                        <BellRing className="h-4 w-4 shrink-0" />
-                      </span>
-                      <h2 className="text-sm font-black text-slate-900">
-                        {isAr ? 'إعلانات وإشعارات الروضة' : 'Annonces de la crèche'}
-                      </h2>
-                    </div>
-                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-bold text-slate-600">
-                      {visibleAnnouncements.length}
-                    </span>
-                  </div>
+            {activeChild && <section className="parent-day" hidden={parentTab !== 'home' && parentTab !== 'suivi'}>
+              <div className="parent-section-top"><div><p className="parent-eyebrow">{isAr ? 'يوم جميل' : 'UNE BELLE JOURNÉE'}</p><h2>{isAr ? 'برنامج اليوم' : 'Au programme aujourd’hui'}</h2></div></div>
+              <div className="parent-day-grid">
+                <div><p className="parent-day-label">{isAr ? 'الوجبات' : 'REPAS'}</p>{activeChild.todayMeals.length ? activeChild.todayMeals.map(meal => <p key={meal.id} className="parent-day-entry"><strong>{meal.type}</strong><span>{meal.menu}</span></p>) : <p className="parent-empty">{isAr ? 'لم تُنشر وجبات اليوم بعد.' : 'Le menu n’a pas encore été publié.'}</p>}</div>
+                <div><p className="parent-day-label">{isAr ? 'الأنشطة' : 'ACTIVITÉS'}</p>{activeChild.todayActivities.length ? activeChild.todayActivities.map(activity => <p key={activity.id} className="parent-day-entry"><strong>{activity.titre}</strong>{activity.heureDebut && <span>{activity.heureDebut}{activity.heureFin ? ` – ${activity.heureFin}` : ''}</span>}</p>) : <p className="parent-empty">{isAr ? 'لا توجد أنشطة مسجلة اليوم.' : 'Aucune activité renseignée aujourd’hui.'}</p>}</div>
+              </div>
+            </section>}
 
-                  {visibleAnnouncements.length === 0 ? (
-                    <p className="text-xs text-slate-500 py-2">
-                      {isAr ? 'لا توجد إعلانات جديدة حالياً.' : 'Aucune annonce publiée pour le moment.'}
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {visibleAnnouncements.map((ann) => (
-                        <div
-                          key={ann.id}
-                          className="rounded-xl border border-slate-100 bg-slate-50/80 p-3 space-y-1"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-xs font-black text-slate-900 truncate">{ann.title}</p>
-                            <span className="shrink-0 text-[10px] font-semibold text-slate-400">
-                              {new Date(ann.createdAt).toLocaleDateString(isAr ? 'ar-DZ' : 'fr-FR', {
-                                day: '2-digit',
-                                month: 'short',
-                              })}
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-600 leading-relaxed">{ann.message}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </section>
+            {activeChild && activeChild.invoices.length > 0 && <section className="parent-invoices" hidden={parentTab !== 'suivi'}>
+              <div className="parent-section-top"><h2>{isAr ? 'الفواتير' : 'Factures'}</h2></div>
+              {activeChild.invoices.map(inv => <div key={inv.id} className="parent-invoice-row"><span>{inv.moisConcerne}</span><strong>{formatCurrency(inv.montant)}</strong><span>{inv.statut}</span></div>)}
+            </section>}
 
-                {/* REPAS & ACTIVITÉS DU JOUR */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <section className="rounded-2xl border border-amber-200/70 bg-white p-4 shadow-2xs space-y-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600">
-                        <Utensils className="h-4 w-4 shrink-0" />
-                      </span>
-                      <h3 className="text-xs font-black text-slate-900">
-                        {isAr ? 'وجبات اليوم' : 'Repas du jour'}
-                      </h3>
-                    </div>
-                    {activeChild.todayMeals.length > 0 ? (
-                      <div className="space-y-1.5">
-                        {activeChild.todayMeals.map((m) => (
-                          <div key={m.id} className="rounded-xl bg-amber-50/60 border border-amber-100 p-2.5">
-                            <span className="text-[10px] font-black text-amber-800 uppercase">{m.type}</span>
-                            <p className="text-xs font-semibold text-slate-800 mt-0.5">{m.menu}</p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-slate-500">
-                        {isAr ? 'لم يُنشر برنامج وجبات اليوم بعد.' : 'Menu du jour non encore publié.'}
-                      </p>
-                    )}
-                  </section>
 
-                  <section className="rounded-2xl border border-teal-200/70 bg-white p-4 shadow-2xs space-y-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-teal-50 text-teal-600">
-                        <Palette className="h-4 w-4 shrink-0" />
-                      </span>
-                      <h3 className="text-xs font-black text-slate-900">
-                        {isAr ? 'أنشطة اليوم' : 'Activités du jour'}
-                      </h3>
-                    </div>
-                    {activeChild.todayActivities.length > 0 ? (
-                      <div className="space-y-1.5">
-                        {activeChild.todayActivities.map((act) => (
-                          <div key={act.id} className="rounded-xl bg-teal-50/60 border border-teal-100 p-2.5">
-                            <span className="text-[10px] font-bold text-teal-800 tabular-nums">
-                              {act.heureDebut || '—'}{act.heureFin ? ` - ${act.heureFin}` : ''}
-                            </span>
-                            <p className="text-xs font-semibold text-slate-800 mt-0.5">{act.titre}</p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-slate-500">
-                        {isAr ? 'لا توجد ورشة مسجلة اليوم لهذا القسم.' : 'Aucun atelier programmé aujourd’hui.'}
-                      </p>
-                    )}
-                  </section>
-                </div>
-
-                {/* SITUATION DES FACTURES */}
-                {activeChild.invoices.length > 0 && (
-                  <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs space-y-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-700">
-                        <CreditCard className="h-4 w-4 shrink-0" />
-                      </span>
-                      <h3 className="text-xs font-black text-slate-900">
-                        {isAr ? 'متابعة الفواتير' : 'Suivi des factures'}
-                      </h3>
-                    </div>
-                    <div className="divide-y divide-slate-100">
-                      {activeChild.invoices.map((inv) => (
-                        <div key={inv.id} className="flex items-center justify-between py-2 text-xs">
-                          <span className="font-semibold text-slate-700">{inv.moisConcerne}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="font-black text-slate-900 tabular-nums">
-                              {formatCurrency(inv.montant)}
-                            </span>
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                inv.statut === 'Payé'
-                                  ? 'bg-emerald-50 text-emerald-700'
-                                  : 'bg-amber-50 text-amber-700'
-                              }`}
-                            >
-                              {inv.statut}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                )}
-              </>
-            )}
-          </>
+            <nav className="parent-app-nav" aria-label={isAr ? 'تنقل فضاء الأولياء' : 'Navigation espace parents'}>
+              {([
+                ['home', Home, isAr ? 'الرئيسية' : 'Accueil'],
+                ['suivi', CalendarDays, isAr ? 'المتابعة' : 'Suivi'],
+                ['news', Newspaper, isAr ? 'الأخبار' : 'Actualités'],
+                ['settings', Settings2, isAr ? 'حسابي' : 'Mon espace'],
+              ] as const).map(([tab, Icon, label]) => <button key={tab} type="button" aria-current={parentTab === tab ? 'page' : undefined} onClick={() => { setParentTab(tab); window.scrollTo({ top: 0, behavior: 'auto' }); }}><span><Icon size={19} strokeWidth={parentTab === tab ? 2.4 : 1.8}/></span><small>{label}</small></button>)}
+            </nav>
+          </div>
         ) : isPendingApproval && !showAddSiblingForm ? (
           /* ================================================================
              ÉTAT 2 : DEMANDE ENVOYÉE — ATTENTE AUTOMATIQUE DE VALIDATION
@@ -918,8 +709,7 @@ export default function PublicParentPortal() {
                 </div>
               </div>
 
-              {/* Liste dynamique d'enfants à rattacher */}
-              <div className="space-y-2.5 pt-1">
+              {!childInvite && <div className="space-y-2.5 pt-1">
                 <div className="flex items-center justify-between gap-2">
                   <label className="text-[11px] font-black uppercase tracking-wider text-indigo-700">
                     {isAr ? 'الطفل (أو الإخوة) في الروضة *' : 'Enfant(s) inscrit(s) à la crèche *'}
@@ -997,7 +787,9 @@ export default function PublicParentPortal() {
                     </div>
                   </div>
                 ))}
-              </div>
+              </div>}
+
+              {childInvite && <p className="rounded-xl bg-indigo-50 p-3 text-xs font-semibold text-indigo-800">{isAr ? 'تم تحديد الطفل بواسطة الرمز. ستتحقق المديرة من هويتكم قبل الموافقة.' : 'Ce QR désigne un enfant. La directrice vérifiera votre identité avant de valider l’accès.'}</p>}
 
               {formError && (
                 <p role="alert" className="rounded-xl bg-rose-50 p-3 text-xs font-bold text-rose-700">

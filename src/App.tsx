@@ -222,7 +222,7 @@ function AppContent() {
   // toute modification interne de l’historique, sans dépendre d’un PopStateEvent.
   void routeVersion;
   const isPublicAdmission = window.location.pathname.replace(/\/+$/, '') === '/admission';
-  const isPublicParentSpace = window.location.pathname.replace(/\/+$/, '') === '/espace-parent';
+  const isPublicParentSpace = window.location.pathname.replace(/\/+$/, '') === '/espace-parent' || Boolean(import.meta.env.DEV && import.meta.env.VITE_ARENA_DEMO === 'true' && import.meta.env.VITE_DEMO_PARENT === 'true' && window.location.pathname === '/');
   const isPublicPrivacy = isLegalPathname(window.location.pathname);
   const normalizedPathname = normalizeAuthPath(window.location.pathname);
   const isPasswordRecoveryUrl =
