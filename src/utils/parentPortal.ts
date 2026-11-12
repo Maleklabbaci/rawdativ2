@@ -501,6 +501,7 @@ export async function loadParentLinkRequests(crecheId: string): Promise<ParentLi
         updatedAt: row.updated_at,
       }));
     }
+    throw new Error('Impossible de charger les demandes parent. Vérifiez la connexion puis actualisez.');
   }
   return readLocalRequests()
     .filter((r) => r.crecheId === crecheId)
