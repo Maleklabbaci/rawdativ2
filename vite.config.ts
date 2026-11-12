@@ -1,11 +1,22 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
+
+// Serve the parent HTML before Vite's SPA fallback in both dev and preview.
+function parentEntry(): Plugin {
+  const middleware = (req: { url?: string }, _res: unknown, next: () => void) => {
+    if (req.url && /^\/espace-parent\/?(?:\?|$)/.test(req.url)) {
+      req.url = req.url.replace(/^\/espace-parent\/?/, '/parent.html');
+    }
+    next();
+  };
+  return { name: 'parent-entry', configureServer(server) { server.middlewares.use(middleware); }, configurePreviewServer(server) { server.middlewares.use(middleware); } };
+}
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [parentEntry(), react(), tailwindcss()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
@@ -16,6 +27,7 @@ export default defineConfig(() => {
       cssMinify: true,
       chunkSizeWarningLimit: 600,
       rollupOptions: {
+        input: { index: path.resolve(__dirname, 'index.html'), parent: path.resolve(__dirname, 'parent.html') },
         output: {
           manualChunks(id) {
             if (!id.includes('node_modules')) return undefined;
