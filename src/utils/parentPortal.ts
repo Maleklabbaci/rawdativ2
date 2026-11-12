@@ -44,6 +44,7 @@ export interface ParentLinkRequest {
   parentTelephone: string;
   parentLien: 'Mère' | 'Père' | 'Tuteur' | 'Parent';
   requestedChildren: ParentRequestedChild[];
+  requestedChildId?: string;
   linkedEnfantIds: string[];
   linkedSnapshots?: ParentChildSnapshot[];
   status: 'pending' | 'approved' | 'rejected';
@@ -488,6 +489,7 @@ export async function loadParentLinkRequests(crecheId: string): Promise<ParentLi
         parentTelephone: row.parent_telephone,
         parentLien: row.parent_lien || 'Parent',
         requestedChildren: Array.isArray(row.requested_children) ? row.requested_children : [],
+        requestedChildId: row.requested_child_id || undefined,
         linkedEnfantIds: Array.isArray(row.linked_enfant_ids) ? row.linked_enfant_ids : [],
         status: row.status,
         rejectionReason: row.rejection_reason || undefined,
@@ -499,6 +501,7 @@ export async function loadParentLinkRequests(crecheId: string): Promise<ParentLi
         updatedAt: row.updated_at,
       }));
     }
+    throw new Error('Impossible de charger les demandes parent. Vérifiez la connexion puis actualisez.');
   }
   return readLocalRequests()
     .filter((r) => r.crecheId === crecheId)
@@ -660,6 +663,7 @@ export async function submitParentLinkRequest(params: {
 
 export async function approveParentLinkRequest(params: {
   requestId: string;
+  expectedRequestedChildId?: string;
   enfantIds: string[];
   enfants: Enfant[];
   presences: Presence[];
@@ -682,7 +686,7 @@ export async function approveParentLinkRequest(params: {
 
   if (hasLiveSupabaseParentPortal()) {
     const supabase = await getSupabaseClient();
-    await requireConfirmedParentWrite(supabase
+    let update = supabase
       .from('parent_link_requests')
       .update({
         status: 'approved',
@@ -690,14 +694,20 @@ export async function approveParentLinkRequest(params: {
         rejection_reason: null,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', params.requestId).select('id').maybeSingle());
+      .eq('id', params.requestId);
+    if (params.expectedRequestedChildId) update = update.eq('status', 'pending').eq('requested_child_id', params.expectedRequestedChildId);
+    await requireConfirmedParentWrite(update.select('id').maybeSingle());
     notifyPortalUpdated({ action: 'request_approved', requestId: params.requestId });
     return null;
   }
 
   const all = readLocalRequests();
   const idx = all.findIndex((r) => r.id === params.requestId);
-  if (idx < 0) return null;
+  if (idx < 0) {
+    if (params.expectedRequestedChildId) throw new Error('Demande introuvable. Actualisez avant de réessayer.');
+    return null;
+  }
+  if (params.expectedRequestedChildId && (all[idx].status !== 'pending' || all[idx].requestedChildId !== params.expectedRequestedChildId)) throw new Error('Demande modifiée. Actualisez avant de réessayer.');
 
   const updated: ParentLinkRequest = {
     ...all[idx],
@@ -720,10 +730,11 @@ export async function approveParentLinkRequest(params: {
 export async function rejectParentLinkRequest(
   requestId: string,
   reason = '',
+  expectedRequestedChildId?: string,
 ): Promise<void> {
   if (hasLiveSupabaseParentPortal()) {
     const supabase = await getSupabaseClient();
-    await requireConfirmedParentWrite(supabase
+    let update = supabase
       .from('parent_link_requests')
       .update({
         status: 'rejected',
@@ -731,14 +742,18 @@ export async function rejectParentLinkRequest(
         rejection_reason: reason.trim() || null,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', requestId).select('id').maybeSingle());
+      .eq('id', requestId);
+    if (expectedRequestedChildId) update = update.eq('status', 'pending').eq('requested_child_id', expectedRequestedChildId);
+    await requireConfirmedParentWrite(update.select('id').maybeSingle());
     notifyPortalUpdated({ action: 'request_rejected', requestId });
     return;
   }
 
   const all = readLocalRequests();
   const idx = all.findIndex((r) => r.id === requestId);
+  if (idx < 0 && expectedRequestedChildId) throw new Error('Demande introuvable. Actualisez avant de réessayer.');
   if (idx >= 0) {
+    if (expectedRequestedChildId && (all[idx].status !== 'pending' || all[idx].requestedChildId !== expectedRequestedChildId)) throw new Error('Demande modifiée. Actualisez avant de réessayer.');
     const crecheId = all[idx].crecheId;
     all[idx] = {
       ...all[idx],

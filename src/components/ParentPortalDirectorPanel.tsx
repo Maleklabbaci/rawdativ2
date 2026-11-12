@@ -9,6 +9,7 @@ import {
   Home,
   Plus,
   QrCode,
+  RefreshCw,
   Search,
   Send,
   Smartphone,
@@ -59,8 +60,12 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
   const [copiedQr, setCopiedQr] = useState(false);
 
   const [requests, setRequests] = useState<ParentLinkRequest[]>([]);
+  const [requestsError, setRequestsError] = useState(false);
+  const [requestsLoading, setRequestsLoading] = useState(true);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [announcements, setAnnouncements] = useState<ParentAnnouncement[]>([]);
   const [selectedChildIdsByReq, setSelectedChildIdsByReq] = useState<Record<string, string[]>>({});
+  const requestTargetsRef = useRef<Record<string, string>>({});
   const [pickerOpenReqId, setPickerOpenReqId] = useState<string | null>(null);
   const [childSearch, setChildSearch] = useState('');
   const [busyReqId, setBusyReqId] = useState<string | null>(null);
@@ -105,38 +110,58 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
     });
 
     let mounted = true;
+    let inFlight = false;
     const syncAll = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
       const [reqs, anns] = await Promise.all([
         loadParentLinkRequests(crecheId),
         loadParentAnnouncements(crecheId),
       ]);
       if (!mounted) return;
+      setRequestsError(false);
+      setRequestsLoading(false);
       setRequests(reqs);
       setAnnouncements(anns);
 
+      const targets: Record<string, string> = {};
+      for (const r of reqs) targets[r.id] = `${r.status}:${r.requestedChildId || ''}:${JSON.stringify(r.requestedChildren)}`;
+      const changedTargets = new Set(reqs.filter(r => requestTargetsRef.current[r.id] !== targets[r.id]).map(r => r.id));
+      requestTargetsRef.current = targets;
       setSelectedChildIdsByReq((prev) => {
         const next = { ...prev };
         for (const r of reqs) {
-          if (!next[r.id]) {
+          if (!next[r.id] || changedTargets.has(r.id)) {
             next[r.id] =
               r.linkedEnfantIds.length > 0
                 ? r.linkedEnfantIds
-                : findMatchingChildrenForRequest(r, enfants);
+                : r.requestedChildId
+                  ? enfants.filter(child => child.id === r.requestedChildId).map(child => child.id)
+                  : findMatchingChildrenForRequest(r, enfants);
           }
         }
         return next;
       });
+      } catch {
+        if (mounted) { setRequestsError(true); setRequestsLoading(false); }
+      } finally { inFlight = false; }
     };
 
     void syncAll();
+    const pollId = window.setInterval(() => { if (!document.hidden) void syncAll(); }, 8000);
+    const onFocus = () => { void syncAll(); };
+    window.addEventListener('focus', onFocus);
     const unsub = subscribeToParentPortalChanges(() => {
       void syncAll();
     });
     return () => {
       mounted = false;
+      window.clearInterval(pollId);
+      window.removeEventListener('focus', onFocus);
       unsub();
     };
-  }, [crecheId, crecheNom, enfants, presences, repas, activites, paiements]);
+  }, [crecheId, crecheNom, enfants, presences, repas, activites, paiements, refreshVersion]);
 
   const pendingRequests = requests.filter((r) => r.status === 'pending');
   const approvedRequests = requests.filter((r) => r.status === 'approved');
@@ -600,9 +625,11 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
               ? `Demandes de liaison en attente (${pendingRequests.length})`
               : `طلبات الربط قيد الانتظار (${pendingRequests.length})`}
           </h3>
+          <button type="button" onClick={() => { setRequestsLoading(true); setRefreshVersion(v => v + 1); }} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"><RefreshCw className="h-3.5 w-3.5" />{isFr ? 'Actualiser' : 'تحديث'}</button>
         </div>
 
-        {pendingRequests.length === 0 ? (
+        {requestsError && <p role="alert" className="border-b border-amber-100 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-900">{isFr ? 'Impossible de charger les demandes. Vérifiez la connexion puis actualisez.' : 'تعذر تحميل الطلبات. تحققي من الاتصال ثم حدّثي الصفحة.'}</p>}
+        {requestsLoading ? <p role="status" className="p-6 text-center text-xs text-slate-500">{isFr ? 'Chargement des demandes...' : 'جارٍ تحميل الطلبات...'}</p> : requestsError ? null : pendingRequests.length === 0 ? (
           <div className="p-8 text-center text-xs text-slate-500">
             <CheckCircle2 className="mx-auto mb-2 h-7 w-7 text-emerald-500" />
             {isFr ? 'Aucune demande parent en attente.' : 'لا توجد طلبات ربط معلقة حالياً.'}
@@ -612,6 +639,7 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
             {pendingRequests.map((req) => {
               const selectedIds = selectedChildIdsByReq[req.id] || [];
               const isPickerOpen = pickerOpenReqId === req.id;
+              const invitedChild = req.requestedChildId ? enfants.find(child => child.id === req.requestedChildId) : undefined;
 
               return (
                 <div key={req.id} className="p-4 space-y-3">
@@ -628,10 +656,11 @@ export default function ParentPortalDirectorPanel({ mode, onOpenInlineSimulator 
                       <p className="text-xs text-slate-600">
                         {isFr ? 'Enfant(s) déclaré(s) : ' : 'الأطفال المصرح بهم: '}
                         <strong className="text-slate-900">
-                          {req.requestedChildren.map((c) => `${c.prenom} ${c.nom}`).join(' + ')}
+                          {req.requestedChildId ? (invitedChild ? `${invitedChild.prenom} ${invitedChild.nom}` : (isFr ? 'Enfant indisponible' : 'ملف الطفل غير متاح')) : req.requestedChildren.map((c) => `${c.prenom} ${c.nom}`).join(' + ')}
                         </strong>
                       </p>
 
+                      {req.requestedChildId && <p className="text-xs text-amber-700">{isFr ? 'Invitation personnelle : vérifiez l’identité du parent avant de valider.' : 'دعوة شخصية: تحققي من هوية الولي قبل الموافقة.'}</p>}
                       {/* Badges des dossiers enfants auto-associés */}
                       <div className="flex flex-wrap items-center gap-1.5 pt-1">
                         {selectedIds.map((cid) => {

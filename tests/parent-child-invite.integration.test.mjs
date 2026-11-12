@@ -1,0 +1,44 @@
+import { PGlite } from '@electric-sql/pglite';
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+test('personal invitation needs director approval, never leaks the child and preserves existing links', async () => {
+ const db = new PGlite(); const a='00000000-0000-0000-0000-000000000011', b='00000000-0000-0000-0000-000000000022';
+ try {
+  await db.exec(`create role anon; create role authenticated; create schema auth;
+   create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.uid',true),'')::uuid$$;
+   create function public.rawdha_is_admin() returns boolean language sql stable as $$select false$$;
+   create table public.comptes(id text primary key,data jsonb not null);
+   create function public.rawdha_is_approved_director() returns boolean language sql stable security definer as $$select exists(select 1 from public.comptes where id=auth.uid()::text and data->>'approvalStatus'='approved' and data->>'role'='directeur')$$;
+   create table public.enfants(id text primary key,data jsonb not null); create table public.presences(id text primary key,data jsonb not null); create table public.repas(id text primary key,data jsonb not null); create table public.activites(id text primary key,data jsonb not null); create table public.paiements(id text primary key,data jsonb not null);
+   grant usage on schema public,auth to anon,authenticated;
+   insert into comptes values ('${a}','{"role":"directeur","approvalStatus":"approved"}'),('${b}','{"role":"directeur","approvalStatus":"approved"}');
+   insert into enfants values ('a','{"crecheId":"${a}","prenom":"Amina","nom":"Test","groupeAge":"Bébés"}'),('b','{"crecheId":"${b}","prenom":"B","nom":"Test"}');`);
+  await db.exec(readFileSync('supabase/migrations/20261108230000_parent_portal_and_web_push.sql','utf8'));
+  await db.exec(readFileSync('supabase/migrations/20261109010000_parent_child_invites.sql','utf8'));
+  await db.exec(`set role authenticated; select set_config('request.uid','${a}',false)`);
+  await assert.rejects(db.query("select rawdha_create_child_parent_invite('b')"),/child_not_found/);
+  const create=async()=> (await db.query("select rawdha_create_child_parent_invite('a') as result")).rows[0].result;
+  const invite=await create(); const another=await create(); assert.match(invite.token,/^[a-f0-9]{64}$/);
+  await db.exec('reset role; set role anon');
+  await assert.rejects(db.query('select * from parent_child_invites'),/permission denied/);
+  await assert.rejects(db.query("select rawdha_create_child_parent_invite('a')"),/permission denied/);
+  const device='ptok_'+'1'.repeat(32);
+  const submit=(token,dev=device)=>db.query("select rawdha_submit_child_parent_invite($1,$2,'Nadia','Test','0555123456','Mère','android') as result",[token,dev]);
+  const res=(await submit(invite.token)).rows[0].result; assert.equal(res.ok,true); assert.deepEqual(Object.keys(res).sort(),['id','ok']);
+  await assert.rejects(submit(invite.token),/invite_invalide/);
+  await assert.rejects(submit(another.token),/existing_request_contact_director/);
+  const pending=(await db.query('select get_parent_portal_snapshot($1,$2) as snap',[a,device])).rows[0].snap;
+  assert.equal(pending.request.status,'pending'); assert.equal(pending.request.linkedSnapshots.length,0); assert.doesNotMatch(JSON.stringify(pending),/Amina/);
+  await db.exec('reset role');
+  const row=(await db.query('select requested_child_id,linked_enfant_ids from parent_link_requests where id=$1',[res.id])).rows[0];
+  assert.equal(row.requested_child_id,'a'); assert.deepEqual(row.linked_enfant_ids,[]);
+  const stored=(await db.query('select token_hash from parent_child_invites where used_at is not null')).rows[0]; assert.notEqual(stored.token_hash,invite.token);
+  await db.query("update parent_link_requests set status='approved', linked_enfant_ids=array['a'] where id=$1",[res.id]);
+  await db.exec('set role anon'); await assert.rejects(submit(another.token),/existing_request_contact_director/);
+  const snap=(await db.query('select get_parent_portal_snapshot($1,$2) as snap',[a,device])).rows[0].snap;
+  assert.equal(snap.request.status,'approved'); assert.equal(snap.request.linkedSnapshots[0].id,'a');
+  await db.exec('reset role'); await db.query("update parent_child_invites set expires_at=now()-interval '1 second' where used_at is null"); await db.exec('set role anon');
+  await assert.rejects(submit(another.token,'ptok_'+'2'.repeat(32)),/invite_invalide/);
+ } finally { await db.close(); }
+});

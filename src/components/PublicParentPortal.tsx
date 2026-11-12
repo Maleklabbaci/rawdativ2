@@ -459,6 +459,7 @@ export default function PublicParentPortal() {
            ================================================================ */}
         {isApprovedWithChildren && !showAddSiblingForm ? (
           <div className="parent-home">
+            {childInvite && <p role="status" className="parent-note">{isAr ? 'هذا الهاتف مرتبط بالفعل. لإضافة طفل آخر، تواصلي مع المديرة.' : 'Ce téléphone est déjà lié. Pour ajouter un autre enfant, contactez la directrice.'}</p>}
             <section className="parent-settings" hidden={parentTab !== 'settings' && (parentTab !== 'home' || (homeInstalled && pushAlreadyActive))} aria-labelledby="parent-settings-title">
               <div className="parent-settings-heading"><div><p className="parent-eyebrow">{isAr ? 'الإعدادات' : 'VOTRE ESPACE'}</p><h2 id="parent-settings-title">{isAr ? 'ابقوا على اطلاع' : 'Toujours à vos côtés'}</h2><p>{isAr ? 'خطوتان بسيطتان لمتابعة أخبار طفلكم.' : 'Deux petits gestes pour ne rien manquer de sa journée.'}</p></div><span className="parent-settings-heart" aria-hidden="true">♥</span></div>
               <div className="parent-setting-row">
@@ -560,6 +561,7 @@ export default function PublicParentPortal() {
             id="parent-waiting-approval"
             className="rounded-3xl border border-indigo-100 bg-white p-6 text-center shadow-sm space-y-4"
           >
+            {childInvite && <p role="status" className="text-xs text-amber-800">{isAr ? 'يوجد طلب سابق لهذا الهاتف. تواصلي مع المديرة قبل إرسال طلب آخر.' : 'Une demande existe déjà sur ce téléphone. Contactez la directrice avant d’en envoyer une autre.'}</p>}
             <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-indigo-50 text-indigo-600">
               <Clock className="h-7 w-7 animate-pulse" />
             </div>
@@ -628,8 +630,8 @@ export default function PublicParentPortal() {
                 </h1>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {isAr
-                    ? 'سجّلوا اسم طفلكم (أو إخوته). بعد مصادقة المديرة، ستصلكم إشعارات الروضة مباشرة على هاتفكم.'
-                    : 'Indiquez votre enfant (ou plusieurs frères/sœurs). Dès validation par la directrice, vous recevrez les notifications Push de la crèche.'}
+                    ? (childInvite ? 'أكملي بياناتك ثم انتظري مصادقة المديرة.' : 'سجّلوا اسم طفلكم (أو إخوته). بعد مصادقة المديرة، يمكن تفعيل الإشعارات.')
+                    : (childInvite ? 'Renseignez vos coordonnées puis attendez la validation de la directrice.' : 'Indiquez votre enfant (ou plusieurs frères/sœurs). Après validation, vous pourrez activer les notifications.')}
                 </p>
               </div>
             </div>
@@ -642,6 +644,7 @@ export default function PublicParentPortal() {
               </div>
             )}
 
+            {childInvite && <div className="rounded-2xl bg-[#fff5eb] p-4 text-sm text-slate-700"><p className="text-[10px] font-bold uppercase tracking-wide text-orange-700">{isAr ? 'دعوة شخصية من' : 'Invitation personnelle de'}</p><p className="mt-1 font-bold">{crecheContext.crecheNom}</p><p className="mt-1 text-xs leading-relaxed">{isAr ? 'بعد مصادقة المديرة، ستظهر معلومات طفلك هنا.' : 'Après validation par la directrice, le nom et les informations de votre enfant apparaîtront ici.'}</p></div>}
             <form onSubmit={handleSubmitLinkRequest} className="space-y-4">
               {/* Parent Info */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

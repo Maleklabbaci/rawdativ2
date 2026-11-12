@@ -7,6 +7,8 @@ import {
   suspectedInvoiceIds,
 } from '../utils/financePeriod';
 import FinanceReviewWarning from './FinanceReviewWarning';
+import ParentChildQr from './ParentChildQr';
+import ParentChildRequests from './ParentChildRequests';
 import FinanceUnavailable from './FinanceUnavailable';
 import ChildHealthJournal from './ChildHealthJournal';
 import PickupAuthorizations from './PickupAuthorizations';
@@ -65,7 +67,7 @@ export default function EnfantDetails({ enfant: initialEnfant, onClose }: { enfa
   const isArabic = language === 'ar';
   const { user, creche } = useAuth();
   const { showToast } = useToast();
-  const { activeProfile, hasPagePermission } = useWorkspaceProfile();
+  const { activeProfile, hasPagePermission, isOwnerProfile } = useWorkspaceProfile();
   const hideFinancials = Boolean(activeProfile?.hideFinancials);
   const canEditDossier =
     hasPagePermission('enfants', 'edit') &&
@@ -253,6 +255,8 @@ export default function EnfantDetails({ enfant: initialEnfant, onClose }: { enfa
           </button>
         </div>
 
+        {user?.role === 'directeur' && user.approvalStatus === 'approved' && isOwnerProfile && enfant.crecheId === user.id && <div className="border-b border-slate-100 px-4 py-3 sm:px-6"><ParentChildQr childId={enfant.id} childName={`${enfant.prenom} ${enfant.nom}`} crecheId={user.id} crecheName={creche?.nom || user.nomCreche || ''} isArabic={isArabic}/></div>}
+
         {enfant.statut === 'Inactif' && (
           <div className="px-6 py-3 bg-amber-50 border-b border-amber-100 flex items-center gap-2.5 flex-shrink-0">
             <Clock className="w-4 h-4 text-amber-500 flex-shrink-0" />
@@ -348,7 +352,8 @@ export default function EnfantDetails({ enfant: initialEnfant, onClose }: { enfa
           )}
         </div>
 
-        <div className="p-6 space-y-6 overflow-y-auto flex-1">
+        <div className="p-4 sm:p-6 space-y-6 overflow-y-auto flex-1">
+          {user?.role === 'directeur' && user.approvalStatus === 'approved' && isOwnerProfile && enfant.crecheId === user.id && <ParentChildRequests childId={enfant.id} childName={`${enfant.prenom} ${enfant.nom}`} crecheId={user.id} isArabic={isArabic}/>}
           <AnimatePresence mode="wait">
             {activeTab === 'retrait' && <motion.div key="retrait-tab"><PickupAuthorizations childId={enfant.id} /></motion.div>}
             {activeTab === 'sante' && <motion.div key="sante-tab"><ChildHealthJournal childId={enfant.id} /></motion.div>}
