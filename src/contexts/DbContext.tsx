@@ -1,4 +1,5 @@
 import { financeErrorKind, financeErrorMessage } from '../utils/financeError';
+import { plannedActivityMessage } from '../utils/automaticActivityPush';
 import { offloadChildDocumentsToStorage } from '../utils/documentStorage';
 import { useLanguage } from './LanguageContext';
 import { attendanceErrorKind } from '../utils/attendanceError';
@@ -903,6 +904,18 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  // Notifications are best effort after a confirmed invoice write. Failure never rolls back or repeats a payment.
+  const notifyPaymentChange = (previous: Paiement | null, next: Paiement) => {
+    if (user?.role !== 'directeur' || user.approvalStatus !== 'approved') return;
+    const child = enfants.find(e => e.id === next.enfantId && e.crecheId === user.id);
+    if (!child) return;
+    void import('../utils/automaticPaymentPush').then(({ dispatchAutomaticPaymentPush }) => dispatchAutomaticPaymentPush({
+      crecheId: user.id, crecheNom: user.nomCreche || 'Crèche', enfant: child, previous, next, isArabic: language === 'ar',
+    })).then(result => {
+      if (result && (result.pushStatus === 'unknown' || result.pushStatus === 'incomplete')) showToast(language === 'ar' ? 'تم حفظ الفاتورة، لكن إرسال الإشعار غير مؤكد.' : 'Facture enregistrée, mais l’envoi de la notification n’est pas confirmé.', 'info');
+    }).catch(() => showToast(language === 'ar' ? 'تم حفظ الفاتورة، لكن تعذر تأكيد الإشعار.' : 'Facture enregistrée, mais la notification n’a pas pu être confirmée.', 'info'));
+  };
+
   // --- PAIEMENTS ---
   // No fallback to direct writes: the matching staged migration is required.
   const addPaiement = async (paiement: Omit<Paiement, 'id'> & { id?: string }) => {
@@ -916,7 +929,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const { data, error } = await trackedBusinessRpc('rawdha_write_invoice', { p_action:'create', p_id:id, p_patch:patch, p_expected:null });
       if (error) throw error;
       if (!data || data.id !== id) throw new Error('finance_unconfirmed_response');
-      if (currentUserId.current === user?.id) setPaiements(prev => [...prev.filter(item => item.id !== id), data as Paiement]);
+      if (currentUserId.current === user?.id) { setPaiements(prev => [...prev.filter(item => item.id !== id), data as Paiement]); notifyPaymentChange(null, data as Paiement); }
       return id;
     } catch (err) {
       if (financeErrorKind(err) === 'unknown' || financeErrorKind(err) === 'changed' || financeErrorKind(err) === 'blocked') setFinancialDataReady(false);
@@ -933,7 +946,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const { data, error } = await trackedBusinessRpc('rawdha_write_invoice', { p_action:'update', p_id:id, p_patch:patch, p_expected:expected });
       if (error) throw error;
       if (!data || data.id !== id) throw new Error('finance_unconfirmed_response');
-      if (currentUserId.current === user?.id) setPaiements(prev => prev.map(item => item.id === id ? data as Paiement : item));
+      if (currentUserId.current === user?.id) { setPaiements(prev => prev.map(item => item.id === id ? data as Paiement : item)); notifyPaymentChange(expected, data as Paiement); }
     } catch (err) {
       if (financeErrorKind(err) === 'unknown' || financeErrorKind(err) === 'changed' || financeErrorKind(err) === 'blocked') setFinancialDataReady(false);
       showToast(financeErrorMessage(err, language === 'ar'), 'error');
@@ -1114,6 +1127,18 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const notifyPlannedActivity = (activity: Activite) => {
+    if (user?.role !== 'directeur' || user.approvalStatus !== 'approved') return;
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const message = plannedActivityMessage(activity, user.id, today, language === 'ar');
+    if (!message) return;
+    const childScope = enfants.filter(child => child.crecheId === user.id);
+    void import('../utils/parentPortal').then(({ publishParentAnnouncement }) => publishParentAnnouncement({ crecheId: user.id, crecheNom: user.nomCreche || 'Crèche', title: language === 'ar' ? 'نشاط مبرمج' : 'Activité prévue', message, category: 'evenement', targetScope: 'group', targetGroup: activity.groupe, enfants: childScope })).then(result => {
+      if (result.pushStatus === 'unknown' || result.pushStatus === 'incomplete') showToast(language === 'ar' ? 'تم حفظ النشاط، لكن الإشعار غير مؤكد.' : 'Activité enregistrée, mais l’envoi de la notification n’est pas confirmé.', 'info');
+    }).catch(() => showToast(language === 'ar' ? 'تم حفظ النشاط، لكن تعذر تأكيد الإشعار.' : 'Activité enregistrée, mais la notification n’a pas pu être confirmée.', 'info'));
+  };
+
   // --- ACTIVITES ---
   const addActivite = async (activite: Omit<Activite, 'id'>) => {
     assertWriteAccess();
@@ -1123,6 +1148,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const freshId = await addCollectionDocument('activites', activite);
       setActivites(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      if (currentUserId.current === user?.id) notifyPlannedActivity({ ...activite, id: freshId });
       return freshId;
     } catch (err) {
       setActivites(prev => prev.filter(item => item.id !== tempId));

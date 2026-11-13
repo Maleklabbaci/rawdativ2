@@ -1,4 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { publishParentAnnouncement } from '../utils/parentPortal';
 import {
   BookHeart,
   Check,
@@ -50,6 +52,22 @@ export default function ParentDailyReportModal({
   const [siesteInput, setSiesteInput] = useState('');
   const [customNote, setCustomNote] = useState('');
   const [copied, setCopied] = useState(false);
+  const { user } = useAuth();
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [noteStatus, setNoteStatus] = useState('');
+  const sentNote = useRef('');
+  const noteInFlight = useRef(false);
+  const sendNote = async () => {
+    const note = customNote.trim();
+    if (!note || noteInFlight.current || note === sentNote.current || !user || user.role !== 'directeur' || user.approvalStatus !== 'approved' || enfant.crecheId !== user.id) return;
+    noteInFlight.current = true; sentNote.current = note; setNoteBusy(true); setNoteStatus('');
+    try {
+      const result = await publishParentAnnouncement({ crecheId: user.id, crecheNom: creche?.nom || user.nomCreche || 'Crèche', title: isArabic ? 'ملاحظة من الروضة' : 'Un mot de la crèche', message: note, pushMessage: isArabic ? 'ملاحظة جديدة متاحة في فضاء الأولياء.' : 'Une nouvelle remarque est disponible dans votre espace parent.', category: 'info', targetScope: 'child', targetEnfantId: enfant.id, enfants: [enfant] });
+      setNoteStatus(result.pushStatus === 'confirmed' && result.sentPushCount > 0 ? (isArabic ? 'تم حفظ الملاحظة وقبلت خدمة الإشعارات إرسالها.' : 'Remarque enregistrée, envoi accepté par le service de notifications.') : (isArabic ? 'تم حفظ الملاحظة، لكن تسليم الإشعار غير مؤكد.' : 'Remarque enregistrée dans l’espace parent ; réception de la notification non confirmée.'));
+    } catch { setNoteStatus(isArabic ? 'النتيجة غير مؤكدة. تحققي من الرسائل قبل إعادة المحاولة.' : 'Résultat non confirmé. Vérifiez les messages avant de réessayer pour éviter un doublon.'); }
+    finally { noteInFlight.current = false; setNoteBusy(false); }
+  };
+
 
   const formattedDate = useMemo(() => {
     try {
@@ -289,6 +307,7 @@ export default function ParentDailyReportModal({
           </label>
           <textarea
             rows={2}
+            maxLength={600}
             value={customNote}
             onChange={e => setCustomNote(e.target.value)}
             placeholder={
@@ -298,6 +317,8 @@ export default function ParentDailyReportModal({
             }
             className="w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-indigo-500"
           />
+          {user?.role === 'directeur' && user.approvalStatus === 'approved' && enfant.crecheId === user.id && <button type="button" disabled={noteBusy || !customNote.trim() || customNote.trim() === sentNote.current} onClick={() => void sendNote()} className="mt-2 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{noteBusy ? (isArabic ? 'جاري الحفظ…' : 'Enregistrement…') : (isArabic ? 'حفظ وإرسال للأولياء' : 'Enregistrer et prévenir les parents')}</button>}
+          {noteStatus && <p role="status" className="mt-2 text-xs font-semibold text-slate-600">{noteStatus}</p>}
         </div>
 
         {/* Actions directes */}

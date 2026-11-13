@@ -321,6 +321,13 @@ test('Automatic Attendance Push (Bien arrivé / Récupéré / Fièvre / Absence)
     assert.equal(resPickup.kind, 'pickup');
     assert.match(resPickup.announcement.message, /16:45 par Papa/);
 
+    // A corrected meal after departure is not evidence that the child ate in the nursery.
+    const afterPickup = await parentPortal.dispatchAutomaticAttendancePush({ crecheId, crecheNom: 'Crèche El Yasmine', enfant: amine, previous: pickupState, next: {...pickupState, repas: 'Tout'} });
+    assert.equal(afterPickup.triggered, false);
+    const meal = await parentPortal.dispatchAutomaticAttendancePush({ crecheId, crecheNom: 'Crèche El Yasmine', enfant: amine, previous: feverState, next: {...feverState, repas: 'Non'} });
+    assert.equal(meal.kind, 'observation');
+    assert.match(meal.announcement.message, /n’a pas mangé/);
+
     // Absence de Lina -> "Absence enregistrée — Lina"
     const resAbsence = await parentPortal.dispatchAutomaticAttendancePush({
       crecheId,
@@ -343,7 +350,7 @@ test('Automatic Attendance Push (Bien arrivé / Récupéré / Fièvre / Absence)
     const visibleForAmine = allAnns.filter((ann) =>
       ann.targetScope === 'child' ? approvedAmine.linkedEnfantIds.includes(ann.targetEnfantId) : true
     );
-    assert.equal(visibleForAmine.length, 3);
+    assert.equal(visibleForAmine.length, 4);
 
     // Rendu DOM : AbonnementPaiement + Presences
     const wait = (ms = 120) => new Promise((r) => setTimeout(r, ms));
