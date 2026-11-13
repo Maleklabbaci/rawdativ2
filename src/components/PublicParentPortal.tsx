@@ -40,6 +40,7 @@ import { supabase } from '../supabase';
 import { formatCurrency } from '../utils/format';
 import { parseParentInviteLink } from '../utils/parentInviteLink';
 import { encodeParentAccessTransfer, decodeParentAccessTransfer } from '../utils/parentAccessClipboard';
+import ParentInviteScanner from './ParentInviteScanner';
 import './parentPortal.css';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -50,12 +51,20 @@ interface BeforeInstallPromptEvent extends Event {
 function ParentInviteEntry({ isAr }: { isAr: boolean }) {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
+  const [scanning, setScanning] = useState(false);
+  const navigate = (path: string) => {
+    const destination = new URL(path, window.location.origin);
+    const sameDocument = destination.pathname === window.location.pathname && destination.search === window.location.search;
+    window.location.assign(path);
+    // A hash-only navigation does not remount React or load the invitation.
+    if (sameDocument) window.location.reload();
+  };
   const open = () => {
     const path = parseParentInviteLink(input, window.location.origin);
     if (!path) { setError(isAr ? 'الرابط غير صالح. استعملي الرابط الشخصي من الروضة على نفس الموقع.' : 'Lien invalide. Utilisez le lien personnel de la crèche pour ce même site.'); return; }
-    window.location.assign(path);
+    navigate(path);
   };
-  return <div className="rounded-2xl border border-orange-100 bg-orange-50 p-4"><p className="text-sm font-bold text-slate-900">{isAr ? 'لديك رابط شخصي؟' : 'Vous avez un lien personnel ?'}</p><p className="mt-2 text-xs text-slate-600">{isAr ? 'الصقي الرابط الذي أرسلته الروضة. إذا استُخدم الرابط من قبل، اطلبي رابطاً جديداً.' : 'Collez le lien envoyé par la crèche. S’il a déjà été utilisé, demandez un nouveau lien à la directrice.'}</p><div className="mt-3 space-y-3"><label htmlFor="invite-link" className="text-sm font-bold text-slate-700">{isAr ? 'الرابط الشخصي' : 'Lien personnel'}</label><input id="invite-link" type="url" autoComplete="off" value={input} onChange={e => setInput(e.target.value)} className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm" required/><button type="button" onClick={open} className="w-full rounded-xl bg-indigo-600 p-3 text-sm font-bold text-white">{isAr ? 'فتح الرابط' : 'Ouvrir mon lien'}</button>{error && <p role="alert" className="text-sm text-rose-700">{error}</p>}</div><p className="mt-3 text-xs text-slate-500">{isAr ? 'لا ترسلي الرابط لأي شخص آخر.' : 'Gardez ce lien privé : ne le partagez avec personne d’autre.'}</p></div>;
+  return <div className="rounded-2xl border border-orange-100 bg-orange-50 p-4"><p className="text-sm font-bold text-slate-900">{isAr ? 'ربط هاتفي بالروضة' : 'Relier mon téléphone à la crèche'}</p><p className="mt-2 text-xs text-slate-600">{isAr ? 'اطلبي من المديرة رمزاً شخصياً جديداً وامسحيه هنا. ستتحقق المديرة من هويتك قبل فتح الملف.' : 'Demandez un nouveau QR personnel à la directrice et scannez-le ici. Elle vérifiera votre identité avant de valider l’accès.'}</p>{!scanning ? <button type="button" onClick={() => setScanning(true)} className="mt-3 w-full rounded-xl bg-indigo-600 p-3 text-sm font-bold text-white">{isAr ? 'مسح رمز الروضة' : 'Scanner le QR de la crèche'}</button> : <ParentInviteScanner isAr={isAr} onClose={() => setScanning(false)} onFound={navigate}/>}<details className="mt-3"><summary className="cursor-pointer text-xs font-bold text-indigo-700">{isAr ? 'لديّ رابط شخصي' : 'J’ai un lien personnel'}</summary><p className="mt-2 text-xs text-slate-600">{isAr ? 'الصقي الرابط الذي أرسلته الروضة. إذا استُخدم الرابط من قبل، اطلبي رابطاً جديداً.' : 'Collez le lien envoyé par la crèche. S’il a déjà été utilisé, demandez un nouveau lien à la directrice.'}</p><div className="mt-3 space-y-3"><label htmlFor="invite-link" className="text-sm font-bold text-slate-700">{isAr ? 'الرابط الشخصي' : 'Lien personnel'}</label><input id="invite-link" type="url" autoComplete="off" value={input} onChange={e => setInput(e.target.value)} className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm"/><button type="button" onClick={open} className="w-full rounded-xl border border-indigo-200 bg-white p-3 text-sm font-bold text-indigo-700">{isAr ? 'فتح الرابط' : 'Ouvrir mon lien'}</button>{error && <p role="alert" className="text-sm text-rose-700">{error}</p>}</div></details><p className="mt-3 text-xs text-slate-500">{isAr ? 'لا تشاركي الرمز أو الرابط مع أي شخص آخر.' : 'Ce QR et ce lien sont privés : ne les partagez pas.'}</p></div>;
 }
 
 function ParentAccessRecovery({ isAr, deviceToken }: { isAr: boolean; deviceToken: string }) {
