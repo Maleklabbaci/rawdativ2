@@ -130,6 +130,7 @@ export default function PublicParentPortal() {
   const platform = useMemo(() => detectMobilePlatform(), []);
 
   const [childInvite, setChildInvite] = useState(() => typeof window === 'undefined' ? '' : new URLSearchParams(window.location.hash.slice(1)).get('enfant') || '');
+  const [quickInvite, setQuickInvite] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.hash.slice(1)).get('rapide') === '1');
   const [request, setRequest] = useState<ParentLinkRequest | null>(null);
   const [announcements, setAnnouncements] = useState<ParentAnnouncement[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<string>('');
@@ -330,6 +331,21 @@ export default function PublicParentPortal() {
 
   const handleRemoveChildRow = (idx: number) => {
     setChildrenInputs((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev));
+  };
+
+  const submitQuickInvite = async () => {
+    if (submitting || !childInvite || !deviceToken || (platform === 'ios' && !homeInstalled)) return;
+    setFormError(''); setSubmitting(true);
+    try {
+      const { data, error } = await supabase.rpc('rawdha_submit_registered_parent_invite', { p_token: childInvite, p_device_token: deviceToken, p_platform_hint: platform });
+      if (error || data?.ok !== true) throw new Error('unconfirmed');
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      setChildInvite(''); setQuickInvite(false);
+      const saved = await getCurrentDeviceParentRequest(crecheContext.crecheId, deviceToken);
+      if (!saved) throw new Error('unconfirmed');
+      setRequest(saved);
+    } catch { setFormError(isAr ? 'لم يتم تأكيد الطلب. تحققي من الحالة مع المديرة قبل المحاولة مجدداً.' : 'Demande non confirmée. Vérifiez son état auprès de la directrice avant de réessayer.'); }
+    finally { setSubmitting(false); }
   };
 
   const handleSubmitLinkRequest = async (e: FormEvent) => {
@@ -712,7 +728,7 @@ export default function PublicParentPortal() {
                 <p className="text-xs text-slate-500 mt-0.5">
                   {isAr
                     ? (childInvite ? 'أكملي بياناتك ثم انتظري مصادقة المديرة.' : 'سجّلوا اسم طفلكم (أو إخوته). بعد مصادقة المديرة، يمكن تفعيل الإشعارات.')
-                    : (childInvite ? 'Renseignez vos coordonnées puis attendez la validation de la directrice.' : 'Indiquez votre enfant (ou plusieurs frères/sœurs). Après validation, vous pourrez activer les notifications.')}
+                    : (childInvite ? (quickInvite ? 'Envoyez la demande : la directrice vérifiera votre identité.' : 'Renseignez vos coordonnées puis attendez la validation de la directrice.') : 'Indiquez votre enfant (ou plusieurs frères/sœurs). Après validation, vous pourrez activer les notifications.')}
                 </p>
               </div>
             </div>
@@ -726,9 +742,10 @@ export default function PublicParentPortal() {
               </div>
             )}
 
-            {platform === 'ios' && !homeInstalled && childInvite && !request && <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-slate-800 space-y-2"><p className="font-bold">{isAr ? 'على iPhone، ثبّتي فضاء الأولياء أولاً' : 'Sur iPhone, installez d’abord l’Espace Parent'}</p><p>{isAr ? 'انسخي رابط الدعوة، ثم في Safari اضغطي مشاركة ← على الشاشة الرئيسية. افتحي الأيقونة والصقي الرابط قبل إرسال الطلب.' : 'Copiez votre lien personnel. Dans Safari, touchez Partager puis « Sur l’écran d’accueil ». Ouvrez l’icône et collez le lien avant d’envoyer la demande.'}</p><button type="button" onClick={async () => { try { await navigator.clipboard.writeText(window.location.href); setCopyMessage(isAr ? 'تم نسخ الرابط.' : 'Lien copié.'); } catch { setCopyMessage(isAr ? 'انسخي الرابط من شريط العنوان.' : 'Copiez le lien dans la barre d’adresse de Safari.'); } }} className="rounded-lg bg-white border border-orange-200 px-3 py-2 font-bold text-orange-800">{isAr ? 'نسخ الرابط' : 'Copier mon lien'}</button>{copyMessage && <p role="status">{copyMessage}</p>}<p className="text-xs">{isAr ? 'الرابط سري ويستخدم مرة واحدة.' : 'Ce lien est privé et utilisable une seule fois.'}</p></div>}
+            {platform === 'ios' && !homeInstalled && childInvite && !request && !quickInvite && <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-slate-800 space-y-2"><p className="font-bold">{isAr ? 'على iPhone، ثبّتي فضاء الأولياء أولاً' : 'Sur iPhone, installez d’abord l’Espace Parent'}</p><p>{isAr ? 'انسخي رابط الدعوة، ثم في Safari اضغطي مشاركة ← على الشاشة الرئيسية. افتحي الأيقونة والصقي الرابط قبل إرسال الطلب.' : 'Copiez votre lien personnel. Dans Safari, touchez Partager puis « Sur l’écran d’accueil ». Ouvrez l’icône et collez le lien avant d’envoyer la demande.'}</p><button type="button" onClick={async () => { try { await navigator.clipboard.writeText(window.location.href); setCopyMessage(isAr ? 'تم نسخ الرابط.' : 'Lien copié.'); } catch { setCopyMessage(isAr ? 'انسخي الرابط من شريط العنوان.' : 'Copiez le lien dans la barre d’adresse de Safari.'); } }} className="rounded-lg bg-white border border-orange-200 px-3 py-2 font-bold text-orange-800">{isAr ? 'نسخ الرابط' : 'Copier mon lien'}</button>{copyMessage && <p role="status">{copyMessage}</p>}<p className="text-xs">{isAr ? 'الرابط سري ويستخدم مرة واحدة.' : 'Ce lien est privé et utilisable une seule fois.'}</p></div>}
+            {platform === 'ios' && !homeInstalled && childInvite && !request && quickInvite && <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-slate-800"><p className="font-bold">{isAr ? 'ثبّتي التطبيق أولاً' : 'Installez d’abord l’Espace Parent'}</p><p className="mt-2">{isAr ? 'في Safari، اضغطي مشاركة ثم إضافة إلى الشاشة الرئيسية. افتحي الأيقونة وامسحي رمز المديرة داخل التطبيق.' : 'Dans Safari, touchez Partager puis « Sur l’écran d’accueil ». Ouvrez l’icône et scannez le QR de la directrice dans l’application.'}</p></div>}
             {childInvite && <div className="rounded-2xl bg-[#fff5eb] p-4 text-sm text-slate-700"><p className="text-[10px] font-bold uppercase tracking-wide text-orange-700">{isAr ? 'دعوة شخصية من' : 'Invitation personnelle de'}</p><p className="mt-1 font-bold">{crecheContext.crecheNom}</p><p className="mt-1 text-xs leading-relaxed">{isAr ? 'بعد مصادقة المديرة، ستظهر معلومات طفلك هنا.' : 'Après validation par la directrice, le nom et les informations de votre enfant apparaîtront ici.'}</p></div>}
-            <form onSubmit={handleSubmitLinkRequest} className="space-y-4">
+            {childInvite && quickInvite ? <div className="space-y-3"><button type="button" disabled={submitting || Boolean(formError) || (platform === 'ios' && !homeInstalled)} onClick={() => void submitQuickInvite()} className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{submitting ? (isAr ? 'جاري الإرسال…' : 'Envoi…') : (isAr ? 'إرسال الطلب إلى المديرة' : 'Envoyer ma demande')}</button>{formError && <p role="alert" className="text-xs text-rose-700">{formError}</p>}</div> : <form onSubmit={handleSubmitLinkRequest} className="space-y-4">
               {/* Parent Info */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -907,7 +924,7 @@ export default function PublicParentPortal() {
                     : 'Envoyer la demande à la directrice'}
                 </button>
               </div>
-            </form>
+            </form>}
           </section>
         )}
       </main>

@@ -17,10 +17,30 @@ test('personal invitation needs director approval, never leaks the child and pre
   await db.exec(readFileSync('supabase/migrations/20261108230000_parent_portal_and_web_push.sql','utf8'));
   await db.exec(readFileSync('supabase/migrations/20261109010000_parent_child_invites.sql','utf8'));
   await db.exec(readFileSync('supabase/migrations/20261112010000_parent_access_recovery_and_decision.sql','utf8'));
+  await db.exec(readFileSync('supabase/migrations/20261112020000_parent_registered_quick_invite.sql','utf8'));
+  await db.query("update enfants set data=jsonb_set(data,'{parents}',$1::jsonb) where id='a'",[JSON.stringify([{id:'parent1',prenom:'Samira',nom:'Exemple',telephone:'0555010101',lien:'Mère'}])]);
   await db.exec(`set role authenticated; select set_config('request.uid','${a}',false)`);
   await assert.rejects(db.query("select rawdha_create_child_parent_invite('b')"),/child_not_found/);
   const create=async()=> (await db.query("select rawdha_create_child_parent_invite('a') as result")).rows[0].result;
   const invite=await create(); const another=await create(); assert.match(invite.token,/^[a-f0-9]{64}$/);
+  await assert.rejects(db.query("select rawdha_create_registered_parent_invite('b','parent1')"),/parent_unavailable/);
+  await assert.rejects(db.query("select rawdha_create_registered_parent_invite('a','wrong')"),/parent_unavailable/);
+  const quick=(await db.query("select rawdha_create_registered_parent_invite('a','parent1') as r")).rows[0].r;
+  await db.exec('reset role; set role anon');
+  await assert.rejects(db.query('select * from parent_invite_registered_identity'),/permission denied/);
+  const quickDevice='ptok_'+'7'.repeat(32);
+  const quickResult=(await db.query("select rawdha_submit_registered_parent_invite($1,$2,'ios') as r",[quick.token,quickDevice])).rows[0].r;
+  assert.equal(quickResult.ok,true); assert.deepEqual(Object.keys(quickResult).sort(),['id','ok']);
+  await assert.rejects(db.query("select rawdha_submit_registered_parent_invite($1,$2,'ios')",[quick.token,'ptok_'+'8'.repeat(32)]),/invite_invalide/);
+  const quickSnapshot=(await db.query('select get_parent_portal_snapshot($1,$2) as s',[a,quickDevice])).rows[0].s;
+  assert.equal(quickSnapshot.request.status,'pending'); assert.deepEqual(quickSnapshot.request.linkedSnapshots,[]); assert.doesNotMatch(JSON.stringify(quickSnapshot),/Amina/);
+  await db.exec('reset role; set role authenticated');
+  await db.query("select set_config('request.uid',$1,false)",[a]);
+  await db.query('select rawdha_approve_personal_parent_request($1,$2)',[quickResult.id,'a']);
+  await db.exec('reset role');
+  const afterQuick=(await db.query("select data->'parents' as p from enfants where id='a'")).rows[0].p;
+  assert.equal(afterQuick.length,1); assert.equal(afterQuick[0].id,'parent1');
+  await db.exec('set role authenticated');
   await db.exec('reset role; set role anon');
   await assert.rejects(db.query('select * from parent_child_invites'),/permission denied/);
   await assert.rejects(db.query("select rawdha_create_child_parent_invite('a')"),/permission denied/);
@@ -46,7 +66,7 @@ test('personal invitation needs director approval, never leaks the child and pre
   await assert.rejects(db.query('select rawdha_approve_personal_parent_request($1,$2)',[res.id,'a']),/request_unavailable/);
   await db.exec('reset role');
   const child=(await db.query("select data from enfants where id='a'")).rows[0].data;
-  assert.equal(child.parents.length,1); assert.equal(child.parents[0].prenom,'Nadia');
+  assert.equal(child.parents.length,2); assert.equal(child.parents[1].prenom,'Nadia');
   await db.exec('set role anon');
   await assert.rejects(db.query('select * from parent_device_transfers'),/permission denied/);
   const transfer=(await db.query('select rawdha_create_parent_device_transfer($1,$2) as r',[a,device])).rows[0].r;
@@ -77,6 +97,6 @@ test('personal invitation needs director approval, never leaks the child and pre
   await db.query('select rawdha_approve_personal_parent_request($1,$2)',[father.id,'a']);
   await db.exec('reset role');
   const parents=(await db.query("select data->'parents' as p from enfants where id='a'")).rows[0].p;
-  assert.deepEqual(parents.map(p=>p.prenom).sort(), ['Karim','Nadia']);
+  assert.deepEqual(parents.map(p=>p.prenom).sort(), ['Karim','Nadia','Samira']);
  } finally { await db.close(); }
 });
