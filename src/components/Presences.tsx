@@ -240,12 +240,15 @@ export default function PresencesPage() {
         previous: existing,
         next: updatedPayload,
         isArabic,
+      }).catch(() => {
+        showToast(isArabic ? 'تم حفظ البيانات، لكن الإشعار غير مؤكد.' : 'Données enregistrées, mais la notification n’a pas pu être confirmée.', 'info');
+        return { triggered: false, sentPushCount: 0 };
       });
       showToast(
         pushRes.triggered && pushRes.sentPushCount > 0
           ? (isArabic
               ? `تم تسجيل الاستلام (${departTime}) · أُرسل إشعار فوري للولي`
-              : `Départ enregistré (${departTime}) · Alerte Push envoyée aux parents`)
+              : `Départ enregistré (${departTime}) · envoi Push accepté par le service`)
           : (isArabic
               ? `تم تسجيل استلام ${enfant.prenom} على ${departTime}`
               : `${enfant.prenom} marqué(e) récupéré(e) à ${departTime}`),
@@ -319,12 +322,15 @@ export default function PresencesPage() {
         previous: existing,
         next: details,
         isArabic,
+      }).catch(() => {
+        showToast(isArabic ? 'تم حفظ البيانات، لكن الإشعار غير مؤكد.' : 'Données enregistrées, mais la notification n’a pas pu être confirmée.', 'info');
+        return { triggered: false, sentPushCount: 0 };
       });
       if (pushRes.triggered && pushRes.sentPushCount > 0) {
         showToast(
           isArabic
             ? `تم حفظ الحضور · أُرسل إشعار فوري للولي (${pushRes.sentPushCount})`
-            : `Pointage enregistré · Alerte Push envoyée aux parents`,
+            : `Pointage enregistré · envoi Push accepté par le service`,
           'success'
         );
       }
@@ -407,12 +413,15 @@ export default function PresencesPage() {
         previous: existing,
         next: absence,
         isArabic,
+      }).catch(() => {
+        showToast(isArabic ? 'تم حفظ البيانات، لكن الإشعار غير مؤكد.' : 'Données enregistrées, mais la notification n’a pas pu être confirmée.', 'info');
+        return { triggered: false, sentPushCount: 0 };
       });
       if (pushRes.triggered && pushRes.sentPushCount > 0) {
         showToast(
           isArabic
             ? 'تم تسجيل الغياب · أُرسل إشعار فوري للولي'
-            : 'Absence enregistrée · Alerte Push envoyée aux parents',
+            : 'Absence enregistrée · envoi Push accepté par le service',
           'success'
         );
       }

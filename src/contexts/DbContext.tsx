@@ -903,6 +903,18 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  // Notifications are best effort after a confirmed invoice write. Failure never rolls back or repeats a payment.
+  const notifyPaymentChange = (previous: Paiement | null, next: Paiement) => {
+    if (user?.role !== 'directeur' || user.approvalStatus !== 'approved') return;
+    const child = enfants.find(e => e.id === next.enfantId && e.crecheId === user.id);
+    if (!child) return;
+    void import('../utils/automaticPaymentPush').then(({ dispatchAutomaticPaymentPush }) => dispatchAutomaticPaymentPush({
+      crecheId: user.id, crecheNom: user.nomCreche || 'Crèche', enfant: child, previous, next, isArabic: language === 'ar',
+    })).then(result => {
+      if (result && (result.pushStatus === 'unknown' || result.pushStatus === 'incomplete')) showToast(language === 'ar' ? 'تم حفظ الفاتورة، لكن إرسال الإشعار غير مؤكد.' : 'Facture enregistrée, mais l’envoi de la notification n’est pas confirmé.', 'info');
+    }).catch(() => showToast(language === 'ar' ? 'تم حفظ الفاتورة، لكن تعذر تأكيد الإشعار.' : 'Facture enregistrée, mais la notification n’a pas pu être confirmée.', 'info'));
+  };
+
   // --- PAIEMENTS ---
   // No fallback to direct writes: the matching staged migration is required.
   const addPaiement = async (paiement: Omit<Paiement, 'id'> & { id?: string }) => {
@@ -916,7 +928,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const { data, error } = await trackedBusinessRpc('rawdha_write_invoice', { p_action:'create', p_id:id, p_patch:patch, p_expected:null });
       if (error) throw error;
       if (!data || data.id !== id) throw new Error('finance_unconfirmed_response');
-      if (currentUserId.current === user?.id) setPaiements(prev => [...prev.filter(item => item.id !== id), data as Paiement]);
+      if (currentUserId.current === user?.id) { setPaiements(prev => [...prev.filter(item => item.id !== id), data as Paiement]); notifyPaymentChange(null, data as Paiement); }
       return id;
     } catch (err) {
       if (financeErrorKind(err) === 'unknown' || financeErrorKind(err) === 'changed' || financeErrorKind(err) === 'blocked') setFinancialDataReady(false);
@@ -933,7 +945,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
       const { data, error } = await trackedBusinessRpc('rawdha_write_invoice', { p_action:'update', p_id:id, p_patch:patch, p_expected:expected });
       if (error) throw error;
       if (!data || data.id !== id) throw new Error('finance_unconfirmed_response');
-      if (currentUserId.current === user?.id) setPaiements(prev => prev.map(item => item.id === id ? data as Paiement : item));
+      if (currentUserId.current === user?.id) { setPaiements(prev => prev.map(item => item.id === id ? data as Paiement : item)); notifyPaymentChange(expected, data as Paiement); }
     } catch (err) {
       if (financeErrorKind(err) === 'unknown' || financeErrorKind(err) === 'changed' || financeErrorKind(err) === 'blocked') setFinancialDataReady(false);
       showToast(financeErrorMessage(err, language === 'ar'), 'error');

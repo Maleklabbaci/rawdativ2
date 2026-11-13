@@ -1195,12 +1195,18 @@ export async function dispatchAutomaticAttendancePush(params: {
         : `${fullName} a bien été ${isGirl ? 'récupérée' : 'récupéré'} à ${nextDepart}${byFr}. Bonne fin de journée !`;
     } else if (!wasPresent) {
       kind = 'arrival';
-      const arrivalClock = nextArrivee || new Date().toTimeString().slice(0, 5);
+      const arrivalClock = nextArrivee;
       title = isArabic
         ? `وصل(ت) بسلام — ${enfant.prenom}`
         : `Bien ${isGirl ? 'arrivée' : 'arrivé'} — ${enfant.prenom}`;
       const detailsFr: string[] = [];
       const detailsAr: string[] = [];
+      if (nextRepas) {
+        const mealFr: Record<string, string> = { Tout: 'a tout mangé', Moyen: 'a mangé une partie de son repas', Peu: 'a peu mangé', Non: "n’a pas mangé" };
+        const mealAr: Record<string, string> = { Tout: 'أكل الوجبة كاملة', Moyen: 'أكل جزءاً من الوجبة', Peu: 'أكل قليلاً', Non: 'لم يأكل' };
+        detailsFr.push(mealFr[nextRepas] || `Repas : ${nextRepas}`);
+        detailsAr.push(mealAr[nextRepas] || `الوجبة: ${nextRepas}`);
+      }
       if (nextHumeur) {
         detailsFr.push(`Humeur : ${nextHumeur}`);
         detailsAr.push(`المزاج: ${nextHumeur}`);
@@ -1212,9 +1218,9 @@ export async function dispatchAutomaticAttendancePush(params: {
       const suffixFr = detailsFr.length > 0 ? ` (${detailsFr.join(' · ')})` : '';
       const suffixAr = detailsAr.length > 0 ? ` (${detailsAr.join(' · ')})` : '';
       message = isArabic
-        ? `وصل(ت) ${fullName} إلى الروضة بسلام على الساعة ${arrivalClock}${suffixAr}. يوم موفق!`
-        : `${fullName} est bien ${isGirl ? 'arrivée' : 'arrivé'} à la crèche à ${arrivalClock}${suffixFr}. Belle journée !`;
-    } else {
+        ? `تم تسجيل وصول ${fullName} إلى الروضة${arrivalClock ? ` على الساعة ${arrivalClock}` : ''}${suffixAr}.`
+        : `Arrivée enregistrée pour ${fullName}${arrivalClock ? ` à ${arrivalClock}` : ''}${suffixFr}.`;
+    } else if (!nextDepart) {
       const tempChanged = Boolean(nextTemp) && nextTemp !== prevTemp;
       const repasChanged = Boolean(nextRepas) && nextRepas !== prevRepas;
       const humeurChanged = Boolean(nextHumeur) && nextHumeur !== prevHumeur;
@@ -1233,9 +1239,11 @@ export async function dispatchAutomaticAttendancePush(params: {
         } else {
           const partsFr: string[] = [];
           const partsAr: string[] = [];
-          if (nextRepas) {
-            partsFr.push(`Repas : ${nextRepas}`);
-            partsAr.push(`الوجبة: ${nextRepas}`);
+          if (repasChanged) {
+            const mealFr: Record<string, string> = { Tout: 'a tout mangé', Moyen: 'a mangé une partie de son repas', Peu: 'a peu mangé', Non: "n’a pas mangé" };
+            const mealAr: Record<string, string> = { Tout: 'أكل الوجبة كاملة', Moyen: 'أكل جزءاً من الوجبة', Peu: 'أكل قليلاً', Non: 'لم يأكل' };
+            partsFr.push(mealFr[nextRepas] || `Repas : ${nextRepas}`);
+            partsAr.push(mealAr[nextRepas] || `الوجبة: ${nextRepas}`);
           }
           if (nextHumeur) {
             partsFr.push(`Humeur : ${nextHumeur}`);
