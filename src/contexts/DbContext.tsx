@@ -1,4 +1,5 @@
 import { financeErrorKind, financeErrorMessage } from '../utils/financeError';
+import { plannedActivityMessage } from '../utils/automaticActivityPush';
 import { offloadChildDocumentsToStorage } from '../utils/documentStorage';
 import { useLanguage } from './LanguageContext';
 import { attendanceErrorKind } from '../utils/attendanceError';
@@ -1126,6 +1127,18 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const notifyPlannedActivity = (activity: Activite) => {
+    if (user?.role !== 'directeur' || user.approvalStatus !== 'approved') return;
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const message = plannedActivityMessage(activity, user.id, today, language === 'ar');
+    if (!message) return;
+    const childScope = enfants.filter(child => child.crecheId === user.id);
+    void import('../utils/parentPortal').then(({ publishParentAnnouncement }) => publishParentAnnouncement({ crecheId: user.id, crecheNom: user.nomCreche || 'Crèche', title: language === 'ar' ? 'نشاط مبرمج' : 'Activité prévue', message, category: 'evenement', targetScope: 'group', targetGroup: activity.groupe, enfants: childScope })).then(result => {
+      if (result.pushStatus === 'unknown' || result.pushStatus === 'incomplete') showToast(language === 'ar' ? 'تم حفظ النشاط، لكن الإشعار غير مؤكد.' : 'Activité enregistrée, mais l’envoi de la notification n’est pas confirmé.', 'info');
+    }).catch(() => showToast(language === 'ar' ? 'تم حفظ النشاط، لكن تعذر تأكيد الإشعار.' : 'Activité enregistrée, mais la notification n’a pas pu être confirmée.', 'info'));
+  };
+
   // --- ACTIVITES ---
   const addActivite = async (activite: Omit<Activite, 'id'>) => {
     assertWriteAccess();
@@ -1135,6 +1148,7 @@ export const DbProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const freshId = await addCollectionDocument('activites', activite);
       setActivites(prev => prev.map(item => item.id === tempId ? { ...item, id: freshId } : item));
+      if (currentUserId.current === user?.id) notifyPlannedActivity({ ...activite, id: freshId });
       return freshId;
     } catch (err) {
       setActivites(prev => prev.filter(item => item.id !== tempId));

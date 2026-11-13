@@ -973,6 +973,8 @@ export async function publishParentAnnouncement(params: {
   crecheNom: string;
   title: string;
   message: string;
+  pushTitle?: string;
+  pushMessage?: string;
   category: ParentAnnouncement['category'];
   targetScope: ParentAnnouncement['targetScope'];
   targetGroup?: 'Bébés' | 'Moyens' | 'Grands';
@@ -1031,8 +1033,8 @@ export async function publishParentAnnouncement(params: {
       const { data: pushRes, error: pushError } = await supabase.functions.invoke('send-parent-web-push', {
         body: {
           crecheId: params.crecheId,
-          title: `${params.crecheNom || 'Crèche'} — ${title}`,
-          message,
+          title: `${params.crecheNom || 'Crèche'} — ${params.pushTitle?.trim().slice(0, 120) || title}`,
+          message: params.pushMessage?.trim().slice(0, 600) || message,
           targetScope: params.targetScope,
           targetGroup: params.targetGroup,
           targetEnfantId: params.targetEnfantId,
@@ -1294,6 +1296,8 @@ export async function dispatchAutomaticAttendancePush(params: {
     crecheNom,
     title,
     message,
+    // Health data stays inside the parent portal rather than on a locked screen.
+    ...(category === 'sante' ? { pushTitle: isArabic ? 'متابعة من الروضة' : 'Suivi de la crèche', pushMessage: isArabic ? 'تتوفر معلومة جديدة في فضاء الأولياء.' : 'Une nouvelle information est disponible dans votre espace parent.' } : {}),
     category,
     targetScope: 'child',
     targetEnfantId: enfant.id,
