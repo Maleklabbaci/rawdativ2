@@ -1,0 +1,8 @@
+/* Mockup iPhone 16 Pro officiel (open-device-frame, MIT) — écran calé au pixel. */
+.mock{position:relative;aspect-ratio:337/677;filter:drop-shadow(0 26px 32px rgba(8,26,52,.28))}
+.mock .frame{position:absolute;inset:0;width:100%;height:100%;display:block}
+.mock .scr{
+  position:absolute;left:6.8249%;top:8.2718%;width:85.1632%;height:88.6263%;
+  overflow:hidden;background:#fff;border-radius:7.2%/3.6%;
+}
+.mock .scr img{width:100%;height:100%;display:block;object-fit:cover;object-position:top center}
