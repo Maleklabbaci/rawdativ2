@@ -31,6 +31,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
+import { readTextSize, saveTextSize, TEXT_SIZE_DEFAULT, TEXT_SIZE_MAX, TEXT_SIZE_MIN, TEXT_SIZE_STEP } from '../utils/textSize';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirmDialog } from '../contexts/ConfirmDialogContext';
 import { setCollectionDocument, getCollectionDocument } from '../supabase';
@@ -57,6 +58,7 @@ export default function Parametres({ onNavigate }: { onNavigate?: (page: string)
   const [errorMessage, setErrorMessage] = useState('');
   const [showRenewalModal, setShowRenewalModal] = useState(false);
   const [latestRenewal, setLatestRenewal] = useState<SubscriptionRenewalRequest | null>(null);
+  const [textSize, setTextSize] = useState(readTextSize);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => isNotificationSoundEnabled());
 
   useEffect(() => {
@@ -339,6 +341,27 @@ export default function Parametres({ onNavigate }: { onNavigate?: (page: string)
           </p>
         </div>
       </div>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5" aria-labelledby="text-size-title">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 id="text-size-title" className="text-base font-bold text-slate-900">{isFrench ? 'Taille du texte' : 'حجم النص'}</h2>
+            <p className="mt-1 text-sm text-slate-500">{isFrench ? 'Ajustez la taille pour cet appareil. Le changement est immédiat.' : 'عدّلي الحجم على هذا الجهاز. يطبّق التغيير فوراً.'}</p>
+          </div>
+          <output htmlFor="text-size-range" className="shrink-0 rounded-lg bg-indigo-50 px-2.5 py-1 text-sm font-bold text-indigo-700" dir="ltr">{textSize}%</output>
+        </div>
+        <div className="mt-4 flex items-center gap-3">
+          <span aria-hidden="true" className="text-xs font-bold text-slate-500">A</span>
+          <input id="text-size-range" type="range" min={TEXT_SIZE_MIN} max={TEXT_SIZE_MAX} step={TEXT_SIZE_STEP} value={textSize}
+            aria-label={isFrench ? 'Taille du texte' : 'حجم النص'} aria-valuetext={`${textSize} %`}
+            onChange={event => setTextSize(saveTextSize(Number(event.target.value)))}
+            className="min-w-0 flex-1 accent-indigo-600" />
+          <span aria-hidden="true" className="text-xl font-bold text-slate-700">A</span>
+        </div>
+        <button type="button" onClick={() => setTextSize(saveTextSize(TEXT_SIZE_DEFAULT))} className="mt-3 min-h-10 rounded-lg px-3 text-sm font-bold text-indigo-700 hover:bg-indigo-50">
+          {isFrench ? 'Taille normale' : 'الحجم العادي'}
+        </button>
+      </section>
 
       {user?.role === 'directeur' && (IdentityOcrDemo ? <Suspense fallback={null}><IdentityOcrDemo firstName={user.prenom || ''} lastName={user.nom || ''} isFrench={isFrench} /></Suspense> : <IdentityDocumentRequest userId={user.id} firstName={user.prenom || ''} lastName={user.nom || ''} isFrench={isFrench} />)}
 
