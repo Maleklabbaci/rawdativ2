@@ -464,7 +464,7 @@ export default function Paiements() {
   return (
     <div className="min-w-0 space-y-4 sm:space-y-6">
       {/* En-tête épuré & actions directes */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="director-module-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
             {isArabic ? 'الفواتير والمدفوعات' : 'Factures & règlements'}
@@ -1177,7 +1177,7 @@ export default function Paiements() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="rawdha-modal-surface mobile-safe-modal bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-xl max-h-[calc(100dvh-1rem)] mt-0 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
+              className="rawdha-modal-surface rawdha-modal-form mobile-safe-modal bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-xl max-h-[calc(100dvh-1rem)] mt-0 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="rawdha-modal-header p-4 sm:p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center gap-3 flex-shrink-0">

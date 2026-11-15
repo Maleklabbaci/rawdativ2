@@ -952,7 +952,7 @@ export default function Enfants() {
   return (
     <div className="space-y-3 sm:space-y-5">
       {parentRequestsUnavailable && <p role="alert" className="rounded-xl bg-amber-50 px-4 py-3 text-xs font-bold text-amber-900">{isArabic ? 'تعذر تحديث طلبات ربط الأولياء.' : 'Impossible d’actualiser les demandes parents. Vérifiez la connexion.'}</p>}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3">
+      <div className="director-module-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3">
         <div className="flex items-center justify-between gap-2 min-w-0">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -1959,7 +1959,7 @@ export default function Enfants() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="rawdha-modal-surface mobile-safe-modal bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-3xl max-h-[calc(100dvh-1rem)] flex flex-col overflow-hidden font-sans cursor-default mb-2 sm:mb-10"
+              className="rawdha-modal-surface rawdha-modal-form mobile-safe-modal bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-3xl max-h-[calc(100dvh-1rem)] flex flex-col overflow-hidden font-sans cursor-default mb-2 sm:mb-10"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="rawdha-modal-header p-4 sm:p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center gap-3 flex-shrink-0">

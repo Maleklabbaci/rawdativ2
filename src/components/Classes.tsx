@@ -315,7 +315,7 @@ export default function Classes() {
   return (
     <div className={`space-y-4 sm:space-y-6 ${isArabic ? 'rtl' : 'ltr'}`}>
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="director-module-header flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
             {isArabic ? 'الفصول الدراسية' : 'Classes'}
@@ -520,8 +520,8 @@ export default function Classes() {
       <AnimatePresence>
         {showModal && (
           <motion.div role="dialog" aria-modal="true" aria-label={editingClasseId ? (isArabic ? 'تعديل بيانات الفصل' : 'Modifier la classe') : (isArabic ? 'إضافة فصل جديد' : 'Ajouter une nouvelle classe')} className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto overscroll-contain bg-black/50 p-3 sm:items-center sm:p-4">
-            <motion.div className="rawdha-modal-surface my-auto max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl border border-slate-100 sm:p-6">
-              <div className="flex justify-between items-center mb-4">
+            <motion.div className="rawdha-modal-surface rawdha-modal-form my-auto max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl border border-slate-100 sm:p-6">
+              <div className="rawdha-modal-header flex justify-between items-center mb-4 pb-4">
                 <h2 className="text-2xl font-bold">
                   {editingClasseId 
                     ? (isArabic ? 'تعديل بيانات الفصل' : 'Modifier la classe') 
@@ -657,8 +657,8 @@ export default function Classes() {
       <AnimatePresence>
         {showAddChildrenModal && selectedClasse && (
           <motion.div role="dialog" aria-modal="true" aria-label={editingClasseId ? (isArabic ? 'تعديل بيانات الفصل' : 'Modifier la classe') : (isArabic ? 'إضافة فصل جديد' : 'Ajouter une nouvelle classe')} className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto overscroll-contain bg-black/50 p-3 sm:items-center sm:p-4">
-            <motion.div className="rawdha-modal-surface my-auto max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl sm:max-h-[80vh] sm:p-6">
-              <div className="flex justify-between items-center mb-4">
+            <motion.div className="rawdha-modal-surface rawdha-modal-form my-auto max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl sm:max-h-[80vh] sm:p-6">
+              <div className="rawdha-modal-header flex justify-between items-center mb-4 pb-4">
                 <h2 className="text-2xl font-bold">
                   {isArabic ? 'إضافة أطفال إلى' : 'Ajouter enfants à'} {selectedClasse.nom}
                 </h2>

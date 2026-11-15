@@ -1,3 +1,4 @@
+import './components/director-mobile.css';
 import './components/modal-refined.css';
 // Style shell Rawdha+ : modules métier isolés, navigation mobile compacte et routes explicites pour chaque outil de direction.
 import { useState, useEffect, useRef, useTransition, lazy, Suspense, type ComponentType } from 'react';
@@ -1226,7 +1227,7 @@ if (isSubscriptionExpired && !isPendingApproval) {
       {globalSlickPayLockOverlay}
       <div className={`min-w-0 transition-all duration-200 ${isSidebarCollapsed ? 'lg:ltr:pl-20 lg:rtl:pr-20' : 'lg:ltr:pl-64 lg:rtl:pr-64'}`}>
         {/* Header — Barre supérieure calme et épurée */}
-        <header className="sticky top-0 z-30 border-b border-slate-200/75 bg-white/95 lg:bg-[#f8fafc]/92 backdrop-blur-md">
+        <header className={`sticky top-0 z-30 border-b border-slate-200/75 bg-white/95 lg:bg-[#f8fafc]/92 backdrop-blur-md ${user?.role === 'directeur' ? 'director-mobile-header' : ''}`}>
           <div className="min-w-0 px-3 sm:px-6 lg:px-10 py-2 sm:py-3">
             <div className="flex min-w-0 items-center justify-between gap-2 sm:gap-3">
               {/* Left: Menu (landscape only) + Crèche Identity */}
@@ -1245,6 +1246,7 @@ if (isSubscriptionExpired && !isPendingApproval) {
                 </button>
 
                 <div className="flex min-w-0 items-center gap-2.5">
+                  {user?.role === 'directeur' && <img src="/rawdah-logo.png" alt="Rawdha+" className="director-mobile-logo h-9 w-9 shrink-0 object-contain sm:hidden" />}
                   <div className="hidden sm:flex items-center justify-center flex-shrink-0 w-9 h-9 rounded-xl overflow-hidden bg-indigo-600 text-white p-1.5">
                     {creche?.logoUrl ? (
                       <img src={creche.logoUrl} alt={creche?.nom || (language === 'ar' ? 'شعار الروضة' : 'Logo de la crèche')} className="w-full h-full rounded-lg bg-white p-0.5 object-contain" />
@@ -1309,6 +1311,15 @@ if (isSubscriptionExpired && !isPendingApproval) {
                   </button>
                 )}
 
+                <button
+                  type="button"
+                  onClick={() => setLanguage(language === 'fr' ? 'ar' : 'fr')}
+                  aria-label={language === 'ar' ? 'التبديل إلى الفرنسية' : 'Passer en arabe'}
+                  className="sm:hidden flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-xs font-bold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
+                >
+                  {language === 'fr' ? 'ع' : 'FR'}
+                </button>
+
                 {!isPendingApproval && (user?.role === 'admin' || (user?.role === 'directeur' && canAccessPage('notifications'))) && (
                   <NotificationBell
                     onNavigateToPaiements={() => navigateToPage('paiements')}
@@ -1332,14 +1343,6 @@ if (isSubscriptionExpired && !isPendingApproval) {
                 </button>
 
                 {/* Language Selector */}
-                <button
-                  type="button"
-                  onClick={() => setLanguage(language === 'fr' ? 'ar' : 'fr')}
-                  aria-label={language === 'ar' ? 'التبديل إلى الفرنسية' : 'Passer en arabe'}
-                  className="sm:hidden flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-xs font-bold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
-                >
-                  {language === 'fr' ? 'ع' : 'FR'}
-                </button>
                 <div className="hidden sm:flex shrink-0 gap-0.5 rounded-xl border border-slate-200/70 bg-slate-100/85 p-0.5" aria-label={language === 'ar' ? 'اختيار اللغة' : 'Choisir la langue'}>
                   <button
                     type="button"
@@ -1404,7 +1407,7 @@ if (isSubscriptionExpired && !isPendingApproval) {
         </header>
 
         {/* Page Content */}
-        <main id="main-content" tabIndex={-1} className="min-w-0 overflow-x-hidden outline-none p-3 pb-32 sm:p-6 sm:pb-32 lg:p-10 lg:pb-10 max-w-[1600px] mx-auto">
+        <main id="main-content" tabIndex={-1} className={`min-w-0 overflow-x-hidden outline-none p-3 pb-32 sm:p-6 sm:pb-32 lg:p-10 lg:pb-10 max-w-[1600px] mx-auto ${user?.role === 'directeur' ? 'director-mobile-shell' : ''}`}>
           {onboardingState === 'ready' && onboarding?.task_page && onboarding.account_id === user?.id && <div role="status" className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs font-semibold text-indigo-900"><span>{language === 'ar' ? 'يمكنك العودة إلى خطوات البدء عندما تنتهين.' : 'Reprenez les étapes quand vous avez terminé.'}</span><button type="button" onClick={() => void resumeOnboarding()} className="rounded-lg bg-indigo-600 px-3 py-2 font-bold text-white">{language === 'ar' ? 'متابعة البدء' : 'Continuer le démarrage'}</button>{onboardingBannerError && <span role="alert">{language === 'ar' ? 'تعذر الحفظ. حاولي مجدداً.' : 'Enregistrement impossible. Réessayez.'}</span>}</div>}
           {isOffline && (
             <div role="alert" className="mb-4 flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs sm:text-sm font-bold text-rose-800 shadow-xs">

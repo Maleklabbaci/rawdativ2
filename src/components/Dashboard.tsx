@@ -187,9 +187,20 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
   ].filter(card => !(hideFinancials && card.targetPage === 'paiements') && canAccessPage(card.targetPage));
 
   return (
-    <div dir={isArabic ? 'rtl' : 'ltr'} className="min-w-0 space-y-4 sm:space-y-5">
-      {/* Carte d'accueil sobre et directe */}
-      <section className="rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-6 shadow-2xs">
+    <div dir={isArabic ? 'rtl' : 'ltr'} className="director-home min-w-0 space-y-4 sm:space-y-5">
+      {isDirecteur && <section className="director-mobile-hero sm:hidden">
+        <p className="director-mobile-date">{formattedDate}</p>
+        <h1>{greetingText}{user?.prenom ? `, ${user.prenom}` : ''}<span>{isArabic ? 'إدارة الحضانة' : 'votre journée en un coup d’œil.'}</span></h1>
+        {onNavigate && canAccessPage('presences') && <button type="button" className="director-mobile-primary" onClick={() => onNavigate('presences')}><span>{isArabic ? 'عرض الحضور' : 'Voir les présences'}</span><ArrowRight size={18} className="rtl:rotate-180" /></button>}
+        <h2>{isArabic ? 'اليوم' : 'Aujourd’hui'}</h2>
+        <div className="director-mobile-today">
+          <div className="director-today-main"><div><CalendarCheck size={19} /><span>{isArabic ? 'الحضور' : 'Présences'}</span></div><p>{presencesAujourdhui.length}<small> / {enfantsActifs.length}</small></p><span>{isArabic ? 'حاضرون اليوم' : 'enfants présents'}</span></div>
+          <div className="director-today-side"><div><span>{isArabic ? 'متبقي للتسجيل' : 'À pointer'}</span><strong>{remainingToPoint}</strong></div><div><span>{isArabic ? 'وجبات مبرمجة' : 'Repas prévus'}</span><strong>{todayMeals.length}</strong></div></div>
+        </div>
+        <button type="button" className="director-routine" onClick={() => setShowDailyRoutine(true)}><PlayCircle size={17}/>{isArabic ? 'روتين الصباح' : 'Routine matin'}<ArrowRight size={16} className="rtl:rotate-180" /></button>
+      </section>}
+      {/* Carte desktop conservée */}
+      <section className={isDirecteur ? "hidden sm:block rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-6 shadow-2xs" : "rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-6 shadow-2xs"}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <p className="text-xs font-medium capitalize text-slate-500">{formattedDate}</p>
@@ -300,7 +311,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
       )}
 
       {/* 4 cartes de synthèse calmes et cliquables */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="director-home-kpis grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {kpiCards.map((stat, index) => {
           const Icon = stat.icon;
           return (
@@ -336,7 +347,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: string) 
       </div>
 
       {/* Suivi quotidien : Sections + Programme du jour */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="director-home-follow grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Présences par section */}
         <section className="rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-5 shadow-2xs">
           <div className="flex items-center justify-between gap-2 mb-4">

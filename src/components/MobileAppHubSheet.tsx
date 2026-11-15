@@ -105,6 +105,7 @@ export default function MobileAppHubSheet({
         { key: 'parametres', label: isArabic ? 'الإعدادات' : 'Paramètres', icon: Settings, badge: 0 },
       ]
     : [
+        { key: 'paiements', label: isArabic ? 'الفواتير' : 'Factures', icon: CreditCard, badge: 0 },
         { key: 'repas', label: isArabic ? 'الوجبات' : 'Repas', icon: Utensils, badge: 0 },
         { key: 'activites', label: isArabic ? 'الأنشطة' : 'Activités', icon: Palette, badge: 0 },
         { key: 'classes', label: isArabic ? 'الأقسام' : 'Classes', icon: Layers, badge: 0 },
@@ -144,7 +145,7 @@ export default function MobileAppHubSheet({
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 32, stiffness: 380 }}
-            className="relative z-10 flex max-h-[82dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border-t border-slate-200 bg-white pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl"
+            className="director-mobile-menu relative z-10 flex max-h-[82dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border-t border-slate-200 bg-white pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl"
           >
             {/* En-tête simple */}
             <div className="shrink-0 border-b border-slate-100 px-4 pt-2.5 pb-3">
