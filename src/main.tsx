@@ -5,6 +5,9 @@ import { ToastProvider } from './contexts/ToastContext';
 import App from './App.tsx';
 import './index.css';
 import './i18n';
+import { applyTextSize, readTextSize } from './utils/textSize';
+
+applyTextSize(readTextSize());
 
 // Dedicated, isolated demo server; never enabled in a production build.
 if (import.meta.env.DEV && import.meta.env.VITE_ARENA_DEMO === 'true' && import.meta.env.VITE_DEMO_ADMIN === 'true' && window.location.pathname === '/') {
