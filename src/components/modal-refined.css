@@ -1,0 +1,17 @@
+@font-face { font-family: 'Rawdha Manrope'; src: url('/fonts/manrope/manrope-latin-400-normal.woff2') format('woff2'); font-weight:400; font-display:swap; }
+@font-face { font-family: 'Rawdha Manrope'; src: url('/fonts/manrope/manrope-latin-600-normal.woff2') format('woff2'); font-weight:600; font-display:swap; }
+@font-face { font-family: 'Rawdha Manrope'; src: url('/fonts/manrope/manrope-latin-700-normal.woff2') format('woff2'); font-weight:700 900; font-display:swap; }
+.rawdha-modal-surface { font-family:'Rawdha Manrope',var(--font-sans); border-radius:20px; box-shadow:0 20px 56px rgba(17,28,46,.18); }
+.rawdha-modal-surface :is(button,input,select,textarea) { font-family:inherit; }
+[dir='rtl'] .rawdha-modal-surface, .rawdha-modal-surface[dir='rtl'] { font-family:var(--font-arabic),var(--font-sans); }
+.rawdha-modal-surface .rawdha-modal-header { background:#fff; background-image:none; color:#14243d; border-bottom:1px solid #edf0f4; gap:12px; }
+.rawdha-modal-header h2,.rawdha-modal-header h3 { color:#14243d; font-weight:700; line-height:1.3; }
+.rawdha-modal-header p { color:#617189; line-height:1.45; }
+.rawdha-modal-header > button { flex-shrink:0; min-width:40px; min-height:40px; display:grid; place-items:center; color:#3d4d62; background:#f4f6f9; border:1px solid #e5e9ef; border-radius:11px; }
+.rawdha-modal-header > button:hover { background:#e9eef5; }
+.rawdha-modal-surface :is(input:not([type=checkbox]):not([type=radio]),select,textarea):focus-visible { outline:2px solid #e89047; outline-offset:2px; }
+/* Boutons de validation des formulaires concernés, sans modifier les états ni les avertissements. */
+.rawdha-modal-surface > div:last-child button.bg-gradient-to-r,
+.rawdha-modal-surface > div:last-child button.bg-fuchsia-600 { background:#183c75; background-image:none; color:#fff; box-shadow:none; }
+.rawdha-modal-surface > div:last-child button.bg-gradient-to-r:not(:disabled):hover,
+.rawdha-modal-surface > div:last-child button.bg-fuchsia-600:not(:disabled):hover { background:#102e5c; }

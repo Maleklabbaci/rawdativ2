@@ -1177,10 +1177,10 @@ export default function Paiements() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="mobile-safe-modal bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-xl max-h-[calc(100dvh-1rem)] mt-0 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
+              className="rawdha-modal-surface mobile-safe-modal bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-xl max-h-[calc(100dvh-1rem)] mt-0 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="p-4 sm:p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center gap-3 flex-shrink-0">
+              <div className="rawdha-modal-header p-4 sm:p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center gap-3 flex-shrink-0">
                 <div>
                   <h3 className="text-xl font-black">
                     {editingPaiementId
@@ -1434,7 +1434,7 @@ export default function Paiements() {
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.95, opacity: 0 }}
-                className="mobile-safe-modal bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[calc(100dvh-1rem)] mt-0 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
+                className="rawdha-modal-surface mobile-safe-modal bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[calc(100dvh-1rem)] mt-0 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="p-4 sm:p-6 bg-slate-50 border-b border-dashed border-slate-200 text-slate-800 relative flex-shrink-0">

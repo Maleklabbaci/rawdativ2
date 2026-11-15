@@ -66,7 +66,7 @@ export default function OnboardingCrecheModal({ onDone }: { onDone: () => void }
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-2xl bg-white shadow-2xl sm:max-h-[90vh]"
+        className="rawdha-modal-surface my-auto max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-2xl bg-white shadow-2xl sm:max-h-[90vh]"
       >
         <div className="p-4 sm:p-6 border-b border-slate-100">
           <div className="flex items-center gap-3">

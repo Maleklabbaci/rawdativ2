@@ -387,10 +387,10 @@ export default function Personnel() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[calc(100dvh-1rem)] sm:max-h-[85vh] mt-2 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
+              className="rawdha-modal-surface bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[calc(100dvh-1rem)] sm:max-h-[85vh] mt-2 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="p-4 sm:p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
+              <div className="rawdha-modal-header p-4 sm:p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
                 <div>
                   <h3 className="text-xl font-black">
                     {editingPersonnelId
@@ -627,13 +627,13 @@ export default function Personnel() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[85vh] mt-16 flex flex-col overflow-hidden font-sans cursor-default"
+              className="rawdha-modal-surface bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[85vh] mt-16 flex flex-col overflow-hidden font-sans cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Colorful gradient headers */}
-              <div className="p-6 bg-gradient-to-r from-violet-600 to-indigo-600 text-white flex justify-between items-center flex-shrink-0">
+              <div className="rawdha-modal-header p-6 bg-gradient-to-r from-violet-600 to-indigo-600 text-white flex justify-between items-center flex-shrink-0">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 text-white font-black text-lg flex items-center justify-center shadow-inner">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 text-slate-700 font-black text-lg flex items-center justify-center shadow-inner">
                     {selectedPersonnel.prenom[0]}{selectedPersonnel.nom[0]}
                   </div>
                   <div>
