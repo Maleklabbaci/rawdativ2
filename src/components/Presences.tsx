@@ -1151,11 +1151,11 @@ export default function PresencesPage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-h-none sm:overflow-hidden cursor-default"
+              className="rawdha-modal-surface bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-h-none sm:overflow-hidden cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="p-6 bg-rose-600 text-white flex justify-between items-center">
+              <div className="rawdha-modal-header p-6 bg-rose-600 text-white flex justify-between items-center">
                 <div>
                   <h3 className="text-lg font-black">{isArabic ? 'تفاصيل عذر الغياب' : 'Enregistrer une Absence'}</h3>
                   <p className="text-xs text-rose-100 mt-0.5">{isArabic ? 'تحديد تبرير وسبب الغياب بدقة' : 'Préciser la justification et le motif de l\'absence'}</p>
@@ -1268,11 +1268,11 @@ export default function PresencesPage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-h-none sm:overflow-hidden cursor-default"
+              className="rawdha-modal-surface bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-h-none sm:overflow-hidden cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="p-4 sm:p-6 bg-emerald-600 text-white flex justify-between items-center">
+              <div className="rawdha-modal-header p-4 sm:p-6 bg-emerald-600 text-white flex justify-between items-center">
                 <div>
                   <h3 className="text-lg font-black">{isArabic ? 'مؤشرات يوم الحضور' : 'Indicateurs de Présence'}</h3>
                   <p className="text-xs text-emerald-100 mt-0.5">{isArabic ? 'مراقبة المعايير الصحية والمزاج والأكل' : 'Saisir les observations santé, repas et humeur'}</p>
@@ -1425,7 +1425,7 @@ export default function PresencesPage() {
           }}
         >
           <div
-            className="w-full max-w-lg rounded-3xl bg-white p-5 shadow-2xl"
+            className="rawdha-modal-surface max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-lg rounded-3xl bg-white p-5 shadow-2xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="parent-notification-title"

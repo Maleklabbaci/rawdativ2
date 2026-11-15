@@ -1,3 +1,4 @@
+import './components/modal-refined.css';
 // Style shell Rawdha+ : modules métier isolés, navigation mobile compacte et routes explicites pour chaque outil de direction.
 import { useState, useEffect, useRef, useTransition, lazy, Suspense, type ComponentType } from 'react';
 import { ArrowLeft, ArrowRight, School, LogOut, Menu, Bell, MessageCircle, Maximize2, Minimize2, Network, Search, Users, WifiOff } from 'lucide-react';

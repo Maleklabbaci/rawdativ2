@@ -1959,10 +1959,10 @@ export default function Enfants() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="mobile-safe-modal bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-3xl max-h-[calc(100dvh-1rem)] flex flex-col overflow-hidden font-sans cursor-default mb-2 sm:mb-10"
+              className="rawdha-modal-surface mobile-safe-modal bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-3xl max-h-[calc(100dvh-1rem)] flex flex-col overflow-hidden font-sans cursor-default mb-2 sm:mb-10"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="p-4 sm:p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center gap-3 flex-shrink-0">
+              <div className="rawdha-modal-header p-4 sm:p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center gap-3 flex-shrink-0">
                 <div>
                   <h3 className="text-base sm:text-xl font-black">
                     {editingEnfantId 
@@ -2391,7 +2391,7 @@ export default function Enfants() {
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
+              className="rawdha-modal-surface bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
             >
               <div className="flex items-center gap-2.5 mb-1">
                 <LogOut className="w-5 h-5 text-amber-500" />

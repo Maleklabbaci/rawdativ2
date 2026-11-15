@@ -243,10 +243,10 @@ export function ProfilePermissionEditorModal({
       <form
         onSubmit={handleSave}
         onClick={e => e.stopPropagation()}
-        className="my-auto w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-5 text-slate-900 shadow-2xl sm:p-6"
+        className="rawdha-modal-surface my-auto w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-5 text-slate-900 shadow-2xl sm:p-6"
       >
         {/* En-tête */}
-        <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
+        <div className="rawdha-modal-header flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
           <div>
             <h2 className="text-lg font-extrabold text-[#25434c]">
               {initialProfile

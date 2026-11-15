@@ -393,10 +393,10 @@ export default function Activites() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[calc(100dvh-1rem)] sm:max-h-[85vh] mt-2 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
+              className="rawdha-modal-surface bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[calc(100dvh-1rem)] sm:max-h-[85vh] mt-2 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
+              <div className="rawdha-modal-header p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">
                 <div>
                   <h3 className="text-xl font-black">
                     {editingActiviteId
@@ -590,10 +590,10 @@ export default function Activites() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[calc(100dvh-1rem)] sm:max-h-[85vh] mt-2 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
+              className="rawdha-modal-surface bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[calc(100dvh-1rem)] sm:max-h-[85vh] mt-2 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="p-4 sm:p-6 bg-gradient-to-r from-teal-600 to-emerald-600 text-white flex justify-between items-center flex-shrink-0">
+              <div className="rawdha-modal-header p-4 sm:p-6 bg-gradient-to-r from-teal-600 to-emerald-600 text-white flex justify-between items-center flex-shrink-0">
                 <div>
                   <h3 className="text-xl font-black">{selectedActivite.titre}</h3>
                   <p className="text-xs text-teal-100 mt-0.5">{isArabic ? 'تفاصيل النشاط ووسائله البيداغوجية' : 'Fiche d\'animation d\'Atelier Éducatif'}</p>

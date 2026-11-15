@@ -138,7 +138,7 @@ export default function QuickSearchModal({
       onClick={onClose}
     >
       <div
-        className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
+        className="rawdha-modal-surface flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
         onClick={event => event.stopPropagation()}
       >
         <div className="flex items-center gap-2.5 border-b border-slate-100 bg-slate-50/80 px-4 py-3">

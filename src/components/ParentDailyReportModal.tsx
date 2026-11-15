@@ -210,10 +210,10 @@ export default function ParentDailyReportModal({
     >
       <div
         onClick={e => e.stopPropagation()}
-        className="my-auto w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6"
+        className="rawdha-modal-surface my-auto w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6"
       >
         {/* En-tête */}
-        <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
+        <div className="rawdha-modal-header flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
           <div className="flex items-center gap-2.5">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
               <BookHeart className="h-5 w-5" aria-hidden="true" />

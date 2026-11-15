@@ -221,10 +221,10 @@ export default function BatchMonthlyInvoicesModal({
       }}
     >
       <div
-        className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-2xl"
+        className="rawdha-modal-surface flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-2xl"
         onClick={event => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 bg-gradient-to-r from-indigo-600 to-cyan-600 p-4 sm:p-5 text-white">
+        <div className="rawdha-modal-header flex items-start justify-between gap-3 bg-gradient-to-r from-indigo-600 to-cyan-600 p-4 sm:p-5 text-white">
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-indigo-100">
               {isArabic ? 'تحضير جماعي سريع وآمن' : 'Gain de temps · Sans doublon'}
