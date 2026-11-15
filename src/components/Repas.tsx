@@ -160,7 +160,7 @@ export default function RepasPage() {
   return (
     <div className="space-y-3.5 sm:space-y-5">
       {/* Header and Actions sur 1 ligne nette */}
-      <div className="flex items-center justify-between gap-2">
+      <div className="director-module-header flex items-center justify-between gap-2">
         <div className="min-w-0">
           <h1 className="text-lg sm:text-2xl font-bold text-slate-900 tracking-tight truncate">
             {t('meals')}
@@ -434,7 +434,7 @@ export default function RepasPage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="rawdha-modal-surface bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[calc(100dvh-1rem)] sm:max-h-[85vh] mt-2 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
+              className="rawdha-modal-surface rawdha-modal-form bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg max-h-[calc(100dvh-1rem)] sm:max-h-[85vh] mt-2 sm:mt-16 flex flex-col overflow-hidden font-sans cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="rawdha-modal-header p-4 sm:p-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center flex-shrink-0">

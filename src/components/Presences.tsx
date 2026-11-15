@@ -553,10 +553,10 @@ export default function PresencesPage() {
   }, [presences]);
 
   return (
-    <div className={`space-y-4 sm:space-y-6 ${isArabic ? 'rtl' : 'ltr'}`}>
+    <div className={`director-presence space-y-4 sm:space-y-6 ${isArabic ? 'rtl' : 'ltr'}`}>
       
       {/* En-tête principal épuré */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className="director-module-header flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex w-full md:w-auto items-center justify-between gap-2">
           <div>
             <h1 className="text-lg sm:text-2xl font-bold text-slate-900 tracking-tight">
@@ -585,7 +585,7 @@ export default function PresencesPage() {
         </div>
 
         {/* Sélectionneur de date et bouton de clôture alignés sur 1 ligne */}
-        <div className="flex w-full md:w-auto items-center gap-2">
+        <div className="director-presence-date flex w-full md:w-auto items-center gap-2">
           <div className="flex min-w-0 flex-1 md:flex-initial items-center gap-2 bg-white px-3 py-2 border border-slate-200 rounded-xl">
             <Calendar className="w-4 h-4 shrink-0 text-slate-500" />
             <input
@@ -628,6 +628,12 @@ export default function PresencesPage() {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="director-presence-summary md:hidden" aria-label={isArabic ? 'ملخص الحضور' : 'Résumé des présences'}>
+        <div><span>{isArabic ? 'حاضرون' : 'Présents'}</span><strong>{selectedDate ? countPresents : '—'}</strong></div>
+        <div><span>{isArabic ? 'غائبون' : 'Absents'}</span><strong>{selectedDate ? countAbsents : '—'}</strong></div>
+        <div><span>{isArabic ? 'متبقي' : 'À pointer'}</span><strong>{selectedDate ? countNonPointes : '—'}</strong></div>
       </div>
 
       {/* Bandeau de file d'attente hors-ligne */}
@@ -738,7 +744,7 @@ export default function PresencesPage() {
         <div className="space-y-4">
           
           {/* Barre de recherche + filtres rapides mobile + bouton Tout déplier */}
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="director-presence-filters flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative w-full lg:max-w-sm">
               <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
@@ -771,6 +777,7 @@ export default function PresencesPage() {
                   key={pill.key}
                   type="button"
                   onClick={() => setStatusFilter(pill.key)}
+                  aria-pressed={statusFilter === pill.key}
                   className={`min-h-9! rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-bold transition cursor-pointer tabular-nums ${
                     statusFilter === pill.key
                       ? 'bg-indigo-600 text-white shadow-2xs'
@@ -844,7 +851,7 @@ export default function PresencesPage() {
                 : 0;
 
               return (
-                <div key={group.key} className="rawdha-card-modern bg-white rounded-3xl border border-slate-200/75 shadow-2xs overflow-hidden">
+                <div key={group.key} className="director-presence-class rawdha-card-modern bg-white rounded-3xl border border-slate-200/75 shadow-2xs overflow-hidden">
                   
                   {/* Header de l'accordéon de classe */}
                   <button
@@ -1151,7 +1158,7 @@ export default function PresencesPage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="rawdha-modal-surface bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-h-none sm:overflow-hidden cursor-default"
+              className="rawdha-modal-surface rawdha-modal-form bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-h-none sm:overflow-hidden cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
@@ -1268,7 +1275,7 @@ export default function PresencesPage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="rawdha-modal-surface bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-h-none sm:overflow-hidden cursor-default"
+              className="rawdha-modal-surface rawdha-modal-form bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-h-none sm:overflow-hidden cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}

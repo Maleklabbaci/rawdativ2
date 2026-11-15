@@ -15,3 +15,39 @@
 .rawdha-modal-surface > div:last-child button.bg-fuchsia-600 { background:#183c75; background-image:none; color:#fff; box-shadow:none; }
 .rawdha-modal-surface > div:last-child button.bg-gradient-to-r:not(:disabled):hover,
 .rawdha-modal-surface > div:last-child button.bg-fuchsia-600:not(:disabled):hover { background:#102e5c; }
+
+/* Formulaires : le contenu, pas seulement l'en-tête, suit la même direction. */
+.rawdha-modal-form :is(input:not([type=checkbox]):not([type=radio]):not([type=file]), select, textarea) {
+  min-width: 0;
+  border: 1px solid #dce2ea;
+  border-radius: 10px;
+  background: #fff;
+  color: #17263d;
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 400;
+}
+.rawdha-modal-form :is(input:not([type=checkbox]):not([type=radio]):not([type=file]), select) { min-height: 44px; }
+.rawdha-modal-form :is(input, textarea)::placeholder { color: #8c98a8; opacity: 1; }
+.rawdha-modal-form :is(input:not([type=checkbox]):not([type=radio]), select, textarea):focus {
+  border-color: #496b9b;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgb(24 60 117 / 10%);
+}
+.rawdha-modal-form label:not(:has(input[type=checkbox])) {
+  color: #34445b;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.rawdha-modal-form h4 {
+  color: #243953;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.rawdha-modal-form .rawdha-modal-header h2,
+.rawdha-modal-form .rawdha-modal-header h3 { font-size: 18px; }
+.rawdha-modal-form > div:last-child button.bg-indigo-600 { background: #183c75; color: #fff; }
+.rawdha-modal-form > div:last-child button.bg-indigo-600:not(:disabled):hover { background: #102e5c; }
